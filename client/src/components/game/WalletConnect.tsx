@@ -12,7 +12,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { cn } from "@/lib/utils";
 
 export function WalletConnect({ className }: { className?: string }) {
-  const { isConnected, address, balance, isConnecting, error, connect, disconnect } = useWallet();
+  const { isConnected, address, displayAddress, balance, isConnecting, error, connect, disconnect } = useWallet();
 
   if (isConnecting) {
     return (
@@ -68,9 +68,9 @@ export function WalletConnect({ className }: { className?: string }) {
         >
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-success" />
-            <span className="hidden sm:inline">{address}</span>
-            <Badge variant="secondary" className="font-mono text-xs">
-              {balance.toLocaleString()} ALGO
+            <span className="hidden sm:inline" data-testid="text-wallet-address">{displayAddress || address}</span>
+            <Badge variant="secondary" className="font-mono text-xs" data-testid="badge-wallet-balance">
+              {balance.toFixed(2)} ALGO
             </Badge>
           </div>
         </Button>
@@ -86,7 +86,7 @@ export function WalletConnect({ className }: { className?: string }) {
         <DropdownMenuItem className="text-muted-foreground">
           <span className="flex items-center justify-between w-full">
             <span>Balance</span>
-            <span className="font-mono">{balance.toLocaleString()} ALGO</span>
+            <span className="font-mono">{balance.toFixed(6)} ALGO</span>
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
