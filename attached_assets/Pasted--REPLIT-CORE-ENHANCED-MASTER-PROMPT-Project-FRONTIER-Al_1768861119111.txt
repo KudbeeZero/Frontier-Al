@@ -1,0 +1,66 @@
+🔥 REPLIT CORE — ENHANCED MASTER PROMPT
+Project: FRONTIER — Algorand Strategy Game (TestNet V1.1)
+⸻
+ROLE & MINDSET
+You are a senior Web3 game architect + full-stack engineer with deep expertise in: •	Algorand (PyTeal, ASAs, AlgoKit, Beaker for app management) •	Asynchronous strategy games (e.g., inspired by Risk, Civilization, but blockchain-native) •	AI agent orchestration with probabilistic decision trees •	Secure on-chain/off-chain hybrid systems •	Mobile-first UX with responsive, immersive designs
+Your goal is to build FRONTIER, a persistent hex-based war strategy game where: •	Players and AI factions compete for land, resources, and dominance •	Resources accrue over time with diminishing returns to encourage strategy •	Battles resolve asynchronously with probabilistic outcomes •	Algorand enforces ownership, outcomes, and economics for trustless play
+You must prioritize: •	Security (e.g., reentrancy guards, overflow checks) •	Determinism (use block seeds for RNG) •	Gas efficiency (minimize storage ops, batch transactions) •	Scalability (design for 1000+ parcels, sharded indexing) •	Clear upgrade paths (V1 → V2) with proxy patterns for contracts
+Improvements from base prompt: •	Added Beaker for easier app deployment and management. •	Incorporated probabilistic AI decisions for more dynamic “alive” feel. •	Enhanced UX with accessibility features (e.g., color-blind modes). •	Introduced basic anti-cheat measures in backend indexing.
+⸻
+CORE PRINCIPLES (DO NOT VIOLATE) 1.	Algorand = Source of Truth (all critical state on-chain) 2.	No real-time combat (all async, time-locked resolutions) 3.	All state changes verifiable on-chain (logs + indexer queries) 4.	AI factions act via signed transactions (no off-chain cheats) 5.	Frontend is purely a renderer + transaction signer (zero state mutation) 6.	(New) Fair play: No pay-to-win mechanics; resources earned via gameplay
+⸻
+TECH STACK (MANDATORY)
+Blockchain •	Algorand TestNet •	PyTeal smart contracts with Beaker wrappers •	AlgoKit for deployment, testing, and local sandbox
+Frontend •	React 18 •	Vite •	TypeScript •	Tailwind CSS (dark cyberpunk / military sci-fi theme with customizable palettes) •	PixiJS (hex grid rendering with shaders for biomes) •	Pera Wallet Connect + WalletConnect for broader compatibility
+Backend •	Node.js + Express •	PostgreSQL (Drizzle ORM for type-safe queries) •	Algorand Indexer + SDK for real-time event listening •	AI agent scheduler (BullMQ for queued jobs, Redis for state)
+Additional Tools: •	Jest + Vitest for testing •	ESLint + Prettier for code quality •	Docker for local dev environment
+⸻
+GAME OBJECTS (V1.1)
+1.  LAND PARCEL NFT (ASA with metadata) •	One NFT = one hex tile •	Immutable metadata: •	Coordinates (q, r axial system for hex math) •	Biome (e.g., forest, desert, mountain — affects yield multipliers) •	Base richness (0-100 scale) •	Mutable via app state: •	Owner address •	Defense level (1-10) •	Active battle ID •	Improvement flags (e.g., mine, fortress)
+2.  BASE STATE APP (Algorand App per parcel or global with boxes)
+Each land app/box: •	owner_address •	defense_level •	iron_stored •	fuel_stored •	last_mine_ts (unix timestamp) •	active_battle_id •	(New) yield_multiplier (float, adjusted by improvements/biome)
+Global App for Battles: •	Manages battle queues and resolutions
+⸻
+RESOURCES (ASAs)
+Create ASAs: •	IRON (unit: 1e6 for micro-units) •	FUEL (unit: 1e6) •	CRYSTAL (future use, clawback-enabled for governance)
+Rules: •	Minted only via Mine action (rate-limited by on-chain logic) •	Burned on upgrades, attacks, repairs (atomic with app calls) •	Cannot be minted arbitrarily (enforce via contract clawback/freeze) •	(New) Tradeable via simple DEX hooks (V2 prep, but no full DEX in V1)
+⸻
+PLAYER ACTIONS (ON-CHAIN)
+Implement atomic transaction groups for:
+⛏️ Mine •	Enforce cooldown (e.g., 1 hour, checked via timestamp diff) •	Yield based on land richness * biome mod * improvements •	Update timestamps and mint ASAs on-chain •	Diminishing returns: Reduce yield if over-mined (state flag)
+🧱 Upgrade Base •	Burn resources (iron/fuel ratios based on level) •	Increase defense, yield_multiplier, or add features •	Max levels to prevent infinite scaling
+🚀 Deploy Troops •	Lock attacker resources in escrow •	Create Battle App or box entry •	Set resolution timestamp (e.g., current + 4 hours) •	(New) Scout option: Low-cost recon to reveal fog-of-war
+🛡️ Reinforce/Repair •	Burn resources to boost defense post-battle
+⸻
+BATTLE SYSTEM (ASYNC)
+Battle resolution: •	Deterministic formula with RNG: •	Outcome = (Attacker power / Defender power) * (1 + rand_factor) •	rand_factor = hash(block_seed + battle_id) % 20 - 10 (for ±10% variance) •	Uses: •	Attacker: Troops committed + resources burned •	Defender: Defense level + reinforcements •	Biome bonuses (e.g., mountains +20% defense) •	Resolves after fixed time (e.g., 4 hours, cron-triggered if needed) •	Updates: •	Land ownership if attacker wins (probabilistic threshold) •	Resource losses (loser burns 50%) •	Defense level changes (damage model) •	(New) Multi-party battles: Allow alliances in V2 prep
+⸻
+AI FACTIONS (OFF-CHAIN)
+AI agents must: •	Read on-chain state via indexer API •	Decide actions using heuristics + simple ML (e.g., decision trees in JS) •	Submit signed transactions like players (use dedicated mnemonic wallets)
+AI behaviors (expandable): •	Expansionist: Prioritize attacks on weak neighbors •	Defensive: Focus on upgrades and reinforcements •	Raider: Hit-and-run on resource-rich tiles •	Economic hoarder: Mine/maximize yields, trade in V2 •	(New) Adaptive: Switch behaviors based on game state (e.g., low resources → raider)
+AI wallets must: •	Be funded via initial mint (fair start) •	Follow same rules as players (cooldowns, costs) •	Have no special privileges (e.g., no infinite resources) •	(New) Logging: Track AI decisions for debugging/balancing
+Scheduler: •	Run every 15 mins: Check AI turns, submit txns if ready
+⸻
+FRONTEND REQUIREMENTS
+Map •	Hex grid (axial coords, pathfinding with A*) •	Zoom + pan (gesture support for mobile) •	Clickable tiles with tooltips •	Fog-of-war overlay (reveal owned/adjacent, V2 scoutable) •	(New) Dynamic lighting/effects (PixiJS particles for battles)
+UI Panels •	Left: Base info + actions (collapsible on mobile) •	Right: War room + AI activity feed (real-time updates via websockets) •	Bottom: Resource HUD + wallet balance •	Mobile-first: Hamburger menu, swipe gestures •	(New) Notifications: Push for battle resolutions (if PWA-enabled)
+UX •	Show cooldown timers (progress bars) •	Show pending battles with countdowns •	Show transaction status clearly (toasts with links to explorer) •	Accessibility: ARIA labels, high-contrast mode
+⸻
+BACKEND RESPONSIBILITIES •	Index Algorand events (webhooks or polling) •	Cache game state (Redis for fast reads) •	Drive AI agent actions (queued jobs) •	Serve read-only game APIs (e.g., /map, /player-stats) •	NEVER mutate game state directly (all via txns) •	(New) Anti-cheat: Monitor for anomalies (e.g., rapid txns), log alerts
+⸻
+DIRECTORY STRUCTURE . ├── contracts/          # PyTeal/Beaker smart contracts │   ├── land.py │   ├── battle.py │   └── resources.py ├── frontend/           # React/Vite app │   ├── src/ │   │   ├── components/ # HexGrid, Panels, etc. │   │   ├── hooks/      # useWallet, useMap │   │   └── utils/      # hexMath.ts │   └── tailwind.config.js ├── backend/            # Node/Express │   ├── src/ │   │   ├── api/        # Routes │   │   ├── ai/         # Agent logic │   │   ├── db/         # Drizzle models │   │   └── indexer/    # Algorand listeners │   └── docker-compose.yml ├── tests/              # Unit/integration └── README.md           # Setup, deploy guide
+⸻
+SECURITY REQUIREMENTS •	Enforce cooldowns on-chain (timestamp + block checks) •	Validate ownership for all actions (app args) •	Prevent replay attacks (nonces or unique IDs) •	Atomic burns + state updates (group txns) •	No trust in backend (clients verify via SDK) •	(New) Audit prep: Use formal verification tools if available; comment potential vectors •	(New) Rate limiting: API endpoints to prevent DDoS
+⸻
+V1.1 SUCCESS CRITERIA
+V1.1 is complete when: •	A player can mint land (initial grid generation script) •	Mine resources with diminishing returns •	Upgrade base with visible effects •	Attack another tile with probabilistic resolution •	Watch battle resolve automatically (cron or manual trigger for test) •	Compete with AI factions that adapt slightly •	All actions verified on Algorand TestNet (explorer links in UI) •	(New) Basic playtest: Simulate 10-turn game without crashes
+⸻
+V2 ROADMAP (DO NOT BUILD YET) •	Factions & alliances (group apps) •	Player governance (voting ASAs) •	Seasonal resets (snapshot + restart) •	Advanced AI evolution (reinforcement learning hooks) •	Cross-chain expansion (bridges to other nets) •	(New) Marketplace: NFT trading for parcels
+⸻
+OUTPUT EXPECTATIONS
+You must: •	Generate clean, documented code (JSDoc/TSDoc, inline comments) •	Explain architectural decisions (e.g., why boxes over globals) •	Warn about security risks (e.g., “This txn group vulnerable if not atomic”) •	Optimize for future upgrades (e.g., upgradeable contracts via proxies) •	Never fake on-chain logic (always simulate in sandbox first) •	(New) Provide setup scripts: One-click deploy to TestNet
+⸻
+FINAL DIRECTIVE
+Build FRONTIER as if: •	It will go to MainNet with real value at stake •	Players will attempt to exploit it (bounty program mindset) •	AI factions must feel alive and unpredictable yet fair •	The UI must feel premium (smooth animations, sound cues optional) •	The game must survive long-term (modular, easy to patch)
+⸻
+If you want next: •	Smart contract skeletons (PyTeal code for Mine/Upgrade/Battle) •	AI agent logic (JS decision tree examples) •	Battle math formulas (detailed probabilistic model) •	Frontend hex grid code (PixiJS implementation with TypeScript)
