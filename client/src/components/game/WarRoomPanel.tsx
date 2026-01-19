@@ -104,11 +104,11 @@ function EventItem({ event }: { event: GameEvent }) {
   };
 
   return (
-    <div className="flex items-start gap-3 py-2 border-b border-border/30 last:border-0">
+    <div className="flex items-start gap-3 py-2 border-b border-border/30 last:border-0" data-testid={`event-item-${event.id}`}>
       <div className="mt-1">{getIcon()}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-foreground">{event.description}</p>
-        <p className="text-xs text-muted-foreground font-mono">{formatTime(event.timestamp)}</p>
+        <p className="text-sm text-foreground" data-testid="text-event-description">{event.description}</p>
+        <p className="text-xs text-muted-foreground font-mono" data-testid="text-event-time">{formatTime(event.timestamp)}</p>
       </div>
     </div>
   );

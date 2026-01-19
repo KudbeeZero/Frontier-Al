@@ -158,21 +158,22 @@ export function AttackModal({
           </div>
 
           <div className="grid grid-cols-2 gap-4 p-4 bg-card border border-border rounded-md">
-            <div>
+            <div data-testid="display-attacker-power">
               <p className="text-xs text-muted-foreground uppercase font-display tracking-wide mb-1">Your Power</p>
-              <p className="font-mono text-2xl font-bold text-primary">{Math.round(attackerPower)}</p>
+              <p className="font-mono text-2xl font-bold text-primary" data-testid="text-attacker-power">{Math.round(attackerPower)}</p>
             </div>
-            <div>
+            <div data-testid="display-defender-power">
               <p className="text-xs text-muted-foreground uppercase font-display tracking-wide mb-1">Defender Power</p>
-              <p className="font-mono text-2xl font-bold text-destructive">{Math.round(defenderPower)}</p>
+              <p className="font-mono text-2xl font-bold text-destructive" data-testid="text-defender-power">{Math.round(defenderPower)}</p>
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+          <div className="flex items-center justify-between p-3 bg-muted rounded-md" data-testid="display-win-chance">
             <span className="text-sm font-display uppercase tracking-wide">Win Chance</span>
             <Badge
               variant={winChance > 60 ? "default" : winChance > 40 ? "secondary" : "destructive"}
               className="font-mono text-lg px-3 py-1"
+              data-testid="badge-win-chance"
             >
               {Math.round(winChance)}%
             </Badge>

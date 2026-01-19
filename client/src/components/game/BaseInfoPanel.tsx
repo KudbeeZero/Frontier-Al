@@ -19,19 +19,20 @@ interface BaseInfoPanelProps {
   className?: string;
 }
 
-function StatRow({ icon: Icon, label, value, colorClass }: {
+function StatRow({ icon: Icon, label, value, colorClass, testId }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   colorClass?: string;
+  testId?: string;
 }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+    <div className="flex items-center justify-between py-2 border-b border-border/50 last:border-0" data-testid={testId}>
       <div className="flex items-center gap-2 text-muted-foreground">
         <Icon className={cn("w-4 h-4", colorClass)} />
         <span className="text-sm uppercase tracking-wide font-display">{label}</span>
       </div>
-      <span className="font-mono text-sm font-semibold">{value}</span>
+      <span className="font-mono text-sm font-semibold" data-testid={testId ? `text-${testId}-value` : undefined}>{value}</span>
     </div>
   );
 }
@@ -50,14 +51,14 @@ function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-testid="cooldown-timer">
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground font-display uppercase tracking-wide">Mine Cooldown</span>
-        <span className={cn("font-mono", canMine ? "text-success" : "text-warning")}>
+        <span className={cn("font-mono", canMine ? "text-success" : "text-warning")} data-testid="text-cooldown-status">
           {canMine ? "READY" : formatTime(remaining)}
         </span>
       </div>
-      <Progress value={progress} className="h-2" />
+      <Progress value={progress} className="h-2" data-testid="progress-cooldown" />
     </div>
   );
 }
@@ -107,35 +108,35 @@ export function BaseInfoPanel({
       <div className="p-6 space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-xl font-bold uppercase tracking-wide">
+            <h2 className="font-display text-xl font-bold uppercase tracking-wide" data-testid="text-sector-coords">
               Sector {parcel.q},{parcel.r}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline" className="capitalize font-display">
+              <Badge variant="outline" className="capitalize font-display" data-testid="badge-biome">
                 {parcel.biome}
               </Badge>
               {parcel.ownerId && (
-                <Badge variant={isOwned ? "default" : "destructive"} className="font-display">
+                <Badge variant={isOwned ? "default" : "destructive"} className="font-display" data-testid="badge-ownership">
                   {isOwned ? "YOUR TERRITORY" : parcel.ownerType === "ai" ? "AI CONTROLLED" : "ENEMY"}
                 </Badge>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" data-testid="display-defense-level">
             <Shield className={cn(
               "w-5 h-5",
               parcel.defenseLevel > 5 ? "text-success" : parcel.defenseLevel > 2 ? "text-warning" : "text-danger"
             )} />
-            <span className="font-mono text-lg font-bold">{parcel.defenseLevel}</span>
+            <span className="font-mono text-lg font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
           </div>
         </div>
 
         <div className="space-y-1">
-          <StatRow icon={MapPin} label="Richness" value={`${parcel.richness}%`} />
-          <StatRow icon={Pickaxe} label="Iron Stored" value={parcel.ironStored} colorClass="text-iron" />
-          <StatRow icon={Fuel} label="Fuel Stored" value={parcel.fuelStored} colorClass="text-fuel" />
-          <StatRow icon={Shield} label="Defense Bonus" value={`+${Math.round((biomeBonus.defenseMod - 1) * 100)}%`} />
-          <StatRow icon={Pickaxe} label="Yield Bonus" value={`+${Math.round((biomeBonus.yieldMod - 1) * 100)}%`} />
+          <StatRow icon={MapPin} label="Richness" value={`${parcel.richness}%`} testId="stat-richness" />
+          <StatRow icon={Pickaxe} label="Iron Stored" value={parcel.ironStored} colorClass="text-iron" testId="stat-iron" />
+          <StatRow icon={Fuel} label="Fuel Stored" value={parcel.fuelStored} colorClass="text-fuel" testId="stat-fuel" />
+          <StatRow icon={Shield} label="Defense Bonus" value={`+${Math.round((biomeBonus.defenseMod - 1) * 100)}%`} testId="stat-defense-bonus" />
+          <StatRow icon={Pickaxe} label="Yield Bonus" value={`+${Math.round((biomeBonus.yieldMod - 1) * 100)}%`} testId="stat-yield-bonus" />
         </div>
 
         {isOwned && (

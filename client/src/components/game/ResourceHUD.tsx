@@ -17,17 +17,19 @@ function ResourceItem({
   value,
   maxValue,
   colorClass,
+  testId,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
   maxValue?: number;
   colorClass: string;
+  testId: string;
 }) {
   const percentage = maxValue ? (value / maxValue) * 100 : undefined;
   
   return (
-    <div className="flex items-center gap-3 min-w-[140px]">
+    <div className="flex items-center gap-3 min-w-[140px]" data-testid={`resource-${testId}`}>
       <div className={cn("p-2 rounded-md", colorClass)}>
         <Icon className="w-4 h-4" />
       </div>
@@ -36,7 +38,7 @@ function ResourceItem({
           {label}
         </span>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold tabular-nums">
+          <span className="font-mono text-sm font-semibold tabular-nums" data-testid={`text-${testId}-value`}>
             {value.toLocaleString()}
           </span>
           {percentage !== undefined && (
@@ -62,21 +64,24 @@ export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: Res
         label="Iron"
         value={iron}
         colorClass="bg-iron/20 text-iron"
+        testId="iron"
       />
       <ResourceItem
         icon={Fuel}
         label="Fuel"
         value={fuel}
         colorClass="bg-fuel/20 text-fuel"
+        testId="fuel"
       />
       <ResourceItem
         icon={Gem}
         label="Crystal"
         value={crystal}
         colorClass="bg-crystal/20 text-crystal"
+        testId="crystal"
       />
       <div className="w-px h-8 bg-border" />
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" data-testid="resource-algo">
         <div className="p-2 rounded-md bg-primary/20 text-primary">
           <Wallet className="w-4 h-4" />
         </div>
@@ -84,7 +89,7 @@ export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: Res
           <span className="text-xs uppercase tracking-wide text-muted-foreground font-display">
             ALGO
           </span>
-          <span className="font-mono text-sm font-semibold tabular-nums">
+          <span className="font-mono text-sm font-semibold tabular-nums" data-testid="text-algo-value">
             {algoBalance.toLocaleString()}
           </span>
         </div>
