@@ -6,8 +6,19 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Canvas-based HexGrid
 - **Backend**: Node.js, Express, In-memory storage
-- **Blockchain**: Algorand TestNet (ready for integration with AlgoSDK, Pera Wallet)
+- **Blockchain**: Algorand TestNet with Pera Wallet integration
+  - AlgoSDK for transaction building
+  - @perawallet/connect for wallet connection
+  - AlgoNode cloud endpoints for TestNet
 - **Styling**: Cyberpunk/Military sci-fi theme with Rajdhani + Inter fonts
+
+## Algorand Integration
+- **Network**: Algorand TestNet (chainId: 416002)
+- **Wallet**: Pera Wallet (mobile + web)
+- **Endpoints**:
+  - Algod: https://testnet-api.algonode.cloud
+  - Indexer: https://testnet-idx.algonode.cloud
+- **Game Actions**: All game actions (mine, upgrade, attack, claim) can be recorded on-chain as zero-amount transactions with note data
 
 ## Project Structure
 ```
@@ -24,10 +35,14 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 │   │   │   │   ├── AttackModal.tsx   # Attack deployment
 │   │   │   │   └── GameLayout.tsx    # Main game layout
 │   │   │   └── ui/             # Shadcn components
+│   │   ├── contexts/
+│   │   │   └── WalletContext.tsx # Shared wallet state context
 │   │   ├── hooks/
-│   │   │   ├── useWallet.ts    # Wallet state management
+│   │   │   ├── useWallet.ts    # Re-exports wallet hook from context
+│   │   │   ├── useBlockchainActions.ts # On-chain transaction signing
 │   │   │   └── useGameState.ts # Game data fetching
 │   │   ├── lib/
+│   │   │   ├── algorand.ts     # Algorand SDK setup & transactions
 │   │   │   ├── hexMath.ts      # Hex grid math utilities
 │   │   │   └── queryClient.ts  # React Query setup
 │   │   └── pages/
@@ -75,6 +90,9 @@ See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 - Complete game UI with panels, HUD, and modals
 - Backend with in-memory storage and game logic
 - AI faction simulation running in background
+- Algorand TestNet integration with Pera Wallet
+- Blockchain transaction signing for game actions
+- Real wallet balance display from TestNet
 
 ## Development
 Run with: `npm run dev`

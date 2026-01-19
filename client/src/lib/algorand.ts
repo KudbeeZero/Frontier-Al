@@ -56,9 +56,17 @@ export async function sendPaymentTransaction(
   });
 
   const singleTxnGroups = [{ txn, signers: [fromAddress] }];
-  const signedTxn = await peraWallet.signTransaction([singleTxnGroups]);
+  const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
   
-  const response = await algodClient.sendRawTransaction(signedTxn).do();
+  const signedTxnBlob = signedTxnResult.flat().map((item: unknown) => {
+    if (item instanceof Uint8Array) return item;
+    if (typeof item === "object" && item !== null && "blob" in item) {
+      return (item as { blob: Uint8Array }).blob;
+    }
+    return item as Uint8Array;
+  });
+  
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
   
@@ -89,9 +97,17 @@ export async function createGameActionTransaction(
   });
 
   const singleTxnGroups = [{ txn, signers: [fromAddress] }];
-  const signedTxn = await peraWallet.signTransaction([singleTxnGroups]);
+  const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
   
-  const response = await algodClient.sendRawTransaction(signedTxn).do();
+  const signedTxnBlob = signedTxnResult.flat().map((item: unknown) => {
+    if (item instanceof Uint8Array) return item;
+    if (typeof item === "object" && item !== null && "blob" in item) {
+      return (item as { blob: Uint8Array }).blob;
+    }
+    return item as Uint8Array;
+  });
+  
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
   

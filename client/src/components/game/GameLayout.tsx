@@ -6,13 +6,14 @@ import { WarRoomPanel } from "./WarRoomPanel";
 import { HexGrid } from "./HexGrid";
 import { AttackModal } from "./AttackModal";
 import { useWallet } from "@/hooks/useWallet";
+import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
 export function GameLayout() {
   const { isConnected, balance } = useWallet();
+  const { signMineAction, signUpgradeAction, signAttackAction, isWalletConnected } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer();
   const { toast } = useToast();
@@ -26,8 +27,14 @@ export function GameLayout() {
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
 
-  const handleMine = () => {
+  const handleMine = async () => {
     if (!player || !selectedParcelId) return;
+    
+    if (isWalletConnected) {
+      const txId = await signMineAction(selectedParcelId);
+      if (!txId) return;
+    }
+    
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -48,8 +55,14 @@ export function GameLayout() {
     );
   };
 
-  const handleUpgrade = (type: string) => {
+  const handleUpgrade = async (type: string) => {
     if (!player || !selectedParcelId) return;
+    
+    if (isWalletConnected) {
+      const txId = await signUpgradeAction(selectedParcelId, type);
+      if (!txId) return;
+    }
+    
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
       {
@@ -74,8 +87,14 @@ export function GameLayout() {
     setAttackModalOpen(true);
   };
 
-  const handleAttackConfirm = (troops: number, iron: number, fuel: number) => {
+  const handleAttackConfirm = async (troops: number, iron: number, fuel: number) => {
     if (!player || !selectedParcelId) return;
+    
+    if (isWalletConnected) {
+      const txId = await signAttackAction(selectedParcelId, troops, iron, fuel);
+      if (!txId) return;
+    }
+    
     attackMutation.mutate(
       {
         attackerId: player.id,
