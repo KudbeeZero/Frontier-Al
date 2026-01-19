@@ -1,10 +1,11 @@
 import { Settings, Sun, Moon, HelpCircle, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { WalletConnect } from "./WalletConnect";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 interface TopBarProps {
   isConnected: boolean;
@@ -32,6 +33,10 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-80 p-0">
+              <VisuallyHidden>
+                <SheetTitle>Game Menu</SheetTitle>
+                <SheetDescription>Base information and game controls</SheetDescription>
+              </VisuallyHidden>
               {mobileMenuContent}
             </SheetContent>
           </Sheet>

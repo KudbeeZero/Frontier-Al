@@ -1,6 +1,4 @@
 import { Pickaxe, Fuel, Gem, Wallet } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 interface ResourceHUDProps {
@@ -15,36 +13,27 @@ function ResourceItem({
   icon: Icon,
   label,
   value,
-  maxValue,
   colorClass,
   testId,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
-  maxValue?: number;
   colorClass: string;
   testId: string;
 }) {
-  const percentage = maxValue ? (value / maxValue) * 100 : undefined;
-  
   return (
-    <div className="flex items-center gap-3 min-w-[140px]" data-testid={`resource-${testId}`}>
-      <div className={cn("p-2 rounded-md", colorClass)}>
-        <Icon className="w-4 h-4" />
+    <div className="flex items-center gap-2" data-testid={`resource-${testId}`}>
+      <div className={cn("p-1.5 sm:p-2 rounded-md", colorClass)}>
+        <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
       </div>
-      <div className="flex flex-col flex-1 min-w-0">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground font-display">
+      <div className="flex flex-col">
+        <span className="text-[9px] sm:text-xs uppercase tracking-wide text-muted-foreground font-display hidden sm:block">
           {label}
         </span>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold tabular-nums" data-testid={`text-${testId}-value`}>
-            {value.toLocaleString()}
-          </span>
-          {percentage !== undefined && (
-            <Progress value={percentage} className="h-1 flex-1 bg-muted" />
-          )}
-        </div>
+        <span className="font-mono text-xs sm:text-sm font-semibold tabular-nums" data-testid={`text-${testId}-value`}>
+          {value.toLocaleString()}
+        </span>
       </div>
     </div>
   );
@@ -54,7 +43,7 @@ export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: Res
   return (
     <div
       className={cn(
-        "flex items-center gap-6 px-6 py-3 backdrop-blur-md bg-card/80 border border-card-border rounded-md",
+        "flex items-center gap-3 sm:gap-5 px-3 sm:px-5 py-2 sm:py-2.5 backdrop-blur-md bg-card/90 border border-card-border rounded-md shadow-lg",
         className
       )}
       data-testid="resource-hud"
@@ -80,16 +69,16 @@ export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: Res
         colorClass="bg-crystal/20 text-crystal"
         testId="crystal"
       />
-      <div className="w-px h-8 bg-border" />
-      <div className="flex items-center gap-3" data-testid="resource-algo">
-        <div className="p-2 rounded-md bg-primary/20 text-primary">
-          <Wallet className="w-4 h-4" />
+      <div className="w-px h-6 sm:h-8 bg-border hidden sm:block" />
+      <div className="flex items-center gap-2" data-testid="resource-algo">
+        <div className="p-1.5 sm:p-2 rounded-md bg-primary/20 text-primary">
+          <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </div>
         <div className="flex flex-col">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground font-display">
+          <span className="text-[9px] sm:text-xs uppercase tracking-wide text-muted-foreground font-display hidden sm:block">
             ALGO
           </span>
-          <span className="font-mono text-sm font-semibold tabular-nums" data-testid="text-algo-value">
+          <span className="font-mono text-xs sm:text-sm font-semibold tabular-nums" data-testid="text-algo-value">
             {algoBalance.toLocaleString()}
           </span>
         </div>

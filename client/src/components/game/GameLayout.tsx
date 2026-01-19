@@ -5,6 +5,7 @@ import { BaseInfoPanel } from "./BaseInfoPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { HexGrid } from "./HexGrid";
 import { AttackModal } from "./AttackModal";
+import { MobileActionBar } from "./MobileActionBar";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack } from "@/hooks/useGameState";
@@ -196,7 +197,7 @@ export function GameLayout() {
           ) : null}
 
           {player && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+            <div className="absolute bottom-20 lg:bottom-4 left-1/2 -translate-x-1/2 z-20">
               <ResourceHUD
                 iron={player.iron}
                 fuel={player.fuel}
@@ -206,6 +207,17 @@ export function GameLayout() {
             </div>
           )}
         </main>
+
+        <MobileActionBar
+          parcel={selectedParcel}
+          player={player}
+          onMine={handleMine}
+          onUpgrade={() => handleUpgrade("defense")}
+          onAttack={handleAttackClick}
+          onClose={() => setSelectedParcelId(null)}
+          isMining={mineMutation.isPending}
+          isUpgrading={upgradeMutation.isPending}
+        />
 
         <aside className="hidden lg:flex flex-col w-80 border-l border-border overflow-auto bg-sidebar/50">
           {isLoading ? (
