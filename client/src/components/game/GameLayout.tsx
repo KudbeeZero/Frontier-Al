@@ -8,16 +8,16 @@ import { LandSheet } from "./LandSheet";
 import { InventoryPanel } from "./InventoryPanel";
 import { BattlesPanel } from "./BattlesPanel";
 import { LeaderboardPanel } from "./LeaderboardPanel";
-import { RulesPanel } from "./RulesPanel";
+import { CommanderPanel } from "./CommanderPanel";
 import { OnboardingFlow } from "./OnboardingFlow";
 import { BaseInfoPanel } from "./BaseInfoPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
-import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier } from "@/hooks/useGameState";
+import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ImprovementType } from "@shared/schema";
+import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 
 export function GameLayout() {
   const { isConnected, balance } = useWallet();
@@ -48,6 +48,9 @@ export function GameLayout() {
   const purchaseMutation = usePurchase();
   const collectMutation = useCollectAll();
   const claimFrontierMutation = useClaimFrontier();
+  const mintAvatarMutation = useMintAvatar();
+  const specialAttackMutation = useSpecialAttack();
+  const deployDroneMutation = useDeployDrone();
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
@@ -157,6 +160,42 @@ export function GameLayout() {
       },
       onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" }),
     });
+  };
+
+  const handleMintAvatar = (tier: CommanderTier) => {
+    if (!player) return;
+    mintAvatarMutation.mutate(
+      { playerId: player.id, tier },
+      {
+        onSuccess: (data: any) => toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` }),
+        onError: (error) => toast({ title: "Mint Failed", description: error.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleSpecialAttack = (attackType: SpecialAttackType) => {
+    if (!player || !selectedParcelId) return;
+    specialAttackMutation.mutate(
+      { playerId: player.id, attackType, targetParcelId: selectedParcelId },
+      {
+        onSuccess: (data: any) => {
+          const result = data.result;
+          toast({ title: "Special Attack Launched", description: `${result?.effect || "Attack successful"} - ${result?.damage || 0} damage dealt` });
+        },
+        onError: (error) => toast({ title: "Attack Failed", description: error.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleDeployDrone = (targetParcelId?: string) => {
+    if (!player) return;
+    deployDroneMutation.mutate(
+      { playerId: player.id, targetParcelId },
+      {
+        onSuccess: () => toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." }),
+        onError: (error) => toast({ title: "Deploy Failed", description: error.message, variant: "destructive" }),
+      }
+    );
   };
 
   const handleTabChange = (tab: NavTab) => {

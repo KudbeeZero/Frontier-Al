@@ -95,9 +95,13 @@ export interface Player {
   totalIronMined: number;
   totalFuelMined: number;
   totalFrontierEarned: number;
+  totalFrontierBurned: number;
   attacksWon: number;
   attacksLost: number;
   territoriesCaptured: number;
+  commander: CommanderAvatar | null;
+  specialAttacks: SpecialAttackRecord[];
+  drones: ReconDrone[];
 }
 
 export interface Battle {
@@ -118,7 +122,7 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone";
   playerId: string;
   parcelId?: string;
   battleId?: string;
@@ -226,3 +230,141 @@ export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = {
   volcanic: 1.0,
   swamp: 0.3,
 };
+
+export type CommanderTier = "sentinel" | "phantom" | "reaper";
+
+export interface CommanderAvatar {
+  id: string;
+  tier: CommanderTier;
+  name: string;
+  attackBonus: number;
+  defenseBonus: number;
+  specialAbility: string;
+  mintedAt: number;
+  totalKills: number;
+}
+
+export const COMMANDER_INFO: Record<CommanderTier, {
+  name: string;
+  description: string;
+  mintCostFrontier: number;
+  baseAttackBonus: number;
+  baseDefenseBonus: number;
+  specialAbility: string;
+  imageKey: string;
+}> = {
+  sentinel: {
+    name: "Sentinel",
+    description: "Balanced tactical commander with reliable stats",
+    mintCostFrontier: 50,
+    baseAttackBonus: 10,
+    baseDefenseBonus: 10,
+    specialAbility: "Fortify",
+    imageKey: "sentinel",
+  },
+  phantom: {
+    name: "Phantom",
+    description: "Stealth specialist excelling at sabotage and infiltration",
+    mintCostFrontier: 150,
+    baseAttackBonus: 18,
+    baseDefenseBonus: 6,
+    specialAbility: "Cloak",
+    imageKey: "phantom",
+  },
+  reaper: {
+    name: "Reaper",
+    description: "Elite destroyer with maximum offensive firepower",
+    mintCostFrontier: 400,
+    baseAttackBonus: 30,
+    baseDefenseBonus: 5,
+    specialAbility: "Annihilate",
+    imageKey: "reaper",
+  },
+};
+
+export type SpecialAttackType = "orbital_strike" | "emp_blast" | "siege_barrage" | "sabotage";
+
+export interface SpecialAttackRecord {
+  type: SpecialAttackType;
+  lastUsedTs: number;
+}
+
+export const SPECIAL_ATTACK_INFO: Record<SpecialAttackType, {
+  name: string;
+  description: string;
+  costFrontier: number;
+  cooldownMs: number;
+  damageMultiplier: number;
+  effect: string;
+  requiredTier: CommanderTier[];
+}> = {
+  orbital_strike: {
+    name: "Orbital Strike",
+    description: "Devastating bombardment from orbit, bypasses shields",
+    costFrontier: 25,
+    cooldownMs: 30 * 60 * 1000,
+    damageMultiplier: 3.0,
+    effect: "Ignores 50% of target defense",
+    requiredTier: ["sentinel", "phantom", "reaper"],
+  },
+  emp_blast: {
+    name: "EMP Blast",
+    description: "Disables turrets and shield generators temporarily",
+    costFrontier: 15,
+    cooldownMs: 20 * 60 * 1000,
+    damageMultiplier: 1.5,
+    effect: "Disables improvements for 10 minutes",
+    requiredTier: ["phantom", "reaper"],
+  },
+  siege_barrage: {
+    name: "Siege Barrage",
+    description: "Area bombardment hitting target and nearby plots",
+    costFrontier: 40,
+    cooldownMs: 45 * 60 * 1000,
+    damageMultiplier: 2.0,
+    effect: "Damages up to 3 nearby enemy plots",
+    requiredTier: ["reaper"],
+  },
+  sabotage: {
+    name: "Sabotage",
+    description: "Covert ops reducing enemy resource production",
+    costFrontier: 10,
+    cooldownMs: 15 * 60 * 1000,
+    damageMultiplier: 0.5,
+    effect: "Halves target mining yield for 30 minutes",
+    requiredTier: ["phantom", "reaper"],
+  },
+};
+
+export interface ReconDrone {
+  id: string;
+  deployedAt: number;
+  targetParcelId: string | null;
+  status: "idle" | "scouting" | "returned";
+  discoveredResources: { iron: number; fuel: number; crystal: number };
+  scoutReportReady: boolean;
+}
+
+export const DRONE_MINT_COST_FRONTIER = 20;
+export const DRONE_SCOUT_DURATION_MS = 15 * 60 * 1000;
+export const MAX_DRONES = 5;
+
+export const mintAvatarActionSchema = z.object({
+  playerId: z.string(),
+  tier: z.enum(["sentinel", "phantom", "reaper"]),
+});
+
+export const specialAttackActionSchema = z.object({
+  playerId: z.string(),
+  targetParcelId: z.string(),
+  attackType: z.enum(["orbital_strike", "emp_blast", "siege_barrage", "sabotage"]),
+});
+
+export const deployDroneActionSchema = z.object({
+  playerId: z.string(),
+  targetParcelId: z.string().optional(),
+});
+
+export type MintAvatarAction = z.infer<typeof mintAvatarActionSchema>;
+export type SpecialAttackAction = z.infer<typeof specialAttackActionSchema>;
+export type DeployDroneAction = z.infer<typeof deployDroneActionSchema>;

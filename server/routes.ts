@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(
@@ -122,6 +122,39 @@ export async function registerRoutes(
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });
+    }
+  });
+
+  app.post("/api/actions/mint-avatar", async (req, res) => {
+    try {
+      const action = mintAvatarActionSchema.parse(req.body);
+      const avatar = await storage.mintAvatar(action);
+      res.json({ success: true, avatar });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Mint failed" });
+    }
+  });
+
+  app.post("/api/actions/special-attack", async (req, res) => {
+    try {
+      const action = specialAttackActionSchema.parse(req.body);
+      const result = await storage.executeSpecialAttack(action);
+      res.json({ success: true, result });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Special attack failed" });
+    }
+  });
+
+  app.post("/api/actions/deploy-drone", async (req, res) => {
+    try {
+      const action = deployDroneActionSchema.parse(req.body);
+      const drone = await storage.deployDrone(action);
+      res.json({ success: true, drone });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Drone deployment failed" });
     }
   });
 

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, PurchaseAction } from "@shared/schema";
+import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, PurchaseAction, MintAvatarAction, SpecialAttackAction, DeployDroneAction } from "@shared/schema";
 
 export function useGameState() {
   return useQuery<GameState>({
@@ -103,6 +103,42 @@ export function useClaimFrontier() {
   return useMutation({
     mutationFn: async (playerId: string) => {
       const response = await apiRequest("POST", "/api/actions/claim-frontier", { playerId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
+export function useMintAvatar() {
+  return useMutation({
+    mutationFn: async (action: MintAvatarAction) => {
+      const response = await apiRequest("POST", "/api/actions/mint-avatar", action);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
+export function useSpecialAttack() {
+  return useMutation({
+    mutationFn: async (action: SpecialAttackAction) => {
+      const response = await apiRequest("POST", "/api/actions/special-attack", action);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
+export function useDeployDrone() {
+  return useMutation({
+    mutationFn: async (action: DeployDroneAction) => {
+      const response = await apiRequest("POST", "/api/actions/deploy-drone", action);
       return response.json();
     },
     onSuccess: () => {

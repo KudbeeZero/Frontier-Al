@@ -1,7 +1,7 @@
-import { Map, Package, Swords, Trophy, BookOpen } from "lucide-react";
+import { Map, Package, Swords, Trophy, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type NavTab = "map" | "inventory" | "battles" | "leaderboard" | "rules";
+export type NavTab = "map" | "inventory" | "battles" | "leaderboard" | "commander";
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -12,9 +12,9 @@ interface BottomNavProps {
 const tabs: { id: NavTab; label: string; icon: React.ElementType }[] = [
   { id: "map", label: "Map", icon: Map },
   { id: "inventory", label: "Inventory", icon: Package },
+  { id: "commander", label: "Commander", icon: Shield },
   { id: "battles", label: "Battles", icon: Swords },
   { id: "leaderboard", label: "Rankings", icon: Trophy },
-  { id: "rules", label: "Rules", icon: BookOpen },
 ];
 
 export function BottomNav({ activeTab, onTabChange, battleCount }: BottomNavProps) {

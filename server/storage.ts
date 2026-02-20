@@ -14,6 +14,14 @@ import type {
   LeaderboardEntry,
   ImprovementType,
   Improvement,
+  MintAvatarAction,
+  SpecialAttackAction,
+  DeployDroneAction,
+  CommanderAvatar,
+  ReconDrone,
+  SpecialAttackRecord,
+  CommanderTier,
+  SpecialAttackType,
 } from "@shared/schema";
 import {
   biomeBonuses,
@@ -28,6 +36,11 @@ import {
   TOTAL_PLOTS,
   FRONTIER_TOTAL_SUPPLY,
   FRONTIER_PER_HOUR_BY_BIOME,
+  COMMANDER_INFO,
+  SPECIAL_ATTACK_INFO,
+  DRONE_MINT_COST_FRONTIER,
+  DRONE_SCOUT_DURATION_MS,
+  MAX_DRONES,
 } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./hexUtils";
 
@@ -68,6 +81,9 @@ export interface IStorage {
   purchaseLand(action: PurchaseAction): Promise<LandParcel>;
   collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }>;
   claimFrontier(playerId: string): Promise<{ amount: number }>;
+  mintAvatar(action: MintAvatarAction): Promise<CommanderAvatar>;
+  executeSpecialAttack(action: SpecialAttackAction): Promise<{ damage: number; effect: string }>;
+  deployDrone(action: DeployDroneAction): Promise<ReconDrone>;
 
   resolveBattles(): Promise<Battle[]>;
   runAITurn(): Promise<GameEvent[]>;
@@ -147,9 +163,13 @@ export class MemStorage implements IStorage {
       totalIronMined: 0,
       totalFuelMined: 0,
       totalFrontierEarned: 0,
+      totalFrontierBurned: 0,
       attacksWon: 0,
       attacksLost: 0,
       territoriesCaptured: 0,
+      commander: null,
+      specialAttacks: [],
+      drones: [],
     };
     this.players.set(humanPlayerId, humanPlayer);
 
@@ -182,9 +202,13 @@ export class MemStorage implements IStorage {
         totalIronMined: 0,
         totalFuelMined: 0,
         totalFrontierEarned: 0,
+        totalFrontierBurned: 0,
         attacksWon: 0,
         attacksLost: 0,
         territoriesCaptured: 0,
+        commander: null,
+        specialAttacks: [],
+        drones: [],
       };
       this.players.set(aiId, aiPlayer);
 
@@ -592,6 +616,186 @@ export class MemStorage implements IStorage {
 
     this.lastUpdateTs = now;
     return battle;
+  }
+
+  async mintAvatar(action: MintAvatarAction): Promise<CommanderAvatar> {
+    await this.initialize();
+    const player = this.players.get(action.playerId);
+    if (!player) throw new Error("Player not found");
+    if (player.commander) throw new Error("You already have a Commander. Only one per player.");
+
+    const info = COMMANDER_INFO[action.tier];
+    if (!info) throw new Error("Invalid commander tier");
+    if (player.frontier < info.mintCostFrontier) throw new Error(`Insufficient FRONTIER. Need ${info.mintCostFrontier}, have ${player.frontier.toFixed(2)}`);
+
+    player.frontier -= info.mintCostFrontier;
+    player.totalFrontierBurned += info.mintCostFrontier;
+    this.frontierCirculating -= info.mintCostFrontier;
+
+    const bonusRoll = Math.random() * 0.3;
+    const avatar: CommanderAvatar = {
+      id: randomUUID(),
+      tier: action.tier,
+      name: info.name,
+      attackBonus: Math.floor(info.baseAttackBonus * (1 + bonusRoll)),
+      defenseBonus: Math.floor(info.baseDefenseBonus * (1 + bonusRoll)),
+      specialAbility: info.specialAbility,
+      mintedAt: Date.now(),
+      totalKills: 0,
+    };
+
+    player.commander = avatar;
+
+    this.events.push({
+      id: randomUUID(),
+      type: "mint_avatar",
+      playerId: player.id,
+      description: `${player.name} minted a ${info.name} Commander (${action.tier.toUpperCase()}) for ${info.mintCostFrontier} FRONTIER`,
+      timestamp: Date.now(),
+    });
+
+    this.lastUpdateTs = Date.now();
+    return avatar;
+  }
+
+  async executeSpecialAttack(action: SpecialAttackAction): Promise<{ damage: number; effect: string }> {
+    await this.initialize();
+    const player = this.players.get(action.playerId);
+    if (!player) throw new Error("Player not found");
+    if (!player.commander) throw new Error("You need a Commander to use special attacks. Mint one first.");
+
+    const attackInfo = SPECIAL_ATTACK_INFO[action.attackType];
+    if (!attackInfo) throw new Error("Invalid attack type");
+
+    if (!attackInfo.requiredTier.includes(player.commander.tier)) {
+      throw new Error(`${attackInfo.name} requires a ${attackInfo.requiredTier.join(" or ")} Commander`);
+    }
+
+    if (player.frontier < attackInfo.costFrontier) {
+      throw new Error(`Insufficient FRONTIER. Need ${attackInfo.costFrontier}, have ${player.frontier.toFixed(2)}`);
+    }
+
+    const existing = player.specialAttacks.find(sa => sa.type === action.attackType);
+    if (existing) {
+      const elapsed = Date.now() - existing.lastUsedTs;
+      if (elapsed < attackInfo.cooldownMs) {
+        const remaining = Math.ceil((attackInfo.cooldownMs - elapsed) / 60000);
+        throw new Error(`${attackInfo.name} on cooldown. ${remaining} minutes remaining.`);
+      }
+    }
+
+    const targetParcel = this.parcels.get(action.targetParcelId);
+    if (!targetParcel) throw new Error("Target plot not found");
+    if (targetParcel.ownerId === player.id) throw new Error("Cannot attack your own territory");
+
+    player.frontier -= attackInfo.costFrontier;
+    player.totalFrontierBurned += attackInfo.costFrontier;
+    this.frontierCirculating -= attackInfo.costFrontier;
+
+    if (existing) {
+      existing.lastUsedTs = Date.now();
+    } else {
+      player.specialAttacks.push({ type: action.attackType, lastUsedTs: Date.now() });
+    }
+
+    let baseDamage = player.commander.attackBonus * attackInfo.damageMultiplier;
+    let effectDescription = attackInfo.effect;
+
+    if (action.attackType === "orbital_strike") {
+      const defReduction = Math.floor(targetParcel.defenseLevel * 0.5);
+      targetParcel.defenseLevel = Math.max(1, targetParcel.defenseLevel - defReduction);
+      baseDamage += defReduction * 5;
+      effectDescription = `Orbital Strike reduced defense by ${defReduction}`;
+    } else if (action.attackType === "emp_blast") {
+      targetParcel.defenseLevel = Math.max(1, targetParcel.defenseLevel - 2);
+      effectDescription = "EMP disabled turrets and shields, defense reduced by 2";
+    } else if (action.attackType === "siege_barrage") {
+      targetParcel.defenseLevel = Math.max(1, targetParcel.defenseLevel - 1);
+      const nearby = this.findNearbyParcels(targetParcel, 0.04);
+      let splashCount = 0;
+      for (const np of nearby) {
+        if (np.ownerId && np.ownerId !== player.id && splashCount < 3) {
+          np.defenseLevel = Math.max(1, np.defenseLevel - 1);
+          splashCount++;
+        }
+      }
+      effectDescription = `Siege Barrage damaged target + ${splashCount} nearby plots`;
+    } else if (action.attackType === "sabotage") {
+      targetParcel.yieldMultiplier = Math.max(0.1, targetParcel.yieldMultiplier * 0.5);
+      effectDescription = "Sabotage halved target mining yield";
+    }
+
+    player.commander.totalKills++;
+
+    this.events.push({
+      id: randomUUID(),
+      type: "special_attack",
+      playerId: player.id,
+      parcelId: targetParcel.id,
+      description: `${player.name}'s ${player.commander.name} launched ${attackInfo.name} on plot #${targetParcel.plotId}!`,
+      timestamp: Date.now(),
+    });
+
+    this.lastUpdateTs = Date.now();
+    return { damage: Math.floor(baseDamage), effect: effectDescription };
+  }
+
+  async deployDrone(action: DeployDroneAction): Promise<ReconDrone> {
+    await this.initialize();
+    const player = this.players.get(action.playerId);
+    if (!player) throw new Error("Player not found");
+    if (player.drones.length >= MAX_DRONES) throw new Error(`Maximum ${MAX_DRONES} drones allowed`);
+    if (player.frontier < DRONE_MINT_COST_FRONTIER) {
+      throw new Error(`Insufficient FRONTIER. Need ${DRONE_MINT_COST_FRONTIER}, have ${player.frontier.toFixed(2)}`);
+    }
+
+    player.frontier -= DRONE_MINT_COST_FRONTIER;
+    player.totalFrontierBurned += DRONE_MINT_COST_FRONTIER;
+    this.frontierCirculating -= DRONE_MINT_COST_FRONTIER;
+
+    let targetId = action.targetParcelId || null;
+    if (!targetId) {
+      const allParcels = Array.from(this.parcels.values());
+      const enemyParcels = allParcels.filter(p => p.ownerId && p.ownerId !== player.id);
+      if (enemyParcels.length > 0) {
+        targetId = enemyParcels[Math.floor(Math.random() * enemyParcels.length)].id;
+      }
+    }
+
+    const drone: ReconDrone = {
+      id: randomUUID(),
+      deployedAt: Date.now(),
+      targetParcelId: targetId,
+      status: targetId ? "scouting" : "idle",
+      discoveredResources: { iron: 0, fuel: 0, crystal: 0 },
+      scoutReportReady: false,
+    };
+
+    if (targetId) {
+      const targetParcel = this.parcels.get(targetId);
+      if (targetParcel) {
+        const bonus = Math.random();
+        drone.discoveredResources = {
+          iron: Math.floor(5 + bonus * 15),
+          fuel: Math.floor(3 + bonus * 10),
+          crystal: Math.floor(bonus * 5),
+        };
+      }
+    }
+
+    player.drones.push(drone);
+
+    this.events.push({
+      id: randomUUID(),
+      type: "deploy_drone",
+      playerId: player.id,
+      parcelId: targetId || undefined,
+      description: `${player.name} deployed a Recon Drone`,
+      timestamp: Date.now(),
+    });
+
+    this.lastUpdateTs = Date.now();
+    return drone;
   }
 
   async resolveBattles(): Promise<Battle[]> {
