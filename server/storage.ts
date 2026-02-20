@@ -42,7 +42,7 @@ import {
   DRONE_SCOUT_DURATION_MS,
   MAX_DRONES,
 } from "@shared/schema";
-import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./hexUtils";
+import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
 
 const AI_NAMES = ["NEXUS-7", "KRONOS", "VANGUARD", "SPECTRE"];
 const AI_BEHAVIORS: Player["aiBehavior"][] = ["expansionist", "defensive", "raider", "economic"];

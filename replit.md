@@ -33,7 +33,6 @@ FRONTIER is a persistent globe-based war strategy game where players and AI fact
 │   │   ├── components/
 │   │   │   ├── game/
 │   │   │   │   ├── PlanetGlobe.tsx      # 3D rotating globe with Three.js + InstancedMesh (21K plots)
-│   │   │   │   ├── HexGrid.tsx         # Legacy Canvas hex map (unused, kept as fallback)
 │   │   │   │   ├── GameLayout.tsx       # Main game layout orchestrating all panels
 │   │   │   │   ├── BottomNav.tsx        # Mobile bottom navigation (Map/Inventory/Battles/Rankings/Rules)
 │   │   │   │   ├── LandSheet.tsx        # Bottom sheet land popup with mine/upgrade/build/attack/buy actions
@@ -58,14 +57,13 @@ FRONTIER is a persistent globe-based war strategy game where players and AI fact
 │   │   │   └── useGameState.ts          # Game data fetching + mutations (mine/upgrade/attack/build/purchase/collect/claim)
 │   │   ├── lib/
 │   │   │   ├── algorand.ts             # Algorand SDK setup, transactions, FRONTIER ASA support
-│   │   │   ├── hexMath.ts              # Hex grid math utilities (legacy)
 │   │   │   └── queryClient.ts          # React Query setup
 │   │   └── pages/
 │   │       └── game.tsx                # Main game page
 ├── server/
 │   ├── routes.ts                       # API endpoints (mine/upgrade/attack/build/purchase/collect/claim)
 │   ├── storage.ts                      # In-memory game state with 21K plots, Fibonacci sphere distribution
-│   └── hexUtils.ts                     # Server-side hex utilities (legacy)
+│   └── sphereUtils.ts                  # Fibonacci sphere distribution, distance calculations
 └── shared/
     └── schema.ts                       # Shared types, schemas, game constants (plotId-based)
 ```
