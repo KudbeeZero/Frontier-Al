@@ -73,10 +73,6 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    if (isWalletConnected) {
-      const txId = await signMineAction(selectedParcel.plotId);
-      if (!txId) return;
-    }
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -88,10 +84,6 @@ export function GameLayout() {
 
   const handleUpgrade = async (type: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    if (isWalletConnected) {
-      const txId = await signUpgradeAction(selectedParcel.plotId, type);
-      if (!txId) return;
-    }
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
       {
@@ -105,10 +97,6 @@ export function GameLayout() {
 
   const handleAttackConfirm = async (troops: number, iron: number, fuel: number) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    if (isWalletConnected) {
-      const txId = await signAttackAction(selectedParcel.plotId, troops, iron, fuel);
-      if (!txId) return;
-    }
     attackMutation.mutate(
       { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel } },
       {
@@ -163,16 +151,15 @@ export function GameLayout() {
 
   const handleClaimFrontier = async () => {
     if (!player || !gameState) return;
-    const ownedParcels = gameState.parcels.filter(p => p.ownerId === player.id);
-    const pendingAmount = ownedParcels.reduce((sum, p) => sum + (p.frontierAccumulated || 0), 0);
-    if (isWalletConnected && pendingAmount > 0) {
-      const txId = await signClaimFrontierAction(pendingAmount);
-      if (!txId) return;
-    }
     claimFrontierMutation.mutate(player.id, {
       onSuccess: (data: any) => {
         const amount = data.claimed?.amount || 0;
-        toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens` });
+        const txId = data.txId;
+        if (txId) {
+          toast({ title: "FRONTIER Claimed On-Chain", description: `+${amount.toFixed(2)} FRONTIER tokens sent to your wallet. TX: ${txId.slice(0, 8)}...` });
+        } else {
+          toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens` });
+        }
       },
       onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" }),
     });

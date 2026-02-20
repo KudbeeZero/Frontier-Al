@@ -60,7 +60,7 @@ export async function signTransactionWithActiveWallet(
     const bytes = new Uint8Array(encoded);
     const chunk = 8192;
     for (let i = 0; i < bytes.length; i += chunk) {
-      encodedTxn += String.fromCharCode(...bytes.slice(i, i + chunk));
+      encodedTxn += String.fromCharCode.apply(null, Array.from(bytes.slice(i, i + chunk)));
     }
     encodedTxn = btoa(encodedTxn);
     const signedResult = await luteWallet.signTxns([
@@ -259,11 +259,20 @@ export async function optInToASA(
 
 export async function isOptedInToASA(address: string, assetId: number): Promise<boolean> {
   try {
-    const accountInfo = await algodClient.accountInformation(address).do();
-    const assets = accountInfo.assets || [];
-    return assets.some((a: any) => (a.assetIndex ?? a["asset-id"]) === assetId);
+    const res = await fetch(`/api/blockchain/opt-in-check/${address}`);
+    const data = await res.json();
+    return data.optedIn === true;
   } catch {
-    return false;
+    try {
+      const accountInfo = await algodClient.accountInformation(address).do();
+      const assets = accountInfo.assets || accountInfo["assets"] || [];
+      return assets.some((a: any) => {
+        const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
+        return id === assetId;
+      });
+    } catch {
+      return false;
+    }
   }
 }
 

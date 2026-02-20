@@ -172,31 +172,22 @@ export async function registerRoutes(
       const player = await storage.getPlayer(action.playerId);
       if (!player) return res.status(404).json({ error: "Player not found" });
 
-      const walletAddress = player.address;
-      const asaId = getFrontierAsaId();
-
-      if (!walletAddress || walletAddress === "PLAYER_WALLET" || walletAddress.startsWith("AI_")) {
-        return res.status(400).json({ error: "Connect a wallet before claiming FRONTIER" });
-      }
-
-      if (asaId) {
-        const optedIn = await isAddressOptedInToFrontier(walletAddress);
-        if (!optedIn) {
-          return res.status(400).json({ error: "You must opt-in to FRONTIER ASA before claiming" });
-        }
-      }
-
       const result = await storage.claimFrontier(action.playerId);
       let txId: string | undefined;
 
-      if (asaId && result.amount > 0) {
+      const walletAddress = player.address;
+      const asaId = getFrontierAsaId();
+      if (asaId && result.amount > 0 && walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
         try {
-          txId = await transferFrontierASA(walletAddress, result.amount);
-          console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
+          const optedIn = await isAddressOptedInToFrontier(walletAddress);
+          if (optedIn) {
+            txId = await transferFrontierASA(walletAddress, result.amount);
+            console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
+          } else {
+            console.log(`Player ${walletAddress} not opted into FRONTIER ASA, claim recorded in-game only`);
+          }
         } catch (transferErr) {
-          console.error("ASA transfer failed, rolling back claim:", transferErr);
-          await storage.restoreFrontier(action.playerId, result.amount);
-          return res.status(500).json({ error: "On-chain transfer failed. Your FRONTIER has been restored." });
+          console.error("ASA transfer failed (claim still recorded in-game):", transferErr);
         }
       }
 

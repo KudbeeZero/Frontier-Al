@@ -11,7 +11,10 @@ export function useBlockchainActions() {
   const [isPending, setIsPending] = useState(false);
   const [lastTxId, setLastTxId] = useState<string | null>(null);
   const [frontierAsaId, setFrontierAsaId] = useState<number | null>(null);
-  const [isOptedIn, setIsOptedIn] = useState(false);
+  const [isOptedIn, setIsOptedIn] = useState(() => {
+    const cached = localStorage.getItem("frontier_opted_in");
+    return cached === "true";
+  });
   const [treasuryAddress, setTreasuryAddress] = useState<string>("");
 
   useEffect(() => {
@@ -23,9 +26,24 @@ export function useBlockchainActions() {
 
   useEffect(() => {
     if (address && frontierAsaId) {
-      isOptedInToASA(address, frontierAsaId).then(setIsOptedIn);
+      isOptedInToASA(address, frontierAsaId).then((result) => {
+        setIsOptedIn(result);
+        if (result) {
+          localStorage.setItem("frontier_opted_in", "true");
+          localStorage.setItem("frontier_opted_in_address", address);
+        }
+      });
     }
   }, [address, frontierAsaId]);
+
+  useEffect(() => {
+    const cachedAddress = localStorage.getItem("frontier_opted_in_address");
+    if (address && cachedAddress && cachedAddress !== address) {
+      localStorage.removeItem("frontier_opted_in");
+      localStorage.removeItem("frontier_opted_in_address");
+      setIsOptedIn(false);
+    }
+  }, [address]);
 
   const signGameAction = useCallback(
     async (
@@ -198,6 +216,8 @@ export function useBlockchainActions() {
         const txId = await optInToASA(address, frontierAsaId);
         setLastTxId(txId);
         setIsOptedIn(true);
+        localStorage.setItem("frontier_opted_in", "true");
+        localStorage.setItem("frontier_opted_in_address", address);
         toast({ title: "Opt-In Confirmed", description: `Opted into FRONTIER ASA. TX: ${txId.slice(0, 8)}...` });
         return txId;
       } catch (error: unknown) {

@@ -90,7 +90,7 @@ export async function createFrontierASA(): Promise<number> {
   const txId = response.txid || txn.txID();
 
   const confirmedTxn = await algosdk.waitForConfirmation(algodClient, txId, 4);
-  const assetId = Number(confirmedTxn.assetIndex ?? confirmedTxn["asset-index"]);
+  const assetId = Number((confirmedTxn as any).assetIndex ?? (confirmedTxn as any)["asset-index"]);
 
   if (!assetId || assetId === 0) {
     throw new Error("ASA creation confirmed but no asset ID returned");
@@ -137,9 +137,13 @@ export async function isAddressOptedInToFrontier(address: string): Promise<boole
 
   try {
     const accountInfo = await algodClient.accountInformation(address).do();
-    const assets = accountInfo.assets || [];
-    return assets.some((a: any) => (a.assetIndex ?? a["asset-id"]) === frontierAsaId);
-  } catch {
+    const assets = (accountInfo as any).assets || (accountInfo as any)["assets"] || [];
+    return assets.some((a: any) => {
+      const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
+      return Number(id) === frontierAsaId;
+    });
+  } catch (err) {
+    console.error("Opt-in check failed for", address, err);
     return false;
   }
 }
@@ -148,7 +152,7 @@ export async function lookupExistingASA(): Promise<number | null> {
   try {
     const account = getAdminAccount();
     const accountInfo = await algodClient.accountInformation(account.addr.toString()).do();
-    const createdAssets = accountInfo["created-assets"] || accountInfo.createdAssets || [];
+    const createdAssets = (accountInfo as any)["created-assets"] || (accountInfo as any).createdAssets || [];
 
     for (const asset of createdAssets) {
       const params = asset.params || asset;
