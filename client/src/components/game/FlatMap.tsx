@@ -38,11 +38,22 @@ export function FlatMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number>(0);
   const [hoveredPlotId, setHoveredPlotId] = useState<string | null>(null);
+  const mapImageRef = useRef<HTMLImageElement | null>(null);
+  const mapImageLoaded = useRef(false);
 
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/images/map-background.jpg";
+    img.onload = () => {
+      mapImageRef.current = img;
+      mapImageLoaded.current = true;
+    };
+  }, []);
 
   const plotIndex = useMemo(() => {
     const map = new Map<string, LandParcel>();
@@ -108,17 +119,51 @@ export function FlatMap({
     const render = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = container.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      ctx.scale(dpr, dpr);
+      const needsResize = canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr);
+      if (needsResize) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const w = rect.width;
       const h = rect.height;
 
       ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, w, h);
+
+      const mapW = w * camera.zoom;
+      const mapH = h * camera.zoom;
+
+      if (mapImageLoaded.current && mapImageRef.current) {
+        ctx.globalAlpha = 0.55;
+        ctx.drawImage(mapImageRef.current, camera.x, camera.y, mapW, mapH);
+        ctx.globalAlpha = 1.0;
+      }
+
+      const gridAlpha = Math.min(0.15, 0.05 + camera.zoom * 0.01);
+      ctx.strokeStyle = `rgba(100, 200, 255, ${gridAlpha})`;
+      ctx.lineWidth = 0.5;
+      for (let latLine = -60; latLine <= 60; latLine += 30) {
+        const sy = ((90 - latLine) / 180) * mapH + camera.y;
+        if (sy >= -1 && sy <= h + 1) {
+          ctx.beginPath();
+          ctx.moveTo(Math.max(0, camera.x), sy);
+          ctx.lineTo(Math.min(w, camera.x + mapW), sy);
+          ctx.stroke();
+        }
+      }
+      for (let lngLine = -150; lngLine <= 150; lngLine += 30) {
+        const sx = ((lngLine + 180) / 360) * mapW + camera.x;
+        if (sx >= -1 && sx <= w + 1) {
+          ctx.beginPath();
+          ctx.moveTo(sx, Math.max(0, camera.y));
+          ctx.lineTo(sx, Math.min(h, camera.y + mapH));
+          ctx.stroke();
+        }
+      }
 
       const plotSize = getPlotSize(w);
       const playerPulse = Math.sin(pulse * 2) * 0.15 + 0.85;
