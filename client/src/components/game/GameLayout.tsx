@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
-import { PlanetGlobe } from "./PlanetGlobe";
+import { FlatMap } from "./FlatMap";
 import { AttackModal } from "./AttackModal";
 import { BottomNav, type NavTab } from "./BottomNav";
 import { LandSheet } from "./LandSheet";
@@ -316,7 +316,7 @@ export function GameLayout() {
           </div>
         </div>
       ) : gameState ? (
-        <PlanetGlobe
+        <FlatMap
           parcels={gameState.parcels}
           selectedParcelId={selectedParcelId}
           currentPlayerId={player?.id || null}

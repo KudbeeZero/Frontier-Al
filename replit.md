@@ -1,11 +1,12 @@
-# FRONTIER V1.2 - Algorand Strategy Game
+# FRONTIER V1.3 - Algorand Strategy Game
 
 ## Overview
-FRONTIER is a persistent globe-based war strategy game where players and AI factions compete for 21,000 land plots on a 3D rotating planet, powered by the Algorand blockchain (TestNet). Features wallet-gated gameplay, two-tier economy (defense improvements cost iron/fuel, facilities cost FRONTIER tokens burned), 500 FRNTR welcome bonus, enhanced globe visibility for owned territories, mobile-first UI with bottom navigation.
+FRONTIER is a persistent 2D map-based war strategy game where players and AI factions compete for 21,000 land plots, powered by the Algorand blockchain (TestNet). Features wallet-gated gameplay, two-tier economy (defense improvements cost iron/fuel, facilities cost FRONTIER tokens burned), 500 FRNTR welcome bonus, clear color-coded map (green=player, red=enemy, black=unclaimed), mobile-first UI with bottom navigation. Designed for easy multi-chain portability.
 
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS
-- **3D Rendering**: Three.js (v0.170), @react-three/fiber (v8.17), @react-three/drei (v9.114)
+- **Map Rendering**: 2D HTML Canvas (FlatMap.tsx) - equirectangular projection with zoom/pan, replaces 3D globe
+- **3D Globe (legacy)**: Three.js, @react-three/fiber, @react-three/drei (PlanetGlobe.tsx still exists but not used)
 - **Backend**: Node.js, Express, In-memory storage
 - **Blockchain**: Algorand TestNet with dual wallet support (Pera + LUTE)
   - AlgoSDK for transaction building
@@ -32,7 +33,8 @@ FRONTIER is a persistent globe-based war strategy game where players and AI fact
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── game/
-│   │   │   │   ├── PlanetGlobe.tsx      # 3D rotating globe with Three.js + InstancedMesh (21K plots)
+│   │   │   │   ├── FlatMap.tsx           # 2D canvas map with equirectangular projection (21K plots)
+│   │   │   │   ├── PlanetGlobe.tsx      # Legacy 3D rotating globe (not currently used)
 │   │   │   │   ├── GameLayout.tsx       # Main game layout orchestrating all panels
 │   │   │   │   ├── BottomNav.tsx        # Mobile bottom navigation (Map/Inventory/Battles/Rankings/Rules)
 │   │   │   │   ├── LandSheet.tsx        # Bottom sheet land popup with mine/upgrade/build/attack/buy actions
