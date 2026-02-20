@@ -120,7 +120,17 @@ export function LandSheet({
                   {isOwned && <span className="text-primary font-display uppercase">Your Territory</span>}
                   {isEnemyOwned && <span className="text-destructive font-display uppercase">Enemy Territory</span>}
                   {isUnclaimed && <span className="font-display uppercase">Unclaimed</span>}
-                  <span className="font-mono">{parcel.frontierPerHour.toFixed(1)} FRNTR/hr</span>
+                  <span className="font-mono">{(() => {
+                    const drillBonus = parcel.improvements.filter(i => i.type === "mine_drill").reduce((s, i) => s + i.level * 0.25, 0);
+                    const turretBonus = parcel.improvements.filter(i => i.type === "turret").reduce((s, i) => s + i.level * 0.1, 0);
+                    const shieldBonus = parcel.improvements.filter(i => i.type === "shield_gen").reduce((s, i) => s + i.level * 0.15, 0);
+                    const storageBonus = parcel.improvements.filter(i => i.type === "storage_depot").reduce((s, i) => s + i.level * 0.05, 0);
+                    const radarBonus = parcel.improvements.filter(i => i.type === "radar").reduce((s, i) => s + i.level * 0.1, 0);
+                    const fortressBonus = parcel.improvements.filter(i => i.type === "fortress").reduce((s, i) => s + i.level * 0.2, 0);
+                    const totalBonus = drillBonus + turretBonus + shieldBonus + storageBonus + radarBonus + fortressBonus;
+                    const effectiveRate = parcel.frontierPerHour * (1 + totalBonus) * (parcel.richness / 100);
+                    return effectiveRate.toFixed(2);
+                  })()} FRNTR/hr</span>
                 </div>
               </div>
             </div>

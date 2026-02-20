@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 
 export function GameLayout() {
-  const { isConnected, balance } = useWallet();
+  const wallet = useWallet();
+  const { isConnected, balance } = wallet;
   const { signMineAction, signUpgradeAction, signAttackAction, signPurchaseAction, signClaimFrontierAction, signOptInToFrontier, isWalletConnected, frontierAsaId, isOptedInToFrontier, treasuryAddress } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer();
@@ -38,6 +39,18 @@ export function GameLayout() {
     const seen = localStorage.getItem("frontier_onboarding_done");
     if (!seen) setShowOnboarding(true);
   }, []);
+
+  useEffect(() => {
+    if (player && wallet.address && wallet.isConnected) {
+      if (player.address !== wallet.address) {
+        fetch("/api/actions/connect-wallet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId: player.id, address: wallet.address }),
+        }).catch((err) => console.error("Failed to sync wallet address:", err));
+      }
+    }
+  }, [player?.id, wallet.address, wallet.isConnected]);
 
   const handleOnboardingComplete = () => {
     localStorage.setItem("frontier_onboarding_done", "true");

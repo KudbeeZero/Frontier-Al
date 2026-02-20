@@ -44,6 +44,22 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/actions/connect-wallet", async (req, res) => {
+    try {
+      const { playerId, address } = req.body;
+      if (!playerId || !address) {
+        return res.status(400).json({ error: "playerId and address are required" });
+      }
+      if (typeof address !== "string" || address.length !== 58) {
+        return res.status(400).json({ error: "Invalid Algorand address" });
+      }
+      await storage.updatePlayerAddress(playerId, address);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Failed to connect wallet" });
+    }
+  });
+
   app.get("/api/game/state", async (req, res) => {
     try {
       const gameState = await storage.getGameState();

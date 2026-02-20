@@ -80,6 +80,7 @@ export interface IStorage {
   buildImprovement(action: BuildAction): Promise<LandParcel>;
   purchaseLand(action: PurchaseAction): Promise<LandParcel>;
   collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }>;
+  updatePlayerAddress(playerId: string, address: string): Promise<void>;
   claimFrontier(playerId: string): Promise<{ amount: number }>;
   restoreFrontier(playerId: string, amount: number): Promise<void>;
   mintAvatar(action: MintAvatarAction): Promise<CommanderAvatar>;
@@ -246,7 +247,23 @@ export class MemStorage implements IStorage {
     const drillBonus = parcel.improvements
       .filter((i) => i.type === "mine_drill")
       .reduce((sum, i) => sum + i.level * 0.25, 0);
-    const rate = parcel.frontierPerHour * (1 + drillBonus) * (parcel.richness / 100);
+    const turretBonus = parcel.improvements
+      .filter((i) => i.type === "turret")
+      .reduce((sum, i) => sum + i.level * 0.1, 0);
+    const shieldBonus = parcel.improvements
+      .filter((i) => i.type === "shield_gen")
+      .reduce((sum, i) => sum + i.level * 0.15, 0);
+    const storageBonus = parcel.improvements
+      .filter((i) => i.type === "storage_depot")
+      .reduce((sum, i) => sum + i.level * 0.05, 0);
+    const radarBonus = parcel.improvements
+      .filter((i) => i.type === "radar")
+      .reduce((sum, i) => sum + i.level * 0.1, 0);
+    const fortressBonus = parcel.improvements
+      .filter((i) => i.type === "fortress")
+      .reduce((sum, i) => sum + i.level * 0.2, 0);
+    const totalBonus = drillBonus + turretBonus + shieldBonus + storageBonus + radarBonus + fortressBonus;
+    const rate = parcel.frontierPerHour * (1 + totalBonus) * (parcel.richness / 100);
     const earned = rate * hoursSinceLastClaim;
     parcel.frontierAccumulated += earned;
   }
@@ -399,6 +416,14 @@ export class MemStorage implements IStorage {
     }
 
     return { iron: totalIron, fuel: totalFuel, crystal: totalCrystal };
+  }
+
+  async updatePlayerAddress(playerId: string, address: string): Promise<void> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player) throw new Error("Player not found");
+    if (player.isAI) throw new Error("Cannot update AI player address");
+    player.address = address;
   }
 
   async claimFrontier(playerId: string): Promise<{ amount: number }> {
