@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
 import { useWallet } from "./useWallet";
-import { createGameActionTransaction } from "@/lib/algorand";
+import { createGameActionTransaction, createPurchaseWithAlgoTransaction, createClaimFrontierTransaction, GAME_TREASURY_ADDRESS } from "@/lib/algorand";
 import { useToast } from "@/hooks/use-toast";
 
-type ActionType = "mine" | "upgrade" | "attack" | "claim";
+type ActionType = "mine" | "upgrade" | "attack" | "claim" | "build" | "purchase" | "claim_frontier";
 
 export function useBlockchainActions() {
   const { isConnected, address } = useWallet();
@@ -14,7 +14,7 @@ export function useBlockchainActions() {
   const signGameAction = useCallback(
     async (
       actionType: ActionType,
-      parcelId: string,
+      plotId: number,
       metadata?: Record<string, unknown>
     ): Promise<string | null> => {
       if (!isConnected || !address) {
@@ -31,7 +31,7 @@ export function useBlockchainActions() {
         const txId = await createGameActionTransaction(
           address,
           actionType,
-          parcelId,
+          plotId,
           metadata
         );
         setLastTxId(txId);
@@ -65,25 +65,95 @@ export function useBlockchainActions() {
   );
 
   const signMineAction = useCallback(
-    (parcelId: string) => signGameAction("mine", parcelId),
+    (plotId: number) => signGameAction("mine", plotId),
     [signGameAction]
   );
 
   const signUpgradeAction = useCallback(
-    (parcelId: string, upgradeType: string) =>
-      signGameAction("upgrade", parcelId, { upgradeType }),
+    (plotId: number, upgradeType: string) =>
+      signGameAction("upgrade", plotId, { upgradeType }),
     [signGameAction]
   );
 
   const signAttackAction = useCallback(
-    (parcelId: string, troops: number, iron: number, fuel: number) =>
-      signGameAction("attack", parcelId, { troops, iron, fuel }),
+    (plotId: number, troops: number, iron: number, fuel: number) =>
+      signGameAction("attack", plotId, { troops, iron, fuel }),
     [signGameAction]
   );
 
-  const signClaimAction = useCallback(
-    (parcelId: string) => signGameAction("claim", parcelId),
-    [signGameAction]
+  const signPurchaseAction = useCallback(
+    async (plotId: number, algoAmount: number): Promise<string | null> => {
+      if (!isConnected || !address) {
+        toast({
+          title: "Wallet Not Connected",
+          description: "Connect your wallet to purchase land.",
+          variant: "destructive",
+        });
+        return null;
+      }
+
+      setIsPending(true);
+      try {
+        const txId = await createPurchaseWithAlgoTransaction(
+          address,
+          GAME_TREASURY_ADDRESS,
+          plotId,
+          algoAmount
+        );
+        setLastTxId(txId);
+        toast({
+          title: "Purchase Confirmed",
+          description: `Land purchased for ${algoAmount} ALGO. TX: ${txId.slice(0, 8)}...`,
+        });
+        return txId;
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Transaction Cancelled", description: "Purchase cancelled." });
+        } else {
+          toast({ title: "Purchase Failed", description: err?.message || "Failed", variant: "destructive" });
+        }
+        return null;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [isConnected, address, toast]
+  );
+
+  const signClaimFrontierAction = useCallback(
+    async (frontierAmount: number): Promise<string | null> => {
+      if (!isConnected || !address) {
+        toast({
+          title: "Wallet Not Connected",
+          description: "Connect your wallet to claim FRONTIER tokens.",
+          variant: "destructive",
+        });
+        return null;
+      }
+
+      setIsPending(true);
+      try {
+        const txId = await createClaimFrontierTransaction(address, frontierAmount);
+        setLastTxId(txId);
+        toast({
+          title: "FRONTIER Claimed",
+          description: `Claimed ${frontierAmount.toFixed(2)} FRONTIER tokens. TX: ${txId.slice(0, 8)}...`,
+        });
+        return txId;
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Claim Cancelled", description: "Claim cancelled." });
+        } else {
+          toast({ title: "Claim Failed", description: err?.message || "Failed", variant: "destructive" });
+        }
+        return null;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [isConnected, address, toast]
   );
 
   return {
@@ -92,7 +162,8 @@ export function useBlockchainActions() {
     signMineAction,
     signUpgradeAction,
     signAttackAction,
-    signClaimAction,
+    signPurchaseAction,
+    signClaimFrontierAction,
     isWalletConnected: isConnected,
   };
 }

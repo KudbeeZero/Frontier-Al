@@ -99,6 +99,18 @@ export function useCollectAll() {
   });
 }
 
+export function useClaimFrontier() {
+  return useMutation({
+    mutationFn: async (playerId: string) => {
+      const response = await apiRequest("POST", "/api/actions/claim-frontier", { playerId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
 export function useBattles() {
   const { data: gameState } = useGameState();
   return gameState?.battles || [];

@@ -1,32 +1,50 @@
-export interface HexCoord {
-  q: number;
-  r: number;
+export interface PlotCoord {
+  plotId: number;
+  lat: number;
+  lng: number;
 }
 
-export function generateHexGrid(radius: number): HexCoord[] {
-  const hexes: HexCoord[] = [];
-  for (let q = -radius; q <= radius; q++) {
-    const r1 = Math.max(-radius, -q - radius);
-    const r2 = Math.min(radius, -q + radius);
-    for (let r = r1; r <= r2; r++) {
-      hexes.push({ q, r });
-    }
+export function generateFibonacciSphere(count: number): PlotCoord[] {
+  const plots: PlotCoord[] = [];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i / (count - 1)) * 2;
+    const radius = Math.sqrt(1 - y * y);
+    const theta = goldenAngle * i;
+
+    const lat = Math.asin(y) * (180 / Math.PI);
+    const lng = ((theta * 180) / Math.PI) % 360;
+    const normalizedLng = lng > 180 ? lng - 360 : lng;
+
+    plots.push({
+      plotId: i + 1,
+      lat,
+      lng: normalizedLng,
+    });
   }
-  return hexes;
+
+  return plots;
 }
 
-export function getHexNeighbors(q: number, r: number): HexCoord[] {
-  const directions = [
-    { q: 1, r: 0 },
-    { q: 1, r: -1 },
-    { q: 0, r: -1 },
-    { q: -1, r: 0 },
-    { q: -1, r: 1 },
-    { q: 0, r: 1 },
-  ];
-  return directions.map((d) => ({ q: q + d.q, r: r + d.r }));
+export function sphereDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLng = (lng2 - lng1) * toRad;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function hexDistance(a: HexCoord, b: HexCoord): number {
-  return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2;
+export function findNearbyPlots(
+  targetLat: number,
+  targetLng: number,
+  allPlots: PlotCoord[],
+  maxDistance: number = 0.05
+): PlotCoord[] {
+  return allPlots.filter((p) => {
+    const dist = sphereDistance(targetLat, targetLng, p.lat, p.lng);
+    return dist > 0 && dist < maxDistance;
+  });
 }

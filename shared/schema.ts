@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type BiomeType = "forest" | "desert" | "mountain" | "plains" | "water";
+export type BiomeType = "forest" | "desert" | "mountain" | "plains" | "water" | "tundra" | "volcanic" | "swamp";
 
 export const biomeColors: Record<BiomeType, string> = {
   forest: "#1a472a",
@@ -8,6 +8,9 @@ export const biomeColors: Record<BiomeType, string> = {
   mountain: "#5c5c5c",
   plains: "#4a7c23",
   water: "#1e4d7b",
+  tundra: "#a8c8d8",
+  volcanic: "#8b2500",
+  swamp: "#3a5a2a",
 };
 
 export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: number }> = {
@@ -16,6 +19,20 @@ export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: num
   mountain: { yieldMod: 0.6, defenseMod: 1.3 },
   plains: { yieldMod: 1.0, defenseMod: 1.0 },
   water: { yieldMod: 0.5, defenseMod: 0.7 },
+  tundra: { yieldMod: 0.7, defenseMod: 1.2 },
+  volcanic: { yieldMod: 1.5, defenseMod: 0.8 },
+  swamp: { yieldMod: 0.9, defenseMod: 0.6 },
+};
+
+export const FRONTIER_PER_HOUR_BY_BIOME: Record<BiomeType, number> = {
+  forest: 1.2,
+  desert: 0.8,
+  mountain: 1.0,
+  plains: 1.0,
+  water: 0.5,
+  tundra: 0.7,
+  volcanic: 1.5,
+  swamp: 0.9,
 };
 
 export type ImprovementType = "turret" | "shield_gen" | "mine_drill" | "storage_depot" | "radar" | "fortress";
@@ -40,15 +57,11 @@ export const IMPROVEMENT_INFO: Record<ImprovementType, {
   fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
 };
 
-export interface HexCoord {
-  q: number;
-  r: number;
-}
-
 export interface LandParcel {
   id: string;
-  q: number;
-  r: number;
+  plotId: number;
+  lat: number;
+  lng: number;
   biome: BiomeType;
   richness: number;
   ownerId: string | null;
@@ -62,7 +75,10 @@ export interface LandParcel {
   activeBattleId: string | null;
   yieldMultiplier: number;
   improvements: Improvement[];
-  purchasePrice: { iron: number; fuel: number } | null;
+  purchasePriceAlgo: number | null;
+  frontierAccumulated: number;
+  lastFrontierClaimTs: number;
+  frontierPerHour: number;
 }
 
 export interface Player {
@@ -72,11 +88,13 @@ export interface Player {
   iron: number;
   fuel: number;
   crystal: number;
+  frontier: number;
   ownedParcels: string[];
   isAI: boolean;
   aiBehavior?: "expansionist" | "defensive" | "raider" | "economic" | "adaptive";
   totalIronMined: number;
   totalFuelMined: number;
+  totalFrontierEarned: number;
   attacksWon: number;
   attacksLost: number;
   territoriesCaptured: number;
@@ -100,7 +118,7 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier";
   playerId: string;
   parcelId?: string;
   battleId?: string;
@@ -115,6 +133,7 @@ export interface LeaderboardEntry {
   territories: number;
   totalIronMined: number;
   totalFuelMined: number;
+  totalFrontierEarned: number;
   attacksWon: number;
   attacksLost: number;
   isAI: boolean;
@@ -128,6 +147,10 @@ export interface GameState {
   leaderboard: LeaderboardEntry[];
   currentTurn: number;
   lastUpdateTs: number;
+  totalPlots: number;
+  claimedPlots: number;
+  frontierTotalSupply: number;
+  frontierCirculating: number;
 }
 
 export const mineActionSchema = z.object({
@@ -166,12 +189,17 @@ export const collectActionSchema = z.object({
   playerId: z.string(),
 });
 
+export const claimFrontierActionSchema = z.object({
+  playerId: z.string(),
+});
+
 export type MineAction = z.infer<typeof mineActionSchema>;
 export type UpgradeAction = z.infer<typeof upgradeActionSchema>;
 export type AttackAction = z.infer<typeof attackActionSchema>;
 export type BuildAction = z.infer<typeof buildActionSchema>;
 export type PurchaseAction = z.infer<typeof purchaseActionSchema>;
 export type CollectAction = z.infer<typeof collectActionSchema>;
+export type ClaimFrontierAction = z.infer<typeof claimFrontierActionSchema>;
 
 export const MINE_COOLDOWN_MS = 5 * 60 * 1000;
 export const BATTLE_DURATION_MS = 10 * 60 * 1000;
@@ -185,10 +213,16 @@ export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
 };
 export const ATTACK_BASE_COST = { iron: 30, fuel: 20 };
 
-export const LAND_PURCHASE_BASE: Record<BiomeType, { iron: number; fuel: number }> = {
-  forest: { iron: 80, fuel: 40 },
-  plains: { iron: 60, fuel: 30 },
-  mountain: { iron: 120, fuel: 60 },
-  desert: { iron: 40, fuel: 20 },
-  water: { iron: 200, fuel: 100 },
+export const TOTAL_PLOTS = 21000;
+export const FRONTIER_TOTAL_SUPPLY = 1_000_000_000;
+
+export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = {
+  forest: 0.5,
+  plains: 0.3,
+  mountain: 0.8,
+  desert: 0.2,
+  water: 1.5,
+  tundra: 0.4,
+  volcanic: 1.0,
+  swamp: 0.3,
 };

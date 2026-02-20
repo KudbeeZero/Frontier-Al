@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp } from "lucide-react";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -100,8 +100,8 @@ export function LandSheet({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-display text-sm font-bold uppercase tracking-wide" data-testid="text-sector-coords">
-                    Sector {parcel.q},{parcel.r}
+                  <span className="font-display text-sm font-bold uppercase tracking-wide" data-testid="text-plot-id">
+                    Plot #{parcel.plotId}
                   </span>
                   <Badge variant="outline" className="text-[10px] capitalize">{parcel.biome}</Badge>
                 </div>
@@ -109,6 +109,7 @@ export function LandSheet({
                   {isOwned && <span className="text-primary font-display uppercase">Your Territory</span>}
                   {isEnemyOwned && <span className="text-destructive font-display uppercase">Enemy Territory</span>}
                   {isUnclaimed && <span className="font-display uppercase">Unclaimed</span>}
+                  <span className="font-mono">{parcel.frontierPerHour.toFixed(1)} FRNTR/hr</span>
                 </div>
               </div>
             </div>
@@ -204,16 +205,16 @@ export function LandSheet({
                 Attack
               </Button>
             )}
-            {isUnclaimed && player && parcel.purchasePrice && (
+            {isUnclaimed && player && parcel.purchasePriceAlgo !== null && (
               <Button
                 size="sm"
                 onClick={onPurchase}
-                disabled={isPurchasing || !player || player.iron < parcel.purchasePrice.iron || player.fuel < parcel.purchasePrice.fuel}
+                disabled={isPurchasing}
                 className="flex-1 font-display uppercase tracking-wide text-xs"
                 data-testid="button-purchase"
               >
-                <ShoppingCart className="w-3.5 h-3.5 mr-1" />
-                Buy ({parcel.purchasePrice.iron} Iron, {parcel.purchasePrice.fuel} Fuel)
+                <Coins className="w-3.5 h-3.5 mr-1" />
+                Buy ({parcel.purchasePriceAlgo} ALGO)
               </Button>
             )}
           </div>

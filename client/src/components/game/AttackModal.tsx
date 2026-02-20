@@ -65,7 +65,7 @@ export function AttackModal({
             Deploy Attack
           </DialogTitle>
           <DialogDescription>
-            Target: Sector {targetParcel.q},{targetParcel.r} ({targetParcel.biome})
+            Target: Plot #{targetParcel.plotId} ({targetParcel.biome})
           </DialogDescription>
         </DialogHeader>
 

@@ -108,8 +108,8 @@ export function BaseInfoPanel({
       <div className="p-6 space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-xl font-bold uppercase tracking-wide" data-testid="text-sector-coords">
-              Sector {parcel.q},{parcel.r}
+            <h2 className="font-display text-xl font-bold uppercase tracking-wide" data-testid="text-plot-id">
+              Plot #{parcel.plotId}
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline" className="capitalize font-display" data-testid="badge-biome">

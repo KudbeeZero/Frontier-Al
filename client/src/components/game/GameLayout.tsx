@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
-import { HexGrid } from "./HexGrid";
 import { PlanetGlobe } from "./PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BottomNav, type NavTab } from "./BottomNav";
@@ -15,14 +14,14 @@ import { BaseInfoPanel } from "./BaseInfoPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
-import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll } from "@/hooks/useGameState";
+import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ImprovementType } from "@shared/schema";
 
 export function GameLayout() {
   const { isConnected, balance } = useWallet();
-  const { signMineAction, signUpgradeAction, signAttackAction, isWalletConnected } = useBlockchainActions();
+  const { signMineAction, signUpgradeAction, signAttackAction, signPurchaseAction, signClaimFrontierAction, isWalletConnected } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer();
   const { toast } = useToast();
@@ -48,14 +47,15 @@ export function GameLayout() {
   const buildMutation = useBuild();
   const purchaseMutation = usePurchase();
   const collectMutation = useCollectAll();
+  const claimFrontierMutation = useClaimFrontier();
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
 
   const handleMine = async () => {
-    if (!player || !selectedParcelId) return;
+    if (!player || !selectedParcelId || !selectedParcel) return;
     if (isWalletConnected) {
-      const txId = await signMineAction(selectedParcelId);
+      const txId = await signMineAction(selectedParcel.plotId);
       if (!txId) return;
     }
     mineMutation.mutate(
@@ -68,9 +68,9 @@ export function GameLayout() {
   };
 
   const handleUpgrade = async (type: string) => {
-    if (!player || !selectedParcelId) return;
+    if (!player || !selectedParcelId || !selectedParcel) return;
     if (isWalletConnected) {
-      const txId = await signUpgradeAction(selectedParcelId, type);
+      const txId = await signUpgradeAction(selectedParcel.plotId, type);
       if (!txId) return;
     }
     upgradeMutation.mutate(
@@ -85,9 +85,9 @@ export function GameLayout() {
   const handleAttackClick = () => setAttackModalOpen(true);
 
   const handleAttackConfirm = async (troops: number, iron: number, fuel: number) => {
-    if (!player || !selectedParcelId) return;
+    if (!player || !selectedParcelId || !selectedParcel) return;
     if (isWalletConnected) {
-      const txId = await signAttackAction(selectedParcelId, troops, iron, fuel);
+      const txId = await signAttackAction(selectedParcel.plotId, troops, iron, fuel);
       if (!txId) return;
     }
     attackMutation.mutate(
@@ -113,8 +113,12 @@ export function GameLayout() {
     );
   };
 
-  const handlePurchase = () => {
-    if (!player || !selectedParcelId) return;
+  const handlePurchase = async () => {
+    if (!player || !selectedParcelId || !selectedParcel) return;
+    if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
+      const txId = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
+      if (!txId) return;
+    }
     purchaseMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -135,6 +139,23 @@ export function GameLayout() {
         toast({ title: "Resources Collected", description: `+${c.iron} Iron, +${c.fuel} Fuel, +${c.crystal} Crystal` });
       },
       onError: (error) => toast({ title: "Collection Failed", description: error.message, variant: "destructive" }),
+    });
+  };
+
+  const handleClaimFrontier = async () => {
+    if (!player || !gameState) return;
+    const ownedParcels = gameState.parcels.filter(p => p.ownerId === player.id);
+    const pendingAmount = ownedParcels.reduce((sum, p) => sum + (p.frontierAccumulated || 0), 0);
+    if (isWalletConnected && pendingAmount > 0) {
+      const txId = await signClaimFrontierAction(pendingAmount);
+      if (!txId) return;
+    }
+    claimFrontierMutation.mutate(player.id, {
+      onSuccess: (data: any) => {
+        const amount = data.claimed?.amount || 0;
+        toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens` });
+      },
+      onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" }),
     });
   };
 
@@ -232,6 +253,7 @@ export function GameLayout() {
                 iron={player.iron}
                 fuel={player.fuel}
                 crystal={player.crystal}
+                frontier={player.frontier}
                 algoBalance={balance}
               />
             </div>
@@ -261,8 +283,10 @@ export function GameLayout() {
                 player={player}
                 parcels={gameState.parcels}
                 onCollectAll={handleCollectAll}
+                onClaimFrontier={handleClaimFrontier}
                 onSelectParcel={handleParcelSelectFromInventory}
                 isCollecting={collectMutation.isPending}
+                isClaimingFrontier={claimFrontierMutation.isPending}
               />
             )}
             {activeTab === "battles" && gameState && (

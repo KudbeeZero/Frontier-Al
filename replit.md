@@ -1,7 +1,7 @@
 # FRONTIER V1.1 - Algorand Strategy Game
 
 ## Overview
-FRONTIER is a persistent hex-based war strategy game where players and AI factions compete for land, resources, and dominance on the Algorand blockchain (TestNet V1.1). Features mobile-first UI with bottom navigation, bottom-sheet land details, leaderboard, onboarding flow, and improvements/turrets system.
+FRONTIER is a persistent globe-based war strategy game where players and AI factions compete for 21,000 land plots on a 3D rotating planet, powered by the Algorand blockchain (TestNet V1.1). Features mobile-first UI with bottom navigation, bottom-sheet land details, leaderboard, onboarding flow, improvements/turrets system, and FRONTIER token economy.
 
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS
@@ -12,7 +12,7 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
   - @perawallet/connect for Pera Wallet connection
   - lute-connect for LUTE Wallet connection
   - AlgoNode cloud endpoints for TestNet
-  - ASA (Algorand Standard Asset) support for Iron/Fuel/Crystal tokens
+  - FRONTIER ASA token (1B total supply, earned passively per plot)
 - **Styling**: Cyberpunk/Military sci-fi theme with Rajdhani + Inter fonts
 
 ## Algorand Integration
@@ -21,10 +21,10 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 - **Endpoints**:
   - Algod: https://testnet-api.algonode.cloud
   - Indexer: https://testnet-idx.algonode.cloud
-- **Game Actions**: All game actions (mine, upgrade, attack, claim, purchase, build) can be recorded on-chain as zero-amount transactions with note data
-- **ASA Support**: Functions for opt-in, balance checking, and resource token management (FRONTIER-IRON, FRONTIER-FUEL, FRONTIER-CRYSTAL)
-- **On-chain actions**: Territory claims, attacks, purchases (recorded on Algorand)
-- **Off-chain actions**: Upgrades, builds, storage management (server-side only for speed)
+- **FRONTIER Token**: ASA token with 1B total supply, earned passively per owned plot (rate varies by biome)
+- **Land Purchase**: Costs ALGO (real value), biome-based pricing (0.4-0.8 ALGO)
+- **On-chain actions**: Territory claims, attacks, purchases, FRONTIER claims (recorded on Algorand)
+- **Off-chain actions**: Upgrades, builds, mining, storage management (server-side only for speed)
 
 ## Project Structure
 ```
@@ -32,49 +32,69 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── game/
-│   │   │   │   ├── PlanetGlobe.tsx      # 3D rotating globe with Three.js (replaces flat HexGrid on map tab)
-│   │   │   │   ├── HexGrid.tsx         # Legacy Canvas hex map (kept as fallback)
+│   │   │   │   ├── PlanetGlobe.tsx      # 3D rotating globe with Three.js + InstancedMesh (21K plots)
+│   │   │   │   ├── HexGrid.tsx         # Legacy Canvas hex map (unused, kept as fallback)
 │   │   │   │   ├── GameLayout.tsx       # Main game layout orchestrating all panels
 │   │   │   │   ├── BottomNav.tsx        # Mobile bottom navigation (Map/Inventory/Battles/Rankings/Rules)
 │   │   │   │   ├── LandSheet.tsx        # Bottom sheet land popup with mine/upgrade/build/attack/buy actions
 │   │   │   │   ├── LeaderboardPanel.tsx # Player rankings with territory/mining/combat stats
 │   │   │   │   ├── BattlesPanel.tsx     # Active/recent battles with progress timers
-│   │   │   │   ├── InventoryPanel.tsx   # Player resources, Collect All, owned territories list
+│   │   │   │   ├── InventoryPanel.tsx   # Player resources, FRONTIER balance, Collect All, owned territories
 │   │   │   │   ├── RulesPanel.tsx       # How to play guide
 │   │   │   │   ├── OnboardingFlow.tsx   # Step-by-step tutorial for new players
 │   │   │   │   ├── BaseInfoPanel.tsx    # Desktop selected tile info
 │   │   │   │   ├── WarRoomPanel.tsx     # Desktop battles & AI activity
-│   │   │   │   ├── ResourceHUD.tsx      # Resource display overlay
+│   │   │   │   ├── ResourceHUD.tsx      # Resource display overlay (Iron, Fuel, Crystal, FRONTIER)
 │   │   │   │   ├── WalletConnect.tsx    # Wallet connection UI
 │   │   │   │   ├── TopBar.tsx           # Header with logo
+│   │   │   │   ├── MobileActionBar.tsx  # Mobile action bar for selected plot
 │   │   │   │   └── AttackModal.tsx      # Attack deployment dialog
 │   │   │   └── ui/                      # Shadcn components
 │   │   ├── contexts/
 │   │   │   └── WalletContext.tsx         # Shared wallet state context
 │   │   ├── hooks/
 │   │   │   ├── useWallet.ts             # Re-exports wallet hook from context
-│   │   │   ├── useBlockchainActions.ts  # On-chain transaction signing
-│   │   │   └── useGameState.ts          # Game data fetching + mutations (mine/upgrade/attack/build/purchase/collect)
+│   │   │   ├── useBlockchainActions.ts  # On-chain transaction signing (ALGO payments, FRONTIER claims)
+│   │   │   └── useGameState.ts          # Game data fetching + mutations (mine/upgrade/attack/build/purchase/collect/claim)
 │   │   ├── lib/
-│   │   │   ├── algorand.ts             # Algorand SDK setup, transactions, ASA support
-│   │   │   ├── hexMath.ts              # Hex grid math utilities
+│   │   │   ├── algorand.ts             # Algorand SDK setup, transactions, FRONTIER ASA support
+│   │   │   ├── hexMath.ts              # Hex grid math utilities (legacy)
 │   │   │   └── queryClient.ts          # React Query setup
 │   │   └── pages/
 │   │       └── game.tsx                # Main game page
 ├── server/
-│   ├── routes.ts                       # API endpoints (mine/upgrade/attack/build/purchase/collect)
-│   ├── storage.ts                      # In-memory game state with all game logic
-│   └── hexUtils.ts                     # Server-side hex utilities
+│   ├── routes.ts                       # API endpoints (mine/upgrade/attack/build/purchase/collect/claim)
+│   ├── storage.ts                      # In-memory game state with 21K plots, Fibonacci sphere distribution
+│   └── hexUtils.ts                     # Server-side hex utilities (legacy)
 └── shared/
-    └── schema.ts                       # Shared types, schemas, game constants
+    └── schema.ts                       # Shared types, schemas, game constants (plotId-based)
 ```
 
 ## Game Mechanics
+
+### Land System
+- **21,000 plots** distributed across the planet using Fibonacci sphere algorithm
+- Each plot has: plotId (1-21000), lat/lng coordinates, biome, richness (40-100)
+- **8 Biomes**: forest, desert, mountain, plains, water, tundra, volcanic, swamp
+- Biomes assigned by latitude bands + deterministic noise
 
 ### Resources
 - **Iron**: Primary resource for upgrades and attacks
 - **Fuel**: Secondary resource for operations
 - **Crystal**: Rare resource from rich territories
+- **FRONTIER**: ASA token earned passively per owned plot (0.5-1.5/hr based on biome)
+
+### FRONTIER Token Economy
+- **Total Supply**: 1,000,000,000 (1 billion)
+- **Earning**: Each owned plot passively accumulates FRONTIER per hour
+- **Rates by biome**: volcanic (1.5/hr), mountain (1.0/hr), forest/plains/swamp (0.7/hr), desert/tundra (0.7/hr), water (0.5/hr)
+- **Claiming**: Players claim accumulated FRONTIER via on-chain transaction
+- **Mining Drill bonus**: +25% FRONTIER rate per mining drill level
+
+### Land Purchase
+- Costs **ALGO** (real value), not in-game resources
+- Biome-based pricing: water/tundra/swamp (0.4 ALGO), forest/desert/plains (0.5 ALGO), mountain/volcanic (0.8 ALGO)
+- Requires ALGO payment transaction signed by wallet
 
 ### Timing
 - **Mining Cooldown**: 5 minutes
@@ -87,13 +107,14 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 - **Upgrade**: Improve defense, yield, or add fortress upgrades
 - **Build**: Construct improvements (turret, shield_gen, mine_drill, storage_depot, radar, fortress)
 - **Attack**: Deploy troops against enemy or unclaimed territory (10-min resolution)
-- **Purchase**: Buy unclaimed land with Iron/Fuel (biome-based pricing)
+- **Purchase**: Buy unclaimed land with ALGO (biome-based pricing)
+- **Claim FRONTIER**: Collect accumulated FRONTIER tokens from owned plots
 - **Collect All**: Gather stored resources from all owned tiles at once
 
 ### Improvements System
 - **Turret** (max lv3): +3 defense per level
 - **Shield Generator** (max lv2): +5 defense per level
-- **Mining Drill** (max lv3): +25% yield per level
+- **Mining Drill** (max lv3): +25% yield per level, +25% FRONTIER rate per level
 - **Storage Depot** (max lv3): +100 capacity per level
 - **Radar Array** (max lv1): See incoming attacks
 - **Fortress** (max lv1): +8 defense, +50 capacity
@@ -103,9 +124,10 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 - **KRONOS**: Defensive focus
 - **VANGUARD**: Raider tactics
 - **SPECTRE**: Economic optimization
+- AI factions use spatial proximity (nearest plots within ~15 degrees) for neighbor detection
 
 ## API Endpoints
-- `GET /api/game/state` - Full game state (polled every 5s)
+- `GET /api/game/state` - Full game state with all 21K plots (polled every 5s)
 - `GET /api/game/parcel/:id` - Single parcel info
 - `GET /api/game/player/:id` - Player info
 - `GET /api/game/leaderboard` - Leaderboard rankings
@@ -113,28 +135,25 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 - `POST /api/actions/upgrade` - Upgrade base
 - `POST /api/actions/attack` - Deploy attack
 - `POST /api/actions/build` - Build improvement
-- `POST /api/actions/purchase` - Purchase land
+- `POST /api/actions/purchase` - Purchase land (ALGO payment)
 - `POST /api/actions/collect` - Collect all resources
+- `POST /api/actions/claim-frontier` - Claim accumulated FRONTIER tokens
 
 ## Design Guidelines
 See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 
-## Recent Changes (V1.1)
-- Mobile-first UI with bottom navigation adapted from Zero Colony patterns
-- Bottom sheet land popup replacing desktop-only panels on mobile
-- Leaderboard panel with territory/mining/combat statistics
-- Battles panel with live progress timers and battle history
-- Inventory panel with Collect All functionality
-- Rules/How to Play panel
-- Step-by-step onboarding tutorial flow
-- Improvements/turrets system (6 building types with levels)
-- Land purchasing with biome-based pricing
-- Storage capacity system with visual bars on hex tiles
-- Improvement icons rendered on hex tiles (turret=triangle, shield=diamond, etc.)
-- Expanded hex map (radius 5 = 91 tiles)
-- Faster game mechanics (5-min mining, 10-min battles, 15-sec AI)
-- ASA token support for on-chain resource persistence
-- On-chain vs off-chain action separation
+## Recent Changes (V1.1 -> V1.2)
+- **21,000 plots**: Replaced hex grid with Fibonacci sphere distribution (plotId 1-21000)
+- **3D Globe**: InstancedMesh rendering for all 21K plots simultaneously (single GPU draw call)
+- **FRONTIER Token**: ASA with 1B supply, passive earning per plot, claimable on-chain
+- **ALGO Land Purchase**: Land costs real ALGO instead of in-game resources
+- **Biome-based pricing**: Different ALGO costs per biome type
+- **Spatial AI neighbors**: AI factions use lat/lng proximity instead of hex adjacency
+- Mobile-first UI with bottom navigation
+- Bottom sheet land popup with ALGO purchase, FRONTIER claim display
+- Inventory panel with FRONTIER balance and claim button
+- ResourceHUD showing Iron, Fuel, Crystal, and FRONTIER
+- Leaderboard tracking FRONTIER earned
 
 ## Development
 Run with: `npm run dev`

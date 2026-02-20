@@ -1,5 +1,5 @@
 import { useRef, useMemo, useCallback, useState, useEffect, Component, type ReactNode } from "react";
-import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import type { LandParcel, BiomeType } from "@shared/schema";
@@ -14,7 +14,7 @@ interface PlanetGlobeProps {
 }
 
 const GLOBE_RADIUS = 3;
-const HEX_ELEVATION = 0.02;
+const PLOT_ELEVATION = 0.015;
 
 const BIOME_COLORS: Record<BiomeType, string> = {
   forest: "#2d6a30",
@@ -22,11 +22,15 @@ const BIOME_COLORS: Record<BiomeType, string> = {
   mountain: "#6b6b7a",
   desert: "#c4a35a",
   water: "#2a6a9a",
+  tundra: "#a8c8d8",
+  volcanic: "#8b3a1a",
+  swamp: "#3a5a2a",
 };
 
-const OWNER_GLOW: Record<string, string> = {
-  player: "#00ffcc",
-  ai: "#ff4444",
+const OWNER_COLORS = {
+  player: new THREE.Color("#00ffcc"),
+  ai: new THREE.Color("#ff4444"),
+  none: new THREE.Color("#333333"),
 };
 
 function latLngToSphere(lat: number, lng: number, radius: number): THREE.Vector3 {
@@ -39,67 +43,81 @@ function latLngToSphere(lat: number, lng: number, radius: number): THREE.Vector3
   );
 }
 
-function axialToLatLng(q: number, r: number, totalRadius: number): { lat: number; lng: number } {
-  const x = q + r * 0.5;
-  const y = r * (Math.sqrt(3) / 2);
-  const scale = 180 / (totalRadius * 2 + 1);
-  return {
-    lat: -y * scale,
-    lng: x * scale,
-  };
+function SceneLighting() {
+  return (
+    <>
+      <ambientLight intensity={0.3} />
+      <directionalLight position={[5, 3, 5]} intensity={1.2} color="#ffffff" />
+      <directionalLight position={[-3, -1, -3]} intensity={0.3} color="#4466aa" />
+      <pointLight position={[0, 8, 0]} intensity={0.5} color="#ffccaa" />
+    </>
+  );
 }
 
-function createHexGeometryOnSphere(
-  center: THREE.Vector3,
-  radius: number,
-  hexSize: number,
-  normal: THREE.Vector3
-): THREE.BufferGeometry {
-  const tangent = new THREE.Vector3();
-  if (Math.abs(normal.y) < 0.999) {
-    tangent.crossVectors(new THREE.Vector3(0, 1, 0), normal).normalize();
-  } else {
-    tangent.crossVectors(new THREE.Vector3(1, 0, 0), normal).normalize();
-  }
-  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+function Planet() {
+  const meshRef = useRef<THREE.Mesh>(null!);
+  const texture = useMemo(() => {
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(planetTexturePath);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, []);
 
-  const vertices: number[] = [];
-  const indices: number[] = [];
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += delta * 0.02;
+    }
+  });
 
-  vertices.push(center.x, center.y, center.z);
-
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 3) * i - Math.PI / 6;
-    const dx = Math.cos(angle) * hexSize;
-    const dy = Math.sin(angle) * hexSize;
-    const point = new THREE.Vector3()
-      .copy(center)
-      .addScaledVector(tangent, dx)
-      .addScaledVector(bitangent, dy);
-    point.normalize().multiplyScalar(radius);
-    vertices.push(point.x, point.y, point.z);
-  }
-
-  for (let i = 0; i < 6; i++) {
-    indices.push(0, i + 1, ((i + 1) % 6) + 1);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
+      <meshStandardMaterial map={texture} roughness={0.8} metalness={0.1} />
+    </mesh>
+  );
 }
 
-interface HexTileData {
-  parcel: LandParcel;
-  position: THREE.Vector3;
-  normal: THREE.Vector3;
-  geometry: THREE.BufferGeometry;
-  color: THREE.Color;
+function AtmosphereGlow() {
+  const shaderRef = useRef<THREE.ShaderMaterial>(null!);
+
+  const vertexShader = `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const fragmentShader = `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vec3 viewDir = normalize(-vPosition);
+      float fresnel = 1.0 - dot(viewDir, vNormal);
+      fresnel = pow(fresnel, 3.0);
+      gl_FragColor = vec4(0.3, 0.6, 1.0, fresnel * 0.6);
+    }
+  `;
+
+  return (
+    <mesh>
+      <sphereGeometry args={[GLOBE_RADIUS * 1.05, 64, 64]} />
+      <shaderMaterial
+        ref={shaderRef}
+        vertexShader={vertexShader}
+        fragmentShader={fragmentShader}
+        transparent={true}
+        side={THREE.BackSide}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
+    </mesh>
+  );
 }
 
-function HexTiles({
+function PlotInstances({
   parcels,
   selectedParcelId,
   currentPlayerId,
@@ -110,282 +128,166 @@ function HexTiles({
   currentPlayerId: string | null;
   onParcelSelect: (id: string) => void;
 }) {
-  const groupRef = useRef<THREE.Group>(null!);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const meshRef = useRef<THREE.InstancedMesh>(null!);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const pulseRef = useRef(0);
+  const { camera } = useThree();
 
-  const maxRadius = useMemo(() => {
-    let maxDist = 0;
-    for (const p of parcels) {
-      const dist = Math.max(Math.abs(p.q), Math.abs(p.r), Math.abs(p.q + p.r));
-      if (dist > maxDist) maxDist = dist;
-    }
-    return maxDist || 5;
+  const plotSize = useMemo(() => {
+    const surfaceArea = 4 * Math.PI * GLOBE_RADIUS * GLOBE_RADIUS;
+    const areaPerPlot = surfaceArea / parcels.length;
+    return Math.sqrt(areaPerPlot) * 0.35;
+  }, [parcels.length]);
+
+  const parcelMap = useMemo(() => {
+    const map = new Map<number, LandParcel>();
+    parcels.forEach((p, i) => map.set(i, p));
+    return map;
   }, [parcels]);
 
-  const hexSize = useMemo(() => {
-    const circumference = 2 * Math.PI * GLOBE_RADIUS;
-    const tilesAcross = maxRadius * 2 + 1;
-    return (circumference / tilesAcross) * 0.22;
-  }, [maxRadius]);
-
-  const prevGeometries = useRef<THREE.BufferGeometry[]>([]);
-
-  const tileData = useMemo<HexTileData[]>(() => {
-    prevGeometries.current.forEach((g) => g.dispose());
-    prevGeometries.current = [];
-
-    const tiles = parcels.map((parcel) => {
-      const { lat, lng } = axialToLatLng(parcel.q, parcel.r, maxRadius);
-      const position = latLngToSphere(lat, lng, GLOBE_RADIUS + HEX_ELEVATION);
-      const normal = position.clone().normalize();
-      const geometry = createHexGeometryOnSphere(position, GLOBE_RADIUS + HEX_ELEVATION, hexSize, normal);
-      const color = new THREE.Color(BIOME_COLORS[parcel.biome] || "#555555");
-      prevGeometries.current.push(geometry);
-      return { parcel, position, normal, geometry, color };
-    });
-    return tiles;
-  }, [parcels, maxRadius, hexSize]);
+  const geometry = useMemo(() => {
+    const geo = new THREE.CircleGeometry(plotSize, 6);
+    return geo;
+  }, [plotSize]);
 
   useEffect(() => {
     return () => {
-      prevGeometries.current.forEach((g) => g.dispose());
-      prevGeometries.current = [];
+      geometry.dispose();
     };
-  }, []);
+  }, [geometry]);
 
-  useFrame((_, delta) => {
-    pulseRef.current += delta * 2;
-  });
+  useEffect(() => {
+    if (!meshRef.current || parcels.length === 0) return;
 
-  const handleClick = useCallback(
-    (e: ThreeEvent<MouseEvent>) => {
-      e.stopPropagation();
-      const parcelId = (e.object as any).userData?.parcelId;
-      if (parcelId) {
-        onParcelSelect(parcelId);
+    const dummy = new THREE.Object3D();
+    const color = new THREE.Color();
+
+    for (let i = 0; i < parcels.length; i++) {
+      const p = parcels[i];
+      const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + PLOT_ELEVATION);
+      const normal = pos.clone().normalize();
+
+      dummy.position.copy(pos);
+      dummy.lookAt(pos.clone().add(normal));
+      dummy.updateMatrix();
+      meshRef.current.setMatrixAt(i, dummy.matrix);
+
+      const biomeColor = BIOME_COLORS[p.biome] || "#555555";
+      if (p.ownerId) {
+        const ownerColor = p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai;
+        color.set(biomeColor).lerp(ownerColor, 0.4);
+      } else {
+        color.set(biomeColor);
       }
-    },
-    [onParcelSelect]
-  );
+      meshRef.current.setColorAt(i, color);
+    }
 
-  const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    const id = (e.object as any).userData?.parcelId;
-    if (id) setHoveredId(id);
-    document.body.style.cursor = "pointer";
-  }, []);
-
-  const handlePointerOut = useCallback(() => {
-    setHoveredId(null);
-    document.body.style.cursor = "auto";
-  }, []);
-
-  return (
-    <group ref={groupRef}>
-      {tileData.map((tile) => {
-        const isSelected = tile.parcel.id === selectedParcelId;
-        const isHovered = tile.parcel.id === hoveredId;
-        const isOwned = tile.parcel.ownerId !== null;
-        const isPlayerOwned = tile.parcel.ownerType === "player" && tile.parcel.ownerId === currentPlayerId;
-        const isAIOwned = tile.parcel.ownerType === "ai";
-        const isEnemyPlayer = tile.parcel.ownerType === "player" && tile.parcel.ownerId !== currentPlayerId && tile.parcel.ownerId !== null;
-
-        let tileColor = tile.color.clone();
-        if (isHovered) {
-          tileColor.lerp(new THREE.Color("#ffffff"), 0.2);
-        }
-
-        let emissiveColor = new THREE.Color("#000000");
-        let emissiveIntensity = 0;
-
-        if (isSelected) {
-          emissiveColor = new THREE.Color("#ffffff");
-          emissiveIntensity = 0.5;
-        } else if (isPlayerOwned) {
-          emissiveColor = new THREE.Color(OWNER_GLOW.player);
-          emissiveIntensity = 0.15;
-        } else if (isAIOwned || isEnemyPlayer) {
-          emissiveColor = new THREE.Color(OWNER_GLOW.ai);
-          emissiveIntensity = 0.15;
-        }
-
-        const hasTurret = tile.parcel.improvements?.some((i) => i.type === "turret");
-        const hasShield = tile.parcel.improvements?.some((i) => i.type === "shield_gen");
-        const hasFortress = tile.parcel.improvements?.some((i) => i.type === "fortress");
-
-        return (
-          <group key={tile.parcel.id}>
-            <mesh
-              geometry={tile.geometry}
-              onClick={handleClick}
-              onPointerOver={handlePointerOver}
-              onPointerOut={handlePointerOut}
-              userData={{ parcelId: tile.parcel.id }}
-            >
-              <meshStandardMaterial
-                color={tileColor}
-                emissive={emissiveColor}
-                emissiveIntensity={emissiveIntensity}
-                roughness={0.7}
-                metalness={0.1}
-                side={THREE.DoubleSide}
-              />
-            </mesh>
-
-            {isOwned && (
-              <mesh position={tile.position.clone().normalize().multiplyScalar(GLOBE_RADIUS + HEX_ELEVATION + 0.001)}>
-                <ringGeometry args={[hexSize * 0.85, hexSize * 0.95, 6]} />
-                <meshBasicMaterial
-                  color={isPlayerOwned ? OWNER_GLOW.player : OWNER_GLOW.ai}
-                  transparent
-                  opacity={isSelected ? 0.9 : 0.5}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-            )}
-
-            {(hasTurret || hasShield || hasFortress) && (
-              <ImprovementMarker
-                position={tile.position}
-                normal={tile.normal}
-                type={hasFortress ? "fortress" : hasTurret ? "turret" : "shield"}
-                radius={hexSize * 0.3}
-              />
-            )}
-          </group>
-        );
-      })}
-    </group>
-  );
-}
-
-function ImprovementMarker({
-  position,
-  normal,
-  type,
-  radius,
-}: {
-  position: THREE.Vector3;
-  normal: THREE.Vector3;
-  type: "turret" | "shield" | "fortress";
-  radius: number;
-}) {
-  const markerPos = position.clone().normalize().multiplyScalar(GLOBE_RADIUS + HEX_ELEVATION + 0.015);
-
-  const color = type === "turret" ? "#ff8800" : type === "shield" ? "#4488ff" : "#ffdd00";
-
-  return (
-    <mesh position={markerPos}>
-      {type === "turret" ? (
-        <coneGeometry args={[radius, radius * 2, 4]} />
-      ) : type === "shield" ? (
-        <octahedronGeometry args={[radius]} />
-      ) : (
-        <boxGeometry args={[radius * 1.5, radius * 1.5, radius * 1.5]} />
-      )}
-      <meshStandardMaterial
-        color={color}
-        emissive={color}
-        emissiveIntensity={0.4}
-        metalness={0.6}
-        roughness={0.3}
-      />
-    </mesh>
-  );
-}
-
-function AtmosphereGlow() {
-  const meshRef = useRef<THREE.Mesh>(null!);
-
-  const shaderMaterial = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      vertexShader: `
-        varying vec3 vNormal;
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        void main() {
-          float intensity = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
-          gl_FragColor = vec4(0.3, 0.7, 1.0, 1.0) * intensity;
-        }
-      `,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      transparent: true,
-    });
-  }, []);
-
-  return (
-    <mesh ref={meshRef} material={shaderMaterial}>
-      <sphereGeometry args={[GLOBE_RADIUS * 1.15, 64, 64]} />
-    </mesh>
-  );
-}
-
-function Planet() {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  const texture = useMemo(() => {
-    const loader = new THREE.TextureLoader();
-    const tex = loader.load(planetTexturePath);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }, []);
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+  }, [parcels]);
 
   useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.01;
+    if (!meshRef.current) return;
+    pulseRef.current += delta * 3;
+
+    const color = new THREE.Color();
+    let needsColorUpdate = false;
+
+    for (let i = 0; i < parcels.length; i++) {
+      const p = parcels[i];
+      const isSelected = p.id === selectedParcelId;
+      const isHovered = i === hoveredIndex;
+
+      if (isSelected || isHovered) {
+        const biomeColor = BIOME_COLORS[p.biome] || "#555555";
+        if (isSelected) {
+          const pulse = Math.sin(pulseRef.current) * 0.3 + 0.7;
+          color.set("#00ffcc").multiplyScalar(pulse);
+        } else {
+          color.set(biomeColor).lerp(new THREE.Color("#ffffff"), 0.3);
+        }
+        meshRef.current.setColorAt(i, color);
+        needsColorUpdate = true;
+      }
+    }
+
+    if (needsColorUpdate && meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
     }
   });
 
-  return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[GLOBE_RADIUS, 128, 128]} />
-      <meshStandardMaterial
-        map={texture}
-        roughness={0.8}
-        metalness={0.1}
-      />
-    </mesh>
+  const handlePointerMove = useCallback(
+    (e: THREE.Intersection) => {
+      if (e.instanceId !== undefined) {
+        setHoveredIndex(e.instanceId);
+        document.body.style.cursor = "pointer";
+      }
+    },
+    []
   );
-}
 
-function SceneLighting() {
+  const handlePointerOut = useCallback(() => {
+    if (hoveredIndex !== null) {
+      const p = parcelMap.get(hoveredIndex);
+      if (p && meshRef.current) {
+        const color = new THREE.Color();
+        const biomeColor = BIOME_COLORS[p.biome] || "#555555";
+        if (p.ownerId) {
+          const ownerColor = p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai;
+          color.set(biomeColor).lerp(ownerColor, 0.4);
+        } else {
+          color.set(biomeColor);
+        }
+        meshRef.current.setColorAt(hoveredIndex, color);
+        if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+      }
+    }
+    setHoveredIndex(null);
+    document.body.style.cursor = "default";
+  }, [hoveredIndex, parcelMap]);
+
+  const handleClick = useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      if (e.instanceId !== undefined) {
+        const p = parcelMap.get(e.instanceId);
+        if (p) {
+          onParcelSelect(p.id);
+        }
+      }
+    },
+    [parcelMap, onParcelSelect]
+  );
+
+  if (parcels.length === 0) return null;
+
   return (
-    <>
-      <ambientLight intensity={0.3} color="#8899bb" />
-      <directionalLight
-        position={[10, 8, 5]}
-        intensity={1.2}
-        color="#ffe8d6"
-        castShadow={false}
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, undefined, parcels.length]}
+      onPointerMove={(e) => handlePointerMove(e.intersections[0])}
+      onPointerOut={handlePointerOut}
+      onClick={handleClick}
+    >
+      <meshStandardMaterial
+        vertexColors
+        roughness={0.6}
+        metalness={0.2}
+        side={THREE.DoubleSide}
+        transparent
+        opacity={0.85}
       />
-      <pointLight position={[-8, -5, -8]} intensity={0.3} color="#4466aa" />
-    </>
+    </instancedMesh>
   );
 }
 
 function CameraController() {
-  const { camera } = useThree();
-
-  useEffect(() => {
-    camera.position.set(0, 2, 7);
-    camera.lookAt(0, 0, 0);
-  }, [camera]);
-
   return (
     <OrbitControls
-      enablePan={false}
-      enableZoom={true}
-      enableRotate={true}
-      minDistance={GLOBE_RADIUS + 1}
+      makeDefault
+      minDistance={GLOBE_RADIUS + 0.5}
       maxDistance={GLOBE_RADIUS * 5}
+      enablePan={false}
       rotateSpeed={0.5}
       zoomSpeed={0.8}
       enableDamping={true}
@@ -471,7 +373,7 @@ export function PlanetGlobe({
           />
           <Planet />
           <AtmosphereGlow />
-          <HexTiles
+          <PlotInstances
             parcels={parcels}
             selectedParcelId={selectedParcelId}
             currentPlayerId={currentPlayerId}

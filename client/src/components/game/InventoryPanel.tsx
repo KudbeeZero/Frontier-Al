@@ -1,4 +1,4 @@
-import { Package, Pickaxe, Fuel, Gem, MapPin, Shield, ArrowDownToLine } from "lucide-react";
+import { Package, Pickaxe, Fuel, Gem, MapPin, Shield, ArrowDownToLine, Coins, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -11,8 +11,10 @@ interface InventoryPanelProps {
   player: Player | null;
   parcels: LandParcel[];
   onCollectAll: () => void;
+  onClaimFrontier: () => void;
   onSelectParcel: (id: string) => void;
   isCollecting: boolean;
+  isClaimingFrontier: boolean;
   className?: string;
 }
 
@@ -24,7 +26,7 @@ function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => vo
     <button
       onClick={onSelect}
       className="w-full p-3 border border-border rounded-md text-left hover-elevate active-elevate-2"
-      data-testid={`land-card-${parcel.id}`}
+      data-testid={`land-card-${parcel.plotId}`}
     >
       <div className="flex items-center gap-2 mb-2">
         <div
@@ -34,7 +36,7 @@ function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => vo
           <MapPin className="w-3 h-3" style={{ color: biomeColors[parcel.biome] }} />
         </div>
         <span className="font-display text-xs font-bold uppercase tracking-wide">
-          Sector {parcel.q},{parcel.r}
+          Plot #{parcel.plotId}
         </span>
         <Badge variant="outline" className="text-[9px] capitalize ml-auto">{parcel.biome}</Badge>
       </div>
@@ -57,15 +59,13 @@ function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => vo
       <Progress value={storagePercent} className="h-1" />
       <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
         <span>{totalStored}/{parcel.storageCapacity}</span>
-        {parcel.improvements.length > 0 && (
-          <span>{parcel.improvements.length} improvements</span>
-        )}
+        <span>{parcel.frontierPerHour.toFixed(1)} FRNTR/hr</span>
       </div>
     </button>
   );
 }
 
-export function InventoryPanel({ player, parcels, onCollectAll, onSelectParcel, isCollecting, className }: InventoryPanelProps) {
+export function InventoryPanel({ player, parcels, onCollectAll, onClaimFrontier, onSelectParcel, isCollecting, isClaimingFrontier, className }: InventoryPanelProps) {
   if (!player) {
     return (
       <div className={cn("flex flex-col items-center justify-center h-full text-muted-foreground p-8", className)}>
@@ -80,6 +80,8 @@ export function InventoryPanel({ player, parcels, onCollectAll, onSelectParcel, 
   const totalStoredFuel = ownedParcels.reduce((s, p) => s + p.fuelStored, 0);
   const totalStoredCrystal = ownedParcels.reduce((s, p) => s + p.crystalStored, 0);
   const hasStored = totalStoredIron > 0 || totalStoredFuel > 0 || totalStoredCrystal > 0;
+  const totalFrontierRate = ownedParcels.reduce((s, p) => s + p.frontierPerHour, 0);
+  const totalFrontierPending = ownedParcels.reduce((s, p) => s + p.frontierAccumulated, 0);
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="inventory-panel">
@@ -89,7 +91,7 @@ export function InventoryPanel({ player, parcels, onCollectAll, onSelectParcel, 
           <h2 className="font-display text-lg font-bold uppercase tracking-wide">Inventory</h2>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="grid grid-cols-4 gap-2 mb-3">
           <div className="p-2.5 rounded-md bg-muted/50 text-center">
             <Pickaxe className="w-4 h-4 mx-auto mb-1 text-iron" />
             <span className="font-mono text-lg font-bold block" data-testid="text-wallet-iron">{player.iron}</span>
@@ -105,18 +107,43 @@ export function InventoryPanel({ player, parcels, onCollectAll, onSelectParcel, 
             <span className="font-mono text-lg font-bold block" data-testid="text-wallet-crystal">{player.crystal}</span>
             <span className="text-[10px] text-muted-foreground font-display uppercase">Crystal</span>
           </div>
+          <div className="p-2.5 rounded-md bg-muted/50 text-center">
+            <Zap className="w-4 h-4 mx-auto mb-1 text-primary" />
+            <span className="font-mono text-lg font-bold block" data-testid="text-wallet-frontier">{player.frontier.toFixed(1)}</span>
+            <span className="text-[10px] text-muted-foreground font-display uppercase">FRNTR</span>
+          </div>
         </div>
 
-        {hasStored && (
-          <Button
-            onClick={onCollectAll}
-            disabled={isCollecting}
-            className="w-full font-display uppercase tracking-wide"
-            data-testid="button-collect-all"
-          >
-            <ArrowDownToLine className="w-4 h-4 mr-2" />
-            {isCollecting ? "Collecting..." : `Collect All (+${totalStoredIron}I +${totalStoredFuel}F +${totalStoredCrystal}C)`}
-          </Button>
+        <div className="flex gap-2">
+          {hasStored && (
+            <Button
+              onClick={onCollectAll}
+              disabled={isCollecting}
+              className="flex-1 font-display uppercase tracking-wide"
+              data-testid="button-collect-all"
+            >
+              <ArrowDownToLine className="w-4 h-4 mr-2" />
+              {isCollecting ? "Collecting..." : `Collect All (+${totalStoredIron}I +${totalStoredFuel}F +${totalStoredCrystal}C)`}
+            </Button>
+          )}
+          {ownedParcels.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={onClaimFrontier}
+              disabled={isClaimingFrontier}
+              className="font-display uppercase tracking-wide"
+              data-testid="button-claim-frontier"
+            >
+              <Zap className="w-4 h-4 mr-2" />
+              {isClaimingFrontier ? "Claiming..." : `Claim FRNTR`}
+            </Button>
+          )}
+        </div>
+
+        {ownedParcels.length > 0 && (
+          <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center">
+            Earning {totalFrontierRate.toFixed(2)} FRNTR/hr across {ownedParcels.length} plots
+          </div>
         )}
       </div>
 

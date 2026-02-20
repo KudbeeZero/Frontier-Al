@@ -1,10 +1,11 @@
-import { Pickaxe, Fuel, Gem, Wallet } from "lucide-react";
+import { Pickaxe, Fuel, Gem, Wallet, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ResourceHUDProps {
   iron: number;
   fuel: number;
   crystal: number;
+  frontier: number;
   algoBalance: number;
   className?: string;
 }
@@ -15,12 +16,14 @@ function ResourceItem({
   value,
   colorClass,
   testId,
+  decimals,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
   colorClass: string;
   testId: string;
+  decimals?: number;
 }) {
   return (
     <div className="flex items-center gap-2" data-testid={`resource-${testId}`}>
@@ -32,14 +35,14 @@ function ResourceItem({
           {label}
         </span>
         <span className="font-mono text-xs sm:text-sm font-semibold tabular-nums" data-testid={`text-${testId}-value`}>
-          {value.toLocaleString()}
+          {decimals !== undefined ? value.toFixed(decimals) : value.toLocaleString()}
         </span>
       </div>
     </div>
   );
 }
 
-export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: ResourceHUDProps) {
+export function ResourceHUD({ iron, fuel, crystal, frontier, algoBalance, className }: ResourceHUDProps) {
   return (
     <div
       className={cn(
@@ -68,6 +71,14 @@ export function ResourceHUD({ iron, fuel, crystal, algoBalance, className }: Res
         value={crystal}
         colorClass="bg-crystal/20 text-crystal"
         testId="crystal"
+      />
+      <ResourceItem
+        icon={Zap}
+        label="FRNTR"
+        value={frontier}
+        colorClass="bg-primary/20 text-primary"
+        testId="frontier"
+        decimals={1}
       />
       <div className="w-px h-6 sm:h-8 bg-border hidden sm:block" />
       <div className="flex items-center gap-2" data-testid="resource-algo">

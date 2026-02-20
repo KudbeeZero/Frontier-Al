@@ -24,13 +24,35 @@ import {
   ATTACK_BASE_COST,
   IMPROVEMENT_INFO,
   BASE_STORAGE_CAPACITY,
-  LAND_PURCHASE_BASE,
+  LAND_PURCHASE_ALGO,
+  TOTAL_PLOTS,
+  FRONTIER_TOTAL_SUPPLY,
+  FRONTIER_PER_HOUR_BY_BIOME,
 } from "@shared/schema";
-import { generateHexGrid } from "./hexUtils";
+import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./hexUtils";
 
 const AI_NAMES = ["NEXUS-7", "KRONOS", "VANGUARD", "SPECTRE"];
 const AI_BEHAVIORS: Player["aiBehavior"][] = ["expansionist", "defensive", "raider", "economic"];
-const BIOMES: BiomeType[] = ["forest", "desert", "mountain", "plains", "water"];
+const BIOMES: BiomeType[] = ["forest", "desert", "mountain", "plains", "water", "tundra", "volcanic", "swamp"];
+
+function biomeFromLatitude(lat: number, plotId: number): BiomeType {
+  const absLat = Math.abs(lat);
+  const noise = ((plotId * 7919) % 100) / 100;
+
+  if (absLat > 75) return noise > 0.3 ? "tundra" : "mountain";
+  if (absLat > 60) return noise > 0.6 ? "tundra" : noise > 0.3 ? "forest" : "mountain";
+  if (absLat > 40) return noise > 0.5 ? "forest" : noise > 0.2 ? "plains" : "mountain";
+  if (absLat > 20) {
+    if (noise > 0.7) return "volcanic";
+    if (noise > 0.4) return "plains";
+    if (noise > 0.2) return "forest";
+    return "swamp";
+  }
+  if (noise > 0.6) return "desert";
+  if (noise > 0.3) return "plains";
+  if (noise > 0.15) return "swamp";
+  return "water";
+}
 
 export interface IStorage {
   getGameState(): Promise<GameState>;
@@ -45,6 +67,7 @@ export interface IStorage {
   buildImprovement(action: BuildAction): Promise<LandParcel>;
   purchaseLand(action: PurchaseAction): Promise<LandParcel>;
   collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }>;
+  claimFrontier(playerId: string): Promise<{ amount: number }>;
 
   resolveBattles(): Promise<Battle[]>;
   runAITurn(): Promise<GameEvent[]>;
@@ -52,15 +75,19 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private parcels: Map<string, LandParcel>;
+  private parcelByPlotId: Map<number, string>;
   private players: Map<string, Player>;
   private battles: Map<string, Battle>;
   private events: GameEvent[];
   private currentTurn: number;
   private lastUpdateTs: number;
   private initialized: boolean = false;
+  private plotCoords: PlotCoord[] = [];
+  private frontierCirculating: number = 0;
 
   constructor() {
     this.parcels = new Map();
+    this.parcelByPlotId = new Map();
     this.players = new Map();
     this.battles = new Map();
     this.events = [];
@@ -68,28 +95,22 @@ export class MemStorage implements IStorage {
     this.lastUpdateTs = Date.now();
   }
 
-  private computePurchasePrice(biome: BiomeType, richness: number): { iron: number; fuel: number } {
-    const base = LAND_PURCHASE_BASE[biome];
-    const richnessMod = richness / 50;
-    return {
-      iron: Math.floor(base.iron * richnessMod),
-      fuel: Math.floor(base.fuel * richnessMod),
-    };
-  }
-
   private async initialize() {
     if (this.initialized) return;
 
-    const hexCoords = generateHexGrid(5);
+    this.plotCoords = generateFibonacciSphere(TOTAL_PLOTS);
 
-    for (const coord of hexCoords) {
+    for (const coord of this.plotCoords) {
       const id = randomUUID();
-      const biome = BIOMES[Math.floor(Math.random() * BIOMES.length)];
+      const biome = biomeFromLatitude(coord.lat, coord.plotId);
       const richness = Math.floor(Math.random() * 60) + 40;
+      const frontierRate = FRONTIER_PER_HOUR_BY_BIOME[biome];
+
       const parcel: LandParcel = {
         id,
-        q: coord.q,
-        r: coord.r,
+        plotId: coord.plotId,
+        lat: coord.lat,
+        lng: coord.lng,
         biome,
         richness,
         ownerId: null,
@@ -103,9 +124,13 @@ export class MemStorage implements IStorage {
         activeBattleId: null,
         yieldMultiplier: 1.0,
         improvements: [],
-        purchasePrice: this.computePurchasePrice(biome, richness),
+        purchasePriceAlgo: LAND_PURCHASE_ALGO[biome],
+        frontierAccumulated: 0,
+        lastFrontierClaimTs: Date.now(),
+        frontierPerHour: frontierRate,
       };
       this.parcels.set(id, parcel);
+      this.parcelByPlotId.set(coord.plotId, id);
     }
 
     const humanPlayerId = randomUUID();
@@ -116,26 +141,31 @@ export class MemStorage implements IStorage {
       iron: 200,
       fuel: 150,
       crystal: 50,
+      frontier: 0,
       ownedParcels: [],
       isAI: false,
       totalIronMined: 0,
       totalFuelMined: 0,
+      totalFrontierEarned: 0,
       attacksWon: 0,
       attacksLost: 0,
       territoriesCaptured: 0,
     };
     this.players.set(humanPlayerId, humanPlayer);
 
-    const parcelArray = Array.from(this.parcels.values());
-    const centerParcel = parcelArray.find((p) => p.q === 0 && p.r === 0);
-    if (centerParcel) {
-      centerParcel.ownerId = humanPlayerId;
-      centerParcel.ownerType = "player";
-      centerParcel.defenseLevel = 3;
-      centerParcel.purchasePrice = null;
-      humanPlayer.ownedParcels.push(centerParcel.id);
+    const startPlotId = this.parcelByPlotId.get(1);
+    if (startPlotId) {
+      const startParcel = this.parcels.get(startPlotId);
+      if (startParcel) {
+        startParcel.ownerId = humanPlayerId;
+        startParcel.ownerType = "player";
+        startParcel.defenseLevel = 3;
+        startParcel.purchasePriceAlgo = null;
+        humanPlayer.ownedParcels.push(startParcel.id);
+      }
     }
 
+    const aiStartPlots = [5250, 10500, 15750, 20000];
     for (let i = 0; i < 4; i++) {
       const aiId = randomUUID();
       const aiPlayer: Player = {
@@ -145,25 +175,29 @@ export class MemStorage implements IStorage {
         iron: 150,
         fuel: 100,
         crystal: 25,
+        frontier: 0,
         ownedParcels: [],
         isAI: true,
         aiBehavior: AI_BEHAVIORS[i],
         totalIronMined: 0,
         totalFuelMined: 0,
+        totalFrontierEarned: 0,
         attacksWon: 0,
         attacksLost: 0,
         territoriesCaptured: 0,
       };
       this.players.set(aiId, aiPlayer);
 
-      const unownedParcels = parcelArray.filter((p) => !p.ownerId && p.biome !== "water");
-      if (unownedParcels.length > 0) {
-        const randomParcel = unownedParcels[Math.floor(Math.random() * unownedParcels.length)];
-        randomParcel.ownerId = aiId;
-        randomParcel.ownerType = "ai";
-        randomParcel.defenseLevel = 2;
-        randomParcel.purchasePrice = null;
-        aiPlayer.ownedParcels.push(randomParcel.id);
+      const aiPlotUuid = this.parcelByPlotId.get(aiStartPlots[i]);
+      if (aiPlotUuid) {
+        const aiParcel = this.parcels.get(aiPlotUuid);
+        if (aiParcel && !aiParcel.ownerId) {
+          aiParcel.ownerId = aiId;
+          aiParcel.ownerType = "ai";
+          aiParcel.defenseLevel = 2;
+          aiParcel.purchasePriceAlgo = null;
+          aiPlayer.ownedParcels.push(aiParcel.id);
+        }
       }
     }
 
@@ -171,17 +205,31 @@ export class MemStorage implements IStorage {
       id: randomUUID(),
       type: "ai_action",
       playerId: "system",
-      description: "Game world initialized. Factions are mobilizing.",
+      description: "Game world initialized. 21,000 plots ready. Factions are mobilizing.",
       timestamp: Date.now(),
     });
 
     this.initialized = true;
   }
 
+  private updateFrontierAccumulation(parcel: LandParcel) {
+    if (!parcel.ownerId) return;
+    const now = Date.now();
+    const hoursSinceLastClaim = (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60);
+    if (hoursSinceLastClaim <= 0) return;
+
+    const drillBonus = parcel.improvements
+      .filter((i) => i.type === "mine_drill")
+      .reduce((sum, i) => sum + i.level * 0.25, 0);
+    const rate = parcel.frontierPerHour * (1 + drillBonus) * (parcel.richness / 100);
+    const earned = rate * hoursSinceLastClaim;
+    parcel.frontierAccumulated += earned;
+  }
+
   async getLeaderboard(): Promise<LeaderboardEntry[]> {
     await this.initialize();
     const entries: LeaderboardEntry[] = [];
-    for (const player of this.players.values()) {
+    for (const player of Array.from(this.players.values())) {
       entries.push({
         playerId: player.id,
         name: player.name,
@@ -189,17 +237,20 @@ export class MemStorage implements IStorage {
         territories: player.ownedParcels.length,
         totalIronMined: player.totalIronMined,
         totalFuelMined: player.totalFuelMined,
+        totalFrontierEarned: player.totalFrontierEarned,
         attacksWon: player.attacksWon,
         attacksLost: player.attacksLost,
         isAI: player.isAI,
       });
     }
-    return entries.sort((a, b) => b.territories - a.territories || b.totalIronMined - a.totalIronMined);
+    return entries.sort((a, b) => b.territories - a.territories || b.totalFrontierEarned - a.totalFrontierEarned);
   }
 
   async getGameState(): Promise<GameState> {
     await this.initialize();
     await this.resolveBattles();
+
+    const claimedPlots = Array.from(this.parcels.values()).filter((p) => p.ownerId !== null).length;
 
     return {
       parcels: Array.from(this.parcels.values()),
@@ -209,6 +260,10 @@ export class MemStorage implements IStorage {
       leaderboard: await this.getLeaderboard(),
       currentTurn: this.currentTurn,
       lastUpdateTs: this.lastUpdateTs,
+      totalPlots: TOTAL_PLOTS,
+      claimedPlots,
+      frontierTotalSupply: FRONTIER_TOTAL_SUPPLY,
+      frontierCirculating: this.frontierCirculating,
     };
   }
 
@@ -241,7 +296,7 @@ export class MemStorage implements IStorage {
 
     const biomeBonus = biomeBonuses[parcel.biome];
     const richnessMultiplier = parcel.richness / 100;
-    const drillBonus = parcel.improvements.filter(i => i.type === "mine_drill").reduce((sum, i) => sum + i.level * 0.25, 0);
+    const drillBonus = parcel.improvements.filter((i) => i.type === "mine_drill").reduce((sum, i) => sum + i.level * 0.25, 0);
 
     const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * (parcel.yieldMultiplier + drillBonus));
     const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * (parcel.yieldMultiplier + drillBonus));
@@ -273,7 +328,7 @@ export class MemStorage implements IStorage {
       type: "mine",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel from sector ${parcel.q},${parcel.r}`,
+      description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel from plot #${parcel.plotId}`,
       timestamp: now,
     });
 
@@ -286,7 +341,9 @@ export class MemStorage implements IStorage {
     const player = this.players.get(playerId);
     if (!player) throw new Error("Player not found");
 
-    let totalIron = 0, totalFuel = 0, totalCrystal = 0;
+    let totalIron = 0,
+      totalFuel = 0,
+      totalCrystal = 0;
 
     for (const parcelId of player.ownedParcels) {
       const parcel = this.parcels.get(parcelId);
@@ -319,6 +376,43 @@ export class MemStorage implements IStorage {
     return { iron: totalIron, fuel: totalFuel, crystal: totalCrystal };
   }
 
+  async claimFrontier(playerId: string): Promise<{ amount: number }> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player) throw new Error("Player not found");
+
+    let totalClaimed = 0;
+    const now = Date.now();
+
+    for (const parcelId of player.ownedParcels) {
+      const parcel = this.parcels.get(parcelId);
+      if (!parcel) continue;
+
+      this.updateFrontierAccumulation(parcel);
+      totalClaimed += parcel.frontierAccumulated;
+      parcel.frontierAccumulated = 0;
+      parcel.lastFrontierClaimTs = now;
+    }
+
+    const rounded = Math.floor(totalClaimed * 100) / 100;
+    if (rounded > 0) {
+      player.frontier += rounded;
+      player.totalFrontierEarned += rounded;
+      this.frontierCirculating += rounded;
+
+      this.events.push({
+        id: randomUUID(),
+        type: "claim_frontier",
+        playerId: player.id,
+        description: `${player.name} claimed ${rounded.toFixed(2)} FRONTIER tokens`,
+        timestamp: now,
+      });
+      this.lastUpdateTs = now;
+    }
+
+    return { amount: rounded };
+  }
+
   async buildImprovement(action: BuildAction): Promise<LandParcel> {
     await this.initialize();
 
@@ -330,7 +424,7 @@ export class MemStorage implements IStorage {
     const info = IMPROVEMENT_INFO[action.improvementType];
     if (!info) throw new Error("Invalid improvement type");
 
-    const existing = parcel.improvements.find(i => i.type === action.improvementType);
+    const existing = parcel.improvements.find((i) => i.type === action.improvementType);
     if (existing && existing.level >= info.maxLevel) throw new Error("Improvement already at max level");
 
     const level = existing ? existing.level + 1 : 1;
@@ -363,7 +457,7 @@ export class MemStorage implements IStorage {
       type: "build",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} built ${info.name} (Lv${level}) at sector ${parcel.q},${parcel.r}`,
+      description: `${player.name} built ${info.name} (Lv${level}) at plot #${parcel.plotId}`,
       timestamp: Date.now(),
     });
 
@@ -378,18 +472,12 @@ export class MemStorage implements IStorage {
     const player = this.players.get(action.playerId);
     if (!parcel || !player) throw new Error("Invalid parcel or player");
     if (parcel.ownerId) throw new Error("Territory is already owned");
-    if (!parcel.purchasePrice) throw new Error("Territory is not for sale");
-
-    if (player.iron < parcel.purchasePrice.iron || player.fuel < parcel.purchasePrice.fuel) {
-      throw new Error("Insufficient resources");
-    }
-
-    player.iron -= parcel.purchasePrice.iron;
-    player.fuel -= parcel.purchasePrice.fuel;
+    if (parcel.purchasePriceAlgo === null) throw new Error("Territory is not for sale");
 
     parcel.ownerId = player.id;
     parcel.ownerType = player.isAI ? "ai" : "player";
-    parcel.purchasePrice = null;
+    parcel.purchasePriceAlgo = null;
+    parcel.lastFrontierClaimTs = Date.now();
     player.ownedParcels.push(parcel.id);
     player.territoriesCaptured++;
 
@@ -398,7 +486,7 @@ export class MemStorage implements IStorage {
       type: "purchase",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} purchased sector ${parcel.q},${parcel.r}`,
+      description: `${player.name} purchased plot #${parcel.plotId} for ${LAND_PURCHASE_ALGO[parcel.biome]} ALGO`,
       timestamp: Date.now(),
     });
 
@@ -441,7 +529,7 @@ export class MemStorage implements IStorage {
       type: "upgrade",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} upgraded ${action.upgradeType} at sector ${parcel.q},${parcel.r}`,
+      description: `${player.name} upgraded ${action.upgradeType} at plot #${parcel.plotId}`,
       timestamp: Date.now(),
     });
 
@@ -467,7 +555,9 @@ export class MemStorage implements IStorage {
 
     const attackerPower = action.troopsCommitted * 10 + totalIron * 0.5 + totalFuel * 0.8;
     const biomeBonus = biomeBonuses[targetParcel.biome];
-    const turretBonus = targetParcel.improvements.filter(i => i.type === "turret" || i.type === "shield_gen" || i.type === "fortress").reduce((sum, i) => sum + i.level * 5, 0);
+    const turretBonus = targetParcel.improvements
+      .filter((i) => i.type === "turret" || i.type === "shield_gen" || i.type === "fortress")
+      .reduce((sum, i) => sum + i.level * 5, 0);
     const defenderPower = (targetParcel.defenseLevel * 15 + turretBonus) * biomeBonus.defenseMod;
 
     const now = Date.now();
@@ -496,7 +586,7 @@ export class MemStorage implements IStorage {
       playerId: attacker.id,
       parcelId: targetParcel.id,
       battleId,
-      description: `${attacker.name} launched an attack on sector ${targetParcel.q},${targetParcel.r}`,
+      description: `${attacker.name} launched an attack on plot #${targetParcel.plotId}`,
       timestamp: now,
     });
 
@@ -508,13 +598,13 @@ export class MemStorage implements IStorage {
     const now = Date.now();
     const resolvedBattles: Battle[] = [];
 
-    for (const battle of this.battles.values()) {
+    for (const battle of Array.from(this.battles.values())) {
       if (battle.status === "pending" && now >= battle.resolveTs) {
         const seedString = `${battle.id}${battle.startTs}`;
         let hash = 0;
         for (let i = 0; i < seedString.length; i++) {
           const char = seedString.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
+          hash = (hash << 5) - hash + char;
           hash = hash & hash;
         }
         const randFactor = (Math.abs(hash) % 21) - 10;
@@ -540,7 +630,8 @@ export class MemStorage implements IStorage {
             targetParcel.ownerId = attacker.id;
             targetParcel.ownerType = attacker.isAI ? "ai" : "player";
             targetParcel.defenseLevel = Math.max(1, Math.floor(targetParcel.defenseLevel / 2));
-            targetParcel.purchasePrice = null;
+            targetParcel.purchasePriceAlgo = null;
+            targetParcel.lastFrontierClaimTs = now;
             attacker.ownedParcels.push(targetParcel.id);
             attacker.attacksWon++;
             attacker.territoriesCaptured++;
@@ -551,7 +642,7 @@ export class MemStorage implements IStorage {
               playerId: attacker.id,
               parcelId: targetParcel.id,
               battleId: battle.id,
-              description: `${attacker.name} conquered sector ${targetParcel.q},${targetParcel.r}!`,
+              description: `${attacker.name} conquered plot #${targetParcel.plotId}!`,
               timestamp: now,
             });
           } else {
@@ -563,7 +654,7 @@ export class MemStorage implements IStorage {
               playerId: defender?.id || attacker.id,
               parcelId: targetParcel.id,
               battleId: battle.id,
-              description: `Defense held at sector ${targetParcel.q},${targetParcel.r}. Attack repelled.`,
+              description: `Defense held at plot #${targetParcel.plotId}. Attack repelled.`,
               timestamp: now,
             });
           }
@@ -580,17 +671,27 @@ export class MemStorage implements IStorage {
     return resolvedBattles;
   }
 
+  private findNearbyParcels(parcel: LandParcel, maxDist: number = 0.05): LandParcel[] {
+    const nearby: LandParcel[] = [];
+    for (const p of Array.from(this.parcels.values())) {
+      if (p.id === parcel.id) continue;
+      const dist = sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng);
+      if (dist < maxDist) nearby.push(p);
+    }
+    return nearby;
+  }
+
   async runAITurn(): Promise<GameEvent[]> {
     const newEvents: GameEvent[] = [];
     const now = Date.now();
 
-    for (const player of this.players.values()) {
+    for (const player of Array.from(this.players.values())) {
       if (!player.isAI) continue;
       if (Math.random() > 0.4) continue;
 
       const ownedParcels = player.ownedParcels
-        .map((id) => this.parcels.get(id))
-        .filter((p): p is LandParcel => !!p);
+        .map((id: string) => this.parcels.get(id))
+        .filter((p: LandParcel | undefined): p is LandParcel => !!p);
 
       for (const parcel of ownedParcels) {
         if (now - parcel.lastMineTs >= MINE_COOLDOWN_MS) {
@@ -604,25 +705,32 @@ export class MemStorage implements IStorage {
       for (const parcel of ownedParcels) {
         const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
         if (totalStored > 50) {
-          try { await this.collectAll(player.id); } catch (e) {}
+          try {
+            await this.collectAll(player.id);
+          } catch (e) {}
           break;
         }
       }
 
       if (player.aiBehavior === "expansionist" || player.aiBehavior === "economic") {
-        if (player.iron >= 80 && player.fuel >= 40 && Math.random() > 0.5) {
-          const buyable = Array.from(this.parcels.values()).filter(
-            (p) => !p.ownerId && p.purchasePrice && p.biome !== "water"
-          );
-          if (buyable.length > 0) {
-            const target = buyable[Math.floor(Math.random() * buyable.length)];
+        if (Math.random() > 0.5) {
+          let buyTarget: LandParcel | null = null;
+          for (const owned of ownedParcels) {
+            const nearby = this.findNearbyParcels(owned, 0.08);
+            const buyable = nearby.filter((p) => !p.ownerId && p.purchasePriceAlgo !== null && p.biome !== "water");
+            if (buyable.length > 0) {
+              buyTarget = buyable[Math.floor(Math.random() * buyable.length)];
+              break;
+            }
+          }
+          if (buyTarget) {
             try {
-              await this.purchaseLand({ playerId: player.id, parcelId: target.id });
+              await this.purchaseLand({ playerId: player.id, parcelId: buyTarget.id });
               newEvents.push({
                 id: randomUUID(),
                 type: "ai_action",
                 playerId: player.id,
-                parcelId: target.id,
+                parcelId: buyTarget.id,
                 description: `${player.name} purchased new territory`,
                 timestamp: now,
               });
@@ -634,15 +742,20 @@ export class MemStorage implements IStorage {
       if (player.aiBehavior === "expansionist" || player.aiBehavior === "raider") {
         const canAttack = player.iron >= ATTACK_BASE_COST.iron && player.fuel >= ATTACK_BASE_COST.fuel;
         if (canAttack && Math.random() > 0.7) {
-          const unownedParcels = Array.from(this.parcels.values()).filter(
-            (p) => p.ownerId !== player.id && !p.activeBattleId && p.biome !== "water"
-          );
-          if (unownedParcels.length > 0) {
-            const target = unownedParcels[Math.floor(Math.random() * unownedParcels.length)];
+          let attackTarget: LandParcel | null = null;
+          for (const owned of ownedParcels) {
+            const nearby = this.findNearbyParcels(owned, 0.08);
+            const targets = nearby.filter((p) => p.ownerId !== player.id && !p.activeBattleId && p.biome !== "water");
+            if (targets.length > 0) {
+              attackTarget = targets[Math.floor(Math.random() * targets.length)];
+              break;
+            }
+          }
+          if (attackTarget) {
             try {
               await this.deployAttack({
                 attackerId: player.id,
-                targetParcelId: target.id,
+                targetParcelId: attackTarget.id,
                 troopsCommitted: 1,
                 resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
               });
@@ -658,23 +771,22 @@ export class MemStorage implements IStorage {
         }
       }
 
-      if (player.aiBehavior === "defensive" && ownedParcels.length > 0) {
-        const weakestParcel = ownedParcels.reduce((min, p) =>
-          p.defenseLevel < min.defenseLevel ? p : min
-        );
-        if (weakestParcel.defenseLevel < 5 && player.iron >= UPGRADE_COSTS.defense.iron && player.fuel >= UPGRADE_COSTS.defense.fuel) {
-          try {
-            await this.upgradeBase({
-              playerId: player.id,
-              parcelId: weakestParcel.id,
-              upgradeType: "defense",
-            });
-          } catch (e) {}
+      if (player.aiBehavior === "defensive") {
+        for (const parcel of ownedParcels) {
+          if (parcel.defenseLevel < 5 && player.iron >= UPGRADE_COSTS.defense.iron && player.fuel >= UPGRADE_COSTS.defense.fuel) {
+            try {
+              await this.upgradeBase({ playerId: player.id, parcelId: parcel.id, upgradeType: "defense" });
+            } catch (e) {}
+            break;
+          }
         }
       }
     }
 
     this.events.push(...newEvents);
+    if (newEvents.length > 0) this.lastUpdateTs = now;
+    this.currentTurn++;
+
     return newEvents;
   }
 }

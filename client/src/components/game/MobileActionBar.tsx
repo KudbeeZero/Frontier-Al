@@ -54,7 +54,7 @@ export function MobileActionBar({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-sm uppercase tracking-wide truncate">
-              Sector {parcel.q},{parcel.r}
+              Plot #{parcel.plotId}
             </span>
             <Badge variant="outline" className="text-[10px] capitalize">
               {parcel.biome}

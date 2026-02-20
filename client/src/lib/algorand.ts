@@ -120,17 +120,77 @@ export async function sendPaymentTransaction(
 
 export async function createGameActionTransaction(
   fromAddress: string,
-  actionType: "mine" | "upgrade" | "attack" | "claim",
-  parcelId: string,
+  actionType: string,
+  plotId: number,
   metadata?: Record<string, unknown>
 ): Promise<string> {
   const suggestedParams = await getTransactionParams();
   
   const actionData = JSON.stringify({
     action: actionType,
-    parcelId,
+    plotId,
     timestamp: Date.now(),
     ...metadata,
+  });
+  
+  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: fromAddress,
+    receiver: fromAddress,
+    amount: 0,
+    note: new TextEncoder().encode(`FRONTIER:${actionData}`),
+    suggestedParams,
+  });
+
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
+  const txId = response.txid || txn.txID();
+  await algosdk.waitForConfirmation(algodClient, txId, 4);
+  
+  return txId;
+}
+
+export async function createPurchaseWithAlgoTransaction(
+  fromAddress: string,
+  treasuryAddress: string,
+  plotId: number,
+  algoAmount: number
+): Promise<string> {
+  const suggestedParams = await getTransactionParams();
+  const microAlgos = Math.floor(algoAmount * 1_000_000);
+  
+  const actionData = JSON.stringify({
+    action: "purchase",
+    plotId,
+    algoAmount,
+    timestamp: Date.now(),
+  });
+  
+  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: fromAddress,
+    receiver: treasuryAddress,
+    amount: microAlgos,
+    note: new TextEncoder().encode(`FRONTIER:${actionData}`),
+    suggestedParams,
+  });
+
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
+  const txId = response.txid || txn.txID();
+  await algosdk.waitForConfirmation(algodClient, txId, 4);
+  
+  return txId;
+}
+
+export async function createClaimFrontierTransaction(
+  fromAddress: string,
+  frontierAmount: number
+): Promise<string> {
+  const suggestedParams = await getTransactionParams();
+  
+  const actionData = JSON.stringify({
+    action: "claim_frontier",
+    amount: frontierAmount,
+    timestamp: Date.now(),
   });
   
   const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
@@ -158,6 +218,7 @@ export const FRONTIER_ASSETS = {
   iron: { name: "FRONTIER-IRON", unitName: "IRON", decimals: 0 },
   fuel: { name: "FRONTIER-FUEL", unitName: "FUEL", decimals: 0 },
   crystal: { name: "FRONTIER-CRYSTAL", unitName: "CRYSTAL", decimals: 0 },
+  frontier: { name: "FRONTIER", unitName: "FRNTR", decimals: 2 },
 } as const;
 
 export type FrontierResourceType = keyof typeof FRONTIER_ASSETS;
@@ -206,26 +267,4 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
   }
 }
 
-export async function createPurchaseTransaction(
-  fromAddress: string,
-  parcelId: string,
-  ironCost: number,
-  fuelCost: number
-): Promise<string> {
-  return createGameActionTransaction(fromAddress, "claim", parcelId, {
-    type: "purchase",
-    ironCost,
-    fuelCost,
-  });
-}
-
-export async function createBuildTransaction(
-  fromAddress: string,
-  parcelId: string,
-  improvementType: string
-): Promise<string> {
-  return createGameActionTransaction(fromAddress, "upgrade", parcelId, {
-    type: "build",
-    improvementType,
-  });
-}
+export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";

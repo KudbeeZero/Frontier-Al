@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(
@@ -111,6 +111,17 @@ export async function registerRoutes(
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Collection failed" });
+    }
+  });
+
+  app.post("/api/actions/claim-frontier", async (req, res) => {
+    try {
+      const action = claimFrontierActionSchema.parse(req.body);
+      const result = await storage.claimFrontier(action.playerId);
+      res.json({ success: true, claimed: result });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });
     }
   });
 
