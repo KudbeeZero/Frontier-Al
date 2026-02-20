@@ -81,6 +81,7 @@ export interface IStorage {
   purchaseLand(action: PurchaseAction): Promise<LandParcel>;
   collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }>;
   claimFrontier(playerId: string): Promise<{ amount: number }>;
+  restoreFrontier(playerId: string, amount: number): Promise<void>;
   mintAvatar(action: MintAvatarAction): Promise<CommanderAvatar>;
   executeSpecialAttack(action: SpecialAttackAction): Promise<{ damage: number; effect: string }>;
   deployDrone(action: DeployDroneAction): Promise<ReconDrone>;
@@ -435,6 +436,17 @@ export class MemStorage implements IStorage {
     }
 
     return { amount: rounded };
+  }
+
+  async restoreFrontier(playerId: string, amount: number): Promise<void> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player || amount <= 0) return;
+
+    player.frontier -= amount;
+    player.totalFrontierEarned -= amount;
+    this.frontierCirculating -= amount;
+    console.log(`Restored ${amount} FRONTIER for player ${player.name} due to failed transfer`);
   }
 
   async buildImprovement(action: BuildAction): Promise<LandParcel> {

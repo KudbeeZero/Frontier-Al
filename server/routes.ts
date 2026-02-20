@@ -152,25 +152,35 @@ export async function registerRoutes(
   app.post("/api/actions/claim-frontier", async (req, res) => {
     try {
       const action = claimFrontierActionSchema.parse(req.body);
-      const result = await storage.claimFrontier(action.playerId);
 
-      let txId: string | undefined;
+      const player = await storage.getPlayer(action.playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+
+      const walletAddress = player.address;
       const asaId = getFrontierAsaId();
+
+      if (!walletAddress || walletAddress === "PLAYER_WALLET" || walletAddress.startsWith("AI_")) {
+        return res.status(400).json({ error: "Connect a wallet before claiming FRONTIER" });
+      }
+
+      if (asaId) {
+        const optedIn = await isAddressOptedInToFrontier(walletAddress);
+        if (!optedIn) {
+          return res.status(400).json({ error: "You must opt-in to FRONTIER ASA before claiming" });
+        }
+      }
+
+      const result = await storage.claimFrontier(action.playerId);
+      let txId: string | undefined;
+
       if (asaId && result.amount > 0) {
         try {
-          const player = await storage.getPlayer(action.playerId);
-          const walletAddress = player?.address;
-          if (walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
-            const optedIn = await isAddressOptedInToFrontier(walletAddress);
-            if (optedIn) {
-              txId = await transferFrontierASA(walletAddress, result.amount);
-              console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
-            } else {
-              console.log(`Player ${walletAddress} not opted into FRONTIER ASA, skipping transfer`);
-            }
-          }
+          txId = await transferFrontierASA(walletAddress, result.amount);
+          console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
         } catch (transferErr) {
-          console.error("ASA transfer failed (claim still recorded):", transferErr);
+          console.error("ASA transfer failed, rolling back claim:", transferErr);
+          await storage.restoreFrontier(action.playerId, result.amount);
+          return res.status(500).json({ error: "On-chain transfer failed. Your FRONTIER has been restored." });
         }
       }
 
