@@ -1,5 +1,41 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import type { LandParcel } from "@shared/schema";
+import type { LandParcel, BiomeType } from "@shared/schema";
+import { biomeColors } from "@shared/schema";
+
+const SECTOR_NAMES: Record<string, string> = {
+  "NW": "Arctic Command",
+  "NE": "Nordic Sector",
+  "CW": "Atlantic Zone",
+  "CE": "Central Theater",
+  "SW": "Southern Front",
+  "SE": "Pacific Rim",
+};
+
+function getSector(lat: number, lng: number): string {
+  const ns = lat > 20 ? "N" : lat < -20 ? "S" : "C";
+  const ew = lng < 0 ? "W" : "E";
+  return ns + ew;
+}
+
+function getPlotName(plotId: number, biome: BiomeType): string {
+  const prefixes: Record<BiomeType, string[]> = {
+    forest: ["Ironwood", "Timberfall", "Greenhollow", "Darkroot"],
+    desert: ["Dustmarch", "Sunblast", "Sandrift", "Dryreach"],
+    mountain: ["Stonepeak", "Ironridge", "Frostcrag", "Highforge"],
+    plains: ["Flatwind", "Openfield", "Grassmere", "Goldstretch"],
+    water: ["Tidehaven", "Deepcove", "Saltmere", "Wavecrest"],
+    tundra: ["Frostheim", "Iceveil", "Snowdrift", "Coldreach"],
+    volcanic: ["Emberpeak", "Ashfall", "Magmacore", "Firegate"],
+    swamp: ["Bogmire", "Murkfen", "Rothollow", "Gloommarsh"],
+  };
+  const names = prefixes[biome] || prefixes.plains;
+  return `${names[plotId % names.length]}-${plotId}`;
+}
+
+interface PlayerInfo {
+  id: string;
+  name: string;
+}
 
 interface FlatMapProps {
   parcels: LandParcel[];
@@ -10,6 +46,7 @@ interface FlatMapProps {
   onLocateTerritory?: () => void;
   onFindEnemyTarget?: () => void;
   hasOwnedPlots?: boolean;
+  players?: PlayerInfo[];
 }
 
 const COLORS = {
@@ -33,6 +70,7 @@ export function FlatMap({
   onLocateTerritory,
   onFindEnemyTarget,
   hasOwnedPlots,
+  players,
 }: FlatMapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,11 +78,36 @@ export function FlatMap({
   const [hoveredPlotId, setHoveredPlotId] = useState<string | null>(null);
   const mapImageRef = useRef<HTMLImageElement | null>(null);
   const mapImageLoaded = useRef(false);
+  const selectedScreenPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const lastPosUpdateRef = useRef(0);
 
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+
+  const playerMap = useMemo(() => {
+    const m = new Map<string, string>();
+    players?.forEach(p => m.set(p.id, p.name));
+    return m;
+  }, [players]);
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
+
+  const starsRef = useRef<{ x: number; y: number; size: number; brightness: number; twinkleSpeed: number }[]>([]);
+  const shootingStarsRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; length: number }[]>([]);
+  const nextShootingStarRef = useRef(Math.random() * 200 + 100);
+
+  if (starsRef.current.length === 0) {
+    for (let i = 0; i < 120; i++) {
+      starsRef.current.push({
+        x: Math.random(),
+        y: Math.random(),
+        size: Math.random() * 1.5 + 0.5,
+        brightness: Math.random() * 0.6 + 0.2,
+        twinkleSpeed: Math.random() * 3 + 1,
+      });
+    }
+  }
 
   useEffect(() => {
     const img = new Image();
@@ -115,6 +178,8 @@ export function FlatMap({
     if (!ctx) return;
 
     let pulse = 0;
+    const stars = starsRef.current;
+    const shootingStars = shootingStarsRef.current;
 
     const render = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -134,6 +199,51 @@ export function FlatMap({
       ctx.fillStyle = COLORS.background;
       ctx.fillRect(0, 0, w, h);
 
+      for (const star of stars) {
+        const twinkle = Math.sin(pulse * star.twinkleSpeed) * 0.3 + 0.7;
+        const alpha = star.brightness * twinkle;
+        ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(star.x * w, star.y * h, star.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      nextShootingStarRef.current--;
+      if (nextShootingStarRef.current <= 0) {
+        const angle = Math.random() * 0.4 + 0.2;
+        const speed = Math.random() * 4 + 3;
+        shootingStars.push({
+          x: Math.random() * w * 0.8,
+          y: Math.random() * h * 0.3,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 0,
+          maxLife: Math.random() * 30 + 20,
+          length: Math.random() * 40 + 30,
+        });
+        nextShootingStarRef.current = Math.random() * 300 + 150;
+      }
+
+      for (let i = shootingStars.length - 1; i >= 0; i--) {
+        const ss = shootingStars[i];
+        ss.x += ss.vx;
+        ss.y += ss.vy;
+        ss.life++;
+        const alpha = 1 - ss.life / ss.maxLife;
+        if (alpha <= 0) { shootingStars.splice(i, 1); continue; }
+        const tailX = ss.x - ss.vx * 8;
+        const tailY = ss.y - ss.vy * 8;
+        const grad = ctx.createLinearGradient(ss.x, ss.y, tailX, tailY);
+        grad.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.9})`);
+        grad.addColorStop(1, `rgba(150, 200, 255, 0)`);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ss.x, ss.y);
+        ctx.lineTo(tailX, tailY);
+        ctx.stroke();
+      }
+
       const mapW = w * camera.zoom;
       const mapH = h * camera.zoom;
 
@@ -142,6 +252,31 @@ export function FlatMap({
         ctx.drawImage(mapImageRef.current, camera.x, camera.y, mapW, mapH);
         ctx.globalAlpha = 1.0;
       }
+
+      const glowSize = 40;
+      const topGlow = ctx.createLinearGradient(0, camera.y, 0, camera.y + glowSize);
+      topGlow.addColorStop(0, "rgba(30, 80, 180, 0.15)");
+      topGlow.addColorStop(1, "rgba(30, 80, 180, 0)");
+      ctx.fillStyle = topGlow;
+      ctx.fillRect(camera.x, camera.y, mapW, glowSize);
+
+      const bottomGlow = ctx.createLinearGradient(0, camera.y + mapH, 0, camera.y + mapH - glowSize);
+      bottomGlow.addColorStop(0, "rgba(30, 80, 180, 0.15)");
+      bottomGlow.addColorStop(1, "rgba(30, 80, 180, 0)");
+      ctx.fillStyle = bottomGlow;
+      ctx.fillRect(camera.x, camera.y + mapH - glowSize, mapW, glowSize);
+
+      const leftGlow = ctx.createLinearGradient(camera.x, 0, camera.x + glowSize, 0);
+      leftGlow.addColorStop(0, "rgba(30, 80, 180, 0.12)");
+      leftGlow.addColorStop(1, "rgba(30, 80, 180, 0)");
+      ctx.fillStyle = leftGlow;
+      ctx.fillRect(camera.x, camera.y, glowSize, mapH);
+
+      const rightGlow = ctx.createLinearGradient(camera.x + mapW, 0, camera.x + mapW - glowSize, 0);
+      rightGlow.addColorStop(0, "rgba(30, 80, 180, 0.12)");
+      rightGlow.addColorStop(1, "rgba(30, 80, 180, 0)");
+      ctx.fillStyle = rightGlow;
+      ctx.fillRect(camera.x + mapW - glowSize, camera.y, glowSize, mapH);
 
       const gridAlpha = Math.min(0.15, 0.05 + camera.zoom * 0.01);
       ctx.strokeStyle = `rgba(100, 200, 255, ${gridAlpha})`;
@@ -237,6 +372,18 @@ export function FlatMap({
         ctx.beginPath();
         ctx.arc(x, y, ringSize * 1.5, 0, Math.PI * 2);
         ctx.stroke();
+
+        selectedScreenPosRef.current = { x, y };
+        const now = Date.now();
+        if (now - lastPosUpdateRef.current > 50) {
+          lastPosUpdateRef.current = now;
+          setSelectedScreenPos({ x, y });
+        }
+      } else {
+        if (selectedScreenPosRef.current) {
+          selectedScreenPosRef.current = null;
+          setSelectedScreenPos(null);
+        }
       }
 
       animFrameRef.current = requestAnimationFrame(render);
@@ -426,6 +573,73 @@ export function FlatMap({
         style={{ width: "100%", height: "100%", touchAction: "none" }}
         data-testid="map-canvas"
       />
+
+      {selectedParcelId && selectedScreenPos && (() => {
+        const plot = plotIndex.get(selectedParcelId);
+        if (!plot) return null;
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        if (!containerRect) return null;
+        const popupW = 200;
+        const popupH = 140;
+        let px = selectedScreenPos.x + 20;
+        let py = selectedScreenPos.y - popupH / 2;
+        if (px + popupW > containerRect.width - 10) px = selectedScreenPos.x - popupW - 20;
+        if (py < 10) py = 10;
+        if (py + popupH > containerRect.height - 10) py = containerRect.height - popupH - 10;
+        const sectorKey = getSector(plot.lat, plot.lng);
+        const sectorName = SECTOR_NAMES[sectorKey] || "Unknown Sector";
+        const plotName = getPlotName(plot.plotId, plot.biome as BiomeType);
+        const ownerName = plot.ownerId ? (playerMap.get(plot.ownerId) || "Unknown") : "Unclaimed";
+        const isPlayer = plot.ownerId === currentPlayerId;
+        const isEnemy = plot.ownerId && !isPlayer;
+        const statusColor = isPlayer ? "#00ff44" : isEnemy ? "#ff2222" : "#888";
+        const statusText = isPlayer ? "YOUR BASE" : isEnemy ? "HOSTILE" : "UNCLAIMED";
+        const biomeColor = biomeColors[plot.biome as BiomeType] || "#666";
+
+        return (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{ left: px, top: py, width: popupW }}
+            data-testid="floating-plot-info"
+          >
+            <div className="backdrop-blur-lg bg-black/85 rounded-lg border border-white/15 shadow-2xl overflow-hidden">
+              <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderBottom: `2px solid ${statusColor}` }}>
+                <span className="text-[10px] font-display uppercase tracking-widest font-bold" style={{ color: statusColor }}>{statusText}</span>
+                <span className="text-[9px] font-mono text-white/50">#{plot.plotId}</span>
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                <div>
+                  <span className="text-xs font-display uppercase tracking-wide font-bold text-white block">{plotName}</span>
+                  <span className="text-[9px] text-white/40 font-display uppercase">{sectorName}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: biomeColor }} />
+                  <span className="text-[10px] text-white/70 capitalize">{plot.biome}</span>
+                  <span className="text-[9px] text-white/40 ml-auto">Rich: {plot.richness}%</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[9px]">
+                  <div className="flex justify-between">
+                    <span className="text-white/40 font-display uppercase">Defense</span>
+                    <span className="text-white font-mono">{plot.defenseLevel}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40 font-display uppercase">Yield</span>
+                    <span className="text-white font-mono">{plot.yieldMultiplier.toFixed(1)}x</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40 font-display uppercase">FRNTR/h</span>
+                    <span className="text-cyan-400 font-mono">{(plot.frontierPerDay / 24).toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40 font-display uppercase">Owner</span>
+                    <span className="text-white font-mono truncate ml-1" style={{ maxWidth: 60 }}>{ownerName}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="absolute bottom-20 left-3 z-10 pointer-events-none" data-testid="color-legend">
         <div className="backdrop-blur-md bg-black/70 rounded-md px-3 py-2.5 text-[10px] font-display uppercase tracking-wider space-y-1.5 border border-white/10">

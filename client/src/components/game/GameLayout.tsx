@@ -15,7 +15,7 @@ import { WarRoomPanel } from "./WarRoomPanel";
 import { WalletConnect } from "./WalletConnect";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
-import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
+import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ export function GameLayout() {
   const claimFrontierMutation = useClaimFrontier();
   const mintAvatarMutation = useMintAvatar();
   const specialAttackMutation = useSpecialAttack();
+  const switchCommanderMutation = useSwitchCommander();
   const deployDroneMutation = useDeployDrone();
 
   useEffect(() => {
@@ -201,6 +202,17 @@ export function GameLayout() {
     );
   };
 
+  const handleSwitchCommander = (index: number) => {
+    if (!player) return;
+    switchCommanderMutation.mutate(
+      { playerId: player.id, commanderIndex: index },
+      {
+        onSuccess: () => toast({ title: "Commander Switched", description: "Active commander updated." }),
+        onError: (error) => toast({ title: "Switch Failed", description: error.message, variant: "destructive" }),
+      }
+    );
+  };
+
   const handleDeployDrone = (targetParcelId?: string) => {
     if (!player) return;
     deployDroneMutation.mutate(
@@ -325,6 +337,7 @@ export function GameLayout() {
           onLocateTerritory={handleLocateTerritory}
           onFindEnemyTarget={handleFindEnemyTarget}
           hasOwnedPlots={playerHasOwnedPlots}
+          players={gameState.players}
         />
       ) : null}
 
@@ -417,6 +430,7 @@ export function GameLayout() {
               player={player}
               onMintAvatar={handleMintAvatar}
               onDeployDrone={handleDeployDrone}
+              onSwitchCommander={handleSwitchCommander}
               isMinting={mintAvatarMutation.isPending}
               isDeployingDrone={deployDroneMutation.isPending}
             />

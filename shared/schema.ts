@@ -150,6 +150,8 @@ export interface Player {
   attacksLost: number;
   territoriesCaptured: number;
   commander: CommanderAvatar | null;
+  commanders: CommanderAvatar[];
+  activeCommanderIndex: number;
   specialAttacks: SpecialAttackRecord[];
   drones: ReconDrone[];
   welcomeBonusReceived: boolean;

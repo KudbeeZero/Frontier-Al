@@ -232,6 +232,21 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/actions/switch-commander", async (req, res) => {
+    try {
+      const { playerId, commanderIndex } = req.body;
+      if (!playerId || commanderIndex === undefined) return res.status(400).json({ error: "playerId and commanderIndex required" });
+      const player = await storage.getPlayer(playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+      if (commanderIndex < 0 || commanderIndex >= player.commanders.length) return res.status(400).json({ error: "Invalid commander index" });
+      player.activeCommanderIndex = commanderIndex;
+      player.commander = player.commanders[commanderIndex];
+      res.json({ success: true, activeCommander: player.commander });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Switch failed" });
+    }
+  });
+
   app.post("/api/actions/special-attack", async (req, res) => {
     try {
       const action = specialAttackActionSchema.parse(req.body);

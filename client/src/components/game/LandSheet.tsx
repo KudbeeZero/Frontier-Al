@@ -94,13 +94,13 @@ export function LandSheet({
       )}
       data-testid="land-sheet"
     >
-      <div className="mx-2 backdrop-blur-xl bg-card/95 border border-border rounded-t-lg overflow-hidden shadow-xl">
+      <div className="mx-2 backdrop-blur-xl bg-card/95 border border-border rounded-t-lg shadow-xl flex flex-col" style={{ maxHeight: expanded ? "75vh" : "280px" }}>
         <div
-          className="h-1.5 w-full"
+          className="h-1.5 w-full shrink-0"
           style={{ backgroundColor: biomeColors[parcel.biome] }}
         />
 
-        <div className="p-3">
+        <div className="p-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div

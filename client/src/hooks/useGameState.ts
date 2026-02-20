@@ -123,6 +123,18 @@ export function useMintAvatar() {
   });
 }
 
+export function useSwitchCommander() {
+  return useMutation({
+    mutationFn: async (data: { playerId: string; commanderIndex: number }) => {
+      const response = await apiRequest("POST", "/api/actions/switch-commander", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
 export function useSpecialAttack() {
   return useMutation({
     mutationFn: async (action: SpecialAttackAction) => {

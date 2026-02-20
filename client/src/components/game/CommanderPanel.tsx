@@ -35,6 +35,7 @@ interface CommanderPanelProps {
   player: Player | null;
   onMintAvatar: (tier: CommanderTier) => void;
   onDeployDrone: (targetParcelId?: string) => void;
+  onSwitchCommander?: (index: number) => void;
   isMinting: boolean;
   isDeployingDrone: boolean;
   className?: string;
@@ -82,8 +83,9 @@ function DroneCard({ drone, index }: { drone: Player["drones"][0]; index: number
   );
 }
 
-export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting, isDeployingDrone, className }: CommanderPanelProps) {
+export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onSwitchCommander, isMinting, isDeployingDrone, className }: CommanderPanelProps) {
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
+  const [showMintSection, setShowMintSection] = useState(false);
 
   if (!player) {
     return (
@@ -94,7 +96,9 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting,
     );
   }
 
-  const hasCommander = !!player.commander;
+  const commanders = player.commanders || [];
+  const hasCommander = commanders.length > 0;
+  const activeCommander = player.commander;
   const activeDrones = player.drones.filter(d => {
     if (d.status !== "scouting") return true;
     return Date.now() - d.deployedAt < DRONE_SCOUT_DURATION_MS + 300000;
@@ -108,16 +112,84 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting,
           <h2 className="font-display text-lg font-bold uppercase tracking-wide">Commander</h2>
         </div>
         <p className="text-[10px] text-muted-foreground font-display uppercase tracking-wide">
-          FRONTIER Burned: {player.totalFrontierBurned.toFixed(1)} | Balance: {player.frontier.toFixed(1)}
+          FRONTIER Burned: {player.totalFrontierBurned.toFixed(1)} | Balance: {player.frontier.toFixed(1)} | Avatars: {commanders.length}
         </p>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {!hasCommander ? (
+          {hasCommander && (
+            <div data-testid="commander-info">
+              <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Swords className="w-3.5 h-3.5" /> Your Commanders ({commanders.length})
+              </h3>
+
+              {commanders.map((cmd, idx) => {
+                const isActive = activeCommander?.id === cmd.id;
+                return (
+                  <Card key={cmd.id} className={cn("p-3 mb-2", isActive && "border-primary")} data-testid={`commander-card-${idx}`}>
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={COMMANDER_IMAGES[cmd.tier]}
+                        alt={cmd.name}
+                        className="w-14 h-14 rounded-md object-cover"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-display uppercase font-bold" style={{ color: TIER_COLORS[cmd.tier] }}>
+                            {cmd.name}
+                          </span>
+                          {isActive && <Badge className="text-[8px] bg-primary/20 text-primary">ACTIVE</Badge>}
+                        </div>
+                        <Badge variant="outline" className="text-[9px] capitalize mb-1">{cmd.tier}</Badge>
+                        <div className="grid grid-cols-3 gap-1 mt-1">
+                          <div className="text-[10px]">
+                            <span className="text-muted-foreground font-display uppercase">ATK</span>{" "}
+                            <span className="font-mono font-bold">+{cmd.attackBonus}</span>
+                          </div>
+                          <div className="text-[10px]">
+                            <span className="text-muted-foreground font-display uppercase">DEF</span>{" "}
+                            <span className="font-mono font-bold">+{cmd.defenseBonus}</span>
+                          </div>
+                          <div className="text-[10px]">
+                            <span className="text-muted-foreground font-display uppercase">Kills</span>{" "}
+                            <span className="font-mono font-bold">{cmd.totalKills}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {!isActive && onSwitchCommander && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onSwitchCommander(idx)}
+                          className="text-[10px] font-display uppercase shrink-0"
+                          data-testid={`button-switch-commander-${idx}`}
+                        >
+                          Set Active
+                        </Button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMintSection(!showMintSection)}
+                className="w-full font-display uppercase tracking-wide text-xs mt-2"
+                data-testid="button-toggle-mint"
+              >
+                <Zap className="w-3.5 h-3.5 mr-1.5" />
+                {showMintSection ? "Hide Mint" : "Mint Another Commander"}
+              </Button>
+            </div>
+          )}
+
+          {(!hasCommander || showMintSection) && (
             <div data-testid="mint-section">
               <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Swords className="w-3.5 h-3.5" /> Mint Your Commander
+                <Swords className="w-3.5 h-3.5" /> {hasCommander ? "Mint Another" : "Mint Your First Commander"}
               </h3>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {(Object.entries(COMMANDER_INFO) as [CommanderTier, typeof COMMANDER_INFO[CommanderTier]][]).map(([tier, info]) => {
@@ -190,45 +262,10 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting,
                 </Card>
               )}
             </div>
-          ) : (
-            <div data-testid="commander-info">
-              <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Swords className="w-3.5 h-3.5" /> Your Commander
-              </h3>
-              <Card className="p-3 mb-3">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={COMMANDER_IMAGES[player.commander!.tier]}
-                    alt={player.commander!.name}
-                    className="w-16 h-16 rounded-md object-cover"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-display uppercase font-bold block" style={{ color: TIER_COLORS[player.commander!.tier] }}>
-                      {player.commander!.name}
-                    </span>
-                    <Badge variant="outline" className="text-[9px] capitalize mb-1">{player.commander!.tier}</Badge>
-                    <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-                      <div className="text-[10px]">
-                        <span className="text-muted-foreground font-display uppercase">ATK</span>{" "}
-                        <span className="font-mono font-bold">+{player.commander!.attackBonus}</span>
-                      </div>
-                      <div className="text-[10px]">
-                        <span className="text-muted-foreground font-display uppercase">DEF</span>{" "}
-                        <span className="font-mono font-bold">+{player.commander!.defenseBonus}</span>
-                      </div>
-                    </div>
-                    <div className="text-[10px] mt-1">
-                      <span className="text-muted-foreground font-display uppercase">Kills</span>{" "}
-                      <span className="font-mono font-bold">{player.commander!.totalKills}</span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-2">
-                  <span className="font-display uppercase tracking-wide">Ability:</span>{" "}
-                  {player.commander!.specialAbility}
-                </p>
-              </Card>
+          )}
 
+          {activeCommander && (
+            <div>
               <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
                 <Target className="w-3.5 h-3.5" /> Special Attacks
               </h3>
@@ -236,7 +273,7 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting,
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {(Object.entries(SPECIAL_ATTACK_INFO) as [SpecialAttackType, typeof SPECIAL_ATTACK_INFO[SpecialAttackType]][]).map(([type, info]) => {
                   const Icon = ATTACK_ICONS[type];
-                  const isAvailable = info.requiredTier.includes(player.commander!.tier);
+                  const isAvailable = info.requiredTier.includes(activeCommander.tier);
                   const record = player.specialAttacks.find(sa => sa.type === type);
                   const isOnCooldown = record ? (Date.now() - record.lastUsedTs) < info.cooldownMs : false;
                   const cooldownRemaining = record ? Math.max(0, info.cooldownMs - (Date.now() - record.lastUsedTs)) : 0;
@@ -252,7 +289,7 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, isMinting,
                       data-testid={`attack-info-${type}`}
                     >
                       <div className="flex items-center gap-1.5 mb-1">
-                        <Icon className="w-3.5 h-3.5" style={{ color: isAvailable ? TIER_COLORS[player.commander!.tier] : undefined }} />
+                        <Icon className="w-3.5 h-3.5" style={{ color: isAvailable ? TIER_COLORS[activeCommander.tier] : undefined }} />
                         <span className="text-[10px] font-display uppercase tracking-wide font-bold">{info.name}</span>
                       </div>
                       <span className="text-[9px] text-muted-foreground block">{info.effect}</span>

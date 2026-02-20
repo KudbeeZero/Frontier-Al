@@ -173,6 +173,8 @@ export class MemStorage implements IStorage {
       attacksLost: 0,
       territoriesCaptured: 0,
       commander: null,
+      commanders: [],
+      activeCommanderIndex: 0,
       specialAttacks: [],
       drones: [],
       welcomeBonusReceived: false,
@@ -213,6 +215,8 @@ export class MemStorage implements IStorage {
         attacksLost: 0,
         territoriesCaptured: 0,
         commander: null,
+        commanders: [],
+        activeCommanderIndex: 0,
         specialAttacks: [],
         drones: [],
         welcomeBonusReceived: true,
@@ -690,7 +694,6 @@ export class MemStorage implements IStorage {
     await this.initialize();
     const player = this.players.get(action.playerId);
     if (!player) throw new Error("Player not found");
-    if (player.commander) throw new Error("You already have a Commander. Only one per player.");
 
     const info = COMMANDER_INFO[action.tier];
     if (!info) throw new Error("Invalid commander tier");
@@ -704,7 +707,7 @@ export class MemStorage implements IStorage {
     const avatar: CommanderAvatar = {
       id: randomUUID(),
       tier: action.tier,
-      name: info.name,
+      name: `${info.name} #${player.commanders.length + 1}`,
       attackBonus: Math.floor(info.baseAttackBonus * (1 + bonusRoll)),
       defenseBonus: Math.floor(info.baseDefenseBonus * (1 + bonusRoll)),
       specialAbility: info.specialAbility,
@@ -712,6 +715,8 @@ export class MemStorage implements IStorage {
       totalKills: 0,
     };
 
+    player.commanders.push(avatar);
+    player.activeCommanderIndex = player.commanders.length - 1;
     player.commander = avatar;
 
     this.events.push({
