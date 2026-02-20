@@ -1,14 +1,14 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   app.get("/api/game/state", async (req, res) => {
     try {
       const gameState = await storage.getGameState();
@@ -22,12 +22,9 @@ export async function registerRoutes(
   app.get("/api/game/parcel/:id", async (req, res) => {
     try {
       const parcel = await storage.getParcel(req.params.id);
-      if (!parcel) {
-        return res.status(404).json({ error: "Parcel not found" });
-      }
+      if (!parcel) return res.status(404).json({ error: "Parcel not found" });
       res.json(parcel);
     } catch (error) {
-      console.error("Error fetching parcel:", error);
       res.status(500).json({ error: "Failed to fetch parcel" });
     }
   });
@@ -35,13 +32,19 @@ export async function registerRoutes(
   app.get("/api/game/player/:id", async (req, res) => {
     try {
       const player = await storage.getPlayer(req.params.id);
-      if (!player) {
-        return res.status(404).json({ error: "Player not found" });
-      }
+      if (!player) return res.status(404).json({ error: "Player not found" });
       res.json(player);
     } catch (error) {
-      console.error("Error fetching player:", error);
       res.status(500).json({ error: "Failed to fetch player" });
+    }
+  });
+
+  app.get("/api/game/leaderboard", async (req, res) => {
+    try {
+      const leaderboard = await storage.getLeaderboard();
+      res.json(leaderboard);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch leaderboard" });
     }
   });
 
@@ -51,10 +54,7 @@ export async function registerRoutes(
       const result = await storage.mineResources(action);
       res.json({ success: true, yield: result });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid request data", details: error.errors });
-      }
-      console.error("Error mining:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mining failed" });
     }
   });
@@ -65,10 +65,7 @@ export async function registerRoutes(
       const parcel = await storage.upgradeBase(action);
       res.json({ success: true, parcel });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid request data", details: error.errors });
-      }
-      console.error("Error upgrading:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Upgrade failed" });
     }
   });
@@ -79,11 +76,41 @@ export async function registerRoutes(
       const battle = await storage.deployAttack(action);
       res.json({ success: true, battle });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid request data", details: error.errors });
-      }
-      console.error("Error attacking:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Attack failed" });
+    }
+  });
+
+  app.post("/api/actions/build", async (req, res) => {
+    try {
+      const action = buildActionSchema.parse(req.body);
+      const parcel = await storage.buildImprovement(action);
+      res.json({ success: true, parcel });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Build failed" });
+    }
+  });
+
+  app.post("/api/actions/purchase", async (req, res) => {
+    try {
+      const action = purchaseActionSchema.parse(req.body);
+      const parcel = await storage.purchaseLand(action);
+      res.json({ success: true, parcel });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Purchase failed" });
+    }
+  });
+
+  app.post("/api/actions/collect", async (req, res) => {
+    try {
+      const action = collectActionSchema.parse(req.body);
+      const result = await storage.collectAll(action.playerId);
+      res.json({ success: true, collected: result });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Collection failed" });
     }
   });
 
@@ -92,7 +119,6 @@ export async function registerRoutes(
       const resolved = await storage.resolveBattles();
       res.json({ success: true, resolved });
     } catch (error) {
-      console.error("Error resolving battles:", error);
       res.status(500).json({ error: "Failed to resolve battles" });
     }
   });
@@ -102,7 +128,6 @@ export async function registerRoutes(
       const events = await storage.runAITurn();
       res.json({ success: true, events });
     } catch (error) {
-      console.error("Error running AI turn:", error);
       res.status(500).json({ error: "Failed to run AI turn" });
     }
   });
@@ -114,7 +139,7 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Background task error:", error);
     }
-  }, 30000);
+  }, 15000);
 
   return httpServer;
 }

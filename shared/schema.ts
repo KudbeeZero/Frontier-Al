@@ -18,6 +18,28 @@ export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: num
   water: { yieldMod: 0.5, defenseMod: 0.7 },
 };
 
+export type ImprovementType = "turret" | "shield_gen" | "mine_drill" | "storage_depot" | "radar" | "fortress";
+
+export interface Improvement {
+  type: ImprovementType;
+  level: number;
+}
+
+export const IMPROVEMENT_INFO: Record<ImprovementType, {
+  name: string;
+  description: string;
+  cost: { iron: number; fuel: number };
+  maxLevel: number;
+  effect: string;
+}> = {
+  turret: { name: "Turret", description: "Automated defense turret", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense per level" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield for base", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense per level" },
+  mine_drill: { name: "Mining Drill", description: "Automated mining drill", cost: { iron: 50, fuel: 30 }, maxLevel: 3, effect: "+25% yield per level" },
+  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+100 capacity per level" },
+  radar: { name: "Radar Array", description: "Early warning system", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "See incoming attacks" },
+  fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
+};
+
 export interface HexCoord {
   q: number;
   r: number;
@@ -34,10 +56,13 @@ export interface LandParcel {
   defenseLevel: number;
   ironStored: number;
   fuelStored: number;
+  crystalStored: number;
+  storageCapacity: number;
   lastMineTs: number;
   activeBattleId: string | null;
   yieldMultiplier: number;
-  improvements: string[];
+  improvements: Improvement[];
+  purchasePrice: { iron: number; fuel: number } | null;
 }
 
 export interface Player {
@@ -50,6 +75,11 @@ export interface Player {
   ownedParcels: string[];
   isAI: boolean;
   aiBehavior?: "expansionist" | "defensive" | "raider" | "economic" | "adaptive";
+  totalIronMined: number;
+  totalFuelMined: number;
+  attacksWon: number;
+  attacksLost: number;
+  territoriesCaptured: number;
 }
 
 export interface Battle {
@@ -70,7 +100,7 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build";
   playerId: string;
   parcelId?: string;
   battleId?: string;
@@ -78,11 +108,24 @@ export interface GameEvent {
   timestamp: number;
 }
 
+export interface LeaderboardEntry {
+  playerId: string;
+  name: string;
+  address: string;
+  territories: number;
+  totalIronMined: number;
+  totalFuelMined: number;
+  attacksWon: number;
+  attacksLost: number;
+  isAI: boolean;
+}
+
 export interface GameState {
   parcels: LandParcel[];
   players: Player[];
   battles: Battle[];
   events: GameEvent[];
+  leaderboard: LeaderboardEntry[];
   currentTurn: number;
   lastUpdateTs: number;
 }
@@ -108,13 +151,32 @@ export const attackActionSchema = z.object({
   }),
 });
 
+export const buildActionSchema = z.object({
+  playerId: z.string(),
+  parcelId: z.string(),
+  improvementType: z.enum(["turret", "shield_gen", "mine_drill", "storage_depot", "radar", "fortress"]),
+});
+
+export const purchaseActionSchema = z.object({
+  playerId: z.string(),
+  parcelId: z.string(),
+});
+
+export const collectActionSchema = z.object({
+  playerId: z.string(),
+});
+
 export type MineAction = z.infer<typeof mineActionSchema>;
 export type UpgradeAction = z.infer<typeof upgradeActionSchema>;
 export type AttackAction = z.infer<typeof attackActionSchema>;
+export type BuildAction = z.infer<typeof buildActionSchema>;
+export type PurchaseAction = z.infer<typeof purchaseActionSchema>;
+export type CollectAction = z.infer<typeof collectActionSchema>;
 
-export const MINE_COOLDOWN_MS = 60 * 60 * 1000;
-export const BATTLE_DURATION_MS = 4 * 60 * 60 * 1000;
-export const BASE_YIELD = { iron: 10, fuel: 5 };
+export const MINE_COOLDOWN_MS = 5 * 60 * 1000;
+export const BATTLE_DURATION_MS = 10 * 60 * 1000;
+export const BASE_YIELD = { iron: 10, fuel: 5, crystal: 1 };
+export const BASE_STORAGE_CAPACITY = 200;
 export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
   defense: { iron: 50, fuel: 25 },
   yield: { iron: 75, fuel: 50 },
@@ -122,3 +184,11 @@ export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
   fortress: { iron: 200, fuel: 150 },
 };
 export const ATTACK_BASE_COST = { iron: 30, fuel: 20 };
+
+export const LAND_PURCHASE_BASE: Record<BiomeType, { iron: number; fuel: number }> = {
+  forest: { iron: 80, fuel: 40 },
+  plains: { iron: 60, fuel: 30 },
+  mountain: { iron: 120, fuel: 60 },
+  desert: { iron: 40, fuel: 20 },
+  water: { iron: 200, fuel: 100 },
+};

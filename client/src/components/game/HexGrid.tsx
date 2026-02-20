@@ -422,6 +422,57 @@ export function HexGrid({
         ctx.fillText(`${parcel.defenseLevel}`, screen.x, screen.y + hexScale * 0.35);
         ctx.shadowBlur = 0;
       }
+
+      if (parcel.improvements && parcel.improvements.length > 0 && scale > 0.4) {
+        const impIcons: Record<string, string> = {
+          turret: "\u25B2",
+          shield_gen: "\u25C6",
+          mine_drill: "\u25BC",
+          storage_depot: "\u25A0",
+          radar: "\u25CE",
+          fortress: "\u2605",
+        };
+        const iconSize = Math.max(8, 10 * scale);
+        const spacing = iconSize * 1.4;
+        const startX = screen.x - ((parcel.improvements.length - 1) * spacing) / 2;
+        const iconY = screen.y - hexScale * 0.3;
+
+        for (let i = 0; i < parcel.improvements.length; i++) {
+          const imp = parcel.improvements[i];
+          const ix = startX + i * spacing;
+
+          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+          ctx.beginPath();
+          ctx.arc(ix, iconY, iconSize * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = imp.type === "turret" ? "#ff6b6b" :
+                          imp.type === "shield_gen" ? "#6bc5ff" :
+                          imp.type === "mine_drill" ? "#ffb86b" :
+                          imp.type === "storage_depot" ? "#b8b8b8" :
+                          imp.type === "radar" ? "#6bff9a" :
+                          "#ffd700";
+          ctx.font = `bold ${iconSize}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(impIcons[imp.type] || "\u2022", ix, iconY);
+        }
+      }
+
+      if (parcel.ironStored + parcel.fuelStored + parcel.crystalStored > 0 && parcel.ownerId && scale > 0.5) {
+        const total = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
+        const pct = total / parcel.storageCapacity;
+        const barWidth = hexScale * 0.8;
+        const barHeight = 3 * Math.min(1, scale);
+        const barX = screen.x - barWidth / 2;
+        const barY = screen.y + hexScale * 0.5;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        ctx.fillStyle = pct > 0.8 ? "#ff6b6b" : pct > 0.5 ? "#ffb86b" : "#6bff9a";
+        ctx.fillRect(barX, barY, barWidth * pct, barHeight);
+      }
     },
     [worldToScreen, scale, currentPlayerId, drawTerrainTexture]
   );
