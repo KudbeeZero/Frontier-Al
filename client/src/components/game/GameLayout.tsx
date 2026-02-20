@@ -231,6 +231,19 @@ export function GameLayout() {
     }
   };
 
+  const handleFindEnemyTarget = () => {
+    if (!gameState) return;
+    const enemyPlots = gameState.parcels.filter(p => p.ownerId && p.ownerId !== player?.id);
+    if (enemyPlots.length > 0) {
+      const randomEnemy = enemyPlots[Math.floor(Math.random() * enemyPlots.length)];
+      setSelectedParcelId(randomEnemy.id);
+      setActiveTab("map");
+      toast({ title: "Enemy Located", description: `Plot #${randomEnemy.plotId} owned by ${randomEnemy.ownerType === "ai" ? "AI Faction" : "Player"} — tap to attack!` });
+    } else {
+      toast({ title: "No Enemies Found", description: "No enemy territories detected yet." });
+    }
+  };
+
   const playerHasOwnedPlots = player && gameState ? gameState.parcels.some(p => p.ownerId === player.id) : false;
 
   if (error) {
@@ -294,148 +307,147 @@ export function GameLayout() {
   const showFullscreenPanel = activeTab !== "map";
 
   return (
-    <div className="flex flex-col h-screen bg-background" data-testid="game-layout">
-      <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
-
-      <div className="flex-1 flex overflow-hidden relative">
-        <aside className="hidden lg:flex flex-col w-80 border-r border-border p-4 space-y-4 overflow-auto bg-sidebar/50">
-          {isLoading ? (
-            <>
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-32 w-full" />
-            </>
-          ) : (
-            <BaseInfoPanel
-              parcel={selectedParcel}
-              player={player}
-              onMine={handleMine}
-              onUpgrade={handleUpgrade}
-              onAttack={handleAttackClick}
-              isMining={mineMutation.isPending}
-              isUpgrading={upgradeMutation.isPending}
-            />
-          )}
-        </aside>
-
-        <main className="flex-1 relative overflow-hidden">
-          {isLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="font-display text-lg uppercase tracking-wide text-muted-foreground">Loading Game World...</p>
-              </div>
-            </div>
-          ) : gameState ? (
-            <PlanetGlobe
-              parcels={gameState.parcels}
-              selectedParcelId={selectedParcelId}
-              currentPlayerId={player?.id || null}
-              onParcelSelect={setSelectedParcelId}
-              className="absolute inset-0"
-              onLocateTerritory={handleLocateTerritory}
-              hasOwnedPlots={playerHasOwnedPlots}
-            />
-          ) : null}
-
-          {isConnected && frontierAsaId && !isOptedInToFrontier && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">
-              <Button
-                onClick={signOptInToFrontier}
-                className="gap-2 font-display uppercase tracking-wide text-xs animate-pulse"
-                data-testid="button-opt-in-frontier"
-              >
-                <Coins className="w-4 h-4" />
-                Opt-In to FRONTIER Token (ASA #{frontierAsaId})
-              </Button>
-            </div>
-          )}
-
-          {player && (
-            <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && !isOptedInToFrontier ? "top-14" : "top-3")}>
-              <ResourceHUD
-                iron={player.iron}
-                fuel={player.fuel}
-                crystal={player.crystal}
-                frontier={player.frontier}
-                algoBalance={balance}
-              />
-            </div>
-          )}
-        </main>
-
-        <aside className="hidden lg:flex flex-col w-80 border-l border-border overflow-auto bg-sidebar/50">
-          {isLoading ? (
-            <div className="p-4 space-y-4">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : gameState ? (
-            <WarRoomPanel
-              battles={gameState.battles}
-              events={gameState.events}
-              players={gameState.players}
-              className="h-full border-0 rounded-none"
-            />
-          ) : null}
-        </aside>
-
-        {showFullscreenPanel && (
-          <div className="lg:hidden absolute inset-0 z-30 bg-background" data-testid="fullscreen-panel">
-            {activeTab === "inventory" && gameState && (
-              <InventoryPanel
-                player={player}
-                parcels={gameState.parcels}
-                onCollectAll={handleCollectAll}
-                onClaimFrontier={handleClaimFrontier}
-                onSelectParcel={handleParcelSelectFromInventory}
-                isCollecting={collectMutation.isPending}
-                isClaimingFrontier={claimFrontierMutation.isPending}
-              />
-            )}
-            {activeTab === "battles" && gameState && (
-              <BattlesPanel
-                battles={gameState.battles}
-                events={gameState.events}
-                players={gameState.players}
-              />
-            )}
-            {activeTab === "commander" && gameState && (
-              <CommanderPanel
-                player={player}
-                onMintAvatar={handleMintAvatar}
-                onDeployDrone={handleDeployDrone}
-                isMinting={mintAvatarMutation.isPending}
-                isDeployingDrone={deployDroneMutation.isPending}
-              />
-            )}
-            {activeTab === "leaderboard" && gameState && (
-              <LeaderboardPanel
-                entries={gameState.leaderboard}
-                currentPlayerId={player?.id || null}
-              />
-            )}
+    <div className="relative h-screen w-screen overflow-hidden bg-black" data-testid="game-layout">
+      {isLoading ? (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="font-display text-lg uppercase tracking-wide text-muted-foreground">Loading Game World...</p>
           </div>
-        )}
+        </div>
+      ) : gameState ? (
+        <PlanetGlobe
+          parcels={gameState.parcels}
+          selectedParcelId={selectedParcelId}
+          currentPlayerId={player?.id || null}
+          onParcelSelect={setSelectedParcelId}
+          className="absolute inset-0 w-full h-full"
+          onLocateTerritory={handleLocateTerritory}
+          onFindEnemyTarget={handleFindEnemyTarget}
+          hasOwnedPlots={playerHasOwnedPlots}
+        />
+      ) : null}
 
-        {activeTab === "map" && selectedParcel && (
-          <LandSheet
+      <div className="absolute top-0 left-0 right-0 z-40">
+        <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
+      </div>
+
+      {isConnected && frontierAsaId && !isOptedInToFrontier && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">
+          <Button
+            onClick={signOptInToFrontier}
+            className="gap-2 font-display uppercase tracking-wide text-xs animate-pulse"
+            data-testid="button-opt-in-frontier"
+          >
+            <Coins className="w-4 h-4" />
+            Opt-In to FRONTIER Token (ASA #{frontierAsaId})
+          </Button>
+        </div>
+      )}
+
+      {player && (
+        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && !isOptedInToFrontier ? "top-28" : "top-16")}>
+          <ResourceHUD
+            iron={player.iron}
+            fuel={player.fuel}
+            crystal={player.crystal}
+            frontier={player.frontier}
+            algoBalance={balance}
+          />
+        </div>
+      )}
+
+      <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border p-4 space-y-4 overflow-auto">
+        {isLoading ? (
+          <>
+            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </>
+        ) : (
+          <BaseInfoPanel
             parcel={selectedParcel}
             player={player}
             onMine={handleMine}
             onUpgrade={handleUpgrade}
             onAttack={handleAttackClick}
-            onBuild={handleBuild}
-            onPurchase={handlePurchase}
-            onSpecialAttack={handleSpecialAttack}
-            onClose={() => setSelectedParcelId(null)}
             isMining={mineMutation.isPending}
             isUpgrading={upgradeMutation.isPending}
-            isBuilding={buildMutation.isPending}
-            isPurchasing={purchaseMutation.isPending}
-            isSpecialAttacking={specialAttackMutation.isPending}
           />
         )}
-      </div>
+      </aside>
+
+      <aside className="hidden lg:flex flex-col w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-auto">
+        {isLoading ? (
+          <div className="p-4 space-y-4">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : gameState ? (
+          <WarRoomPanel
+            battles={gameState.battles}
+            events={gameState.events}
+            players={gameState.players}
+            className="h-full border-0 rounded-none"
+          />
+        ) : null}
+      </aside>
+
+      {showFullscreenPanel && (
+        <div className="lg:hidden absolute inset-0 z-30 bg-background pt-16" data-testid="fullscreen-panel">
+          {activeTab === "inventory" && gameState && (
+            <InventoryPanel
+              player={player}
+              parcels={gameState.parcels}
+              onCollectAll={handleCollectAll}
+              onClaimFrontier={handleClaimFrontier}
+              onSelectParcel={handleParcelSelectFromInventory}
+              isCollecting={collectMutation.isPending}
+              isClaimingFrontier={claimFrontierMutation.isPending}
+            />
+          )}
+          {activeTab === "battles" && gameState && (
+            <BattlesPanel
+              battles={gameState.battles}
+              events={gameState.events}
+              players={gameState.players}
+            />
+          )}
+          {activeTab === "commander" && gameState && (
+            <CommanderPanel
+              player={player}
+              onMintAvatar={handleMintAvatar}
+              onDeployDrone={handleDeployDrone}
+              isMinting={mintAvatarMutation.isPending}
+              isDeployingDrone={deployDroneMutation.isPending}
+            />
+          )}
+          {activeTab === "leaderboard" && gameState && (
+            <LeaderboardPanel
+              entries={gameState.leaderboard}
+              currentPlayerId={player?.id || null}
+            />
+          )}
+        </div>
+      )}
+
+      {activeTab === "map" && selectedParcel && (
+        <LandSheet
+          parcel={selectedParcel}
+          player={player}
+          onMine={handleMine}
+          onUpgrade={handleUpgrade}
+          onAttack={handleAttackClick}
+          onBuild={handleBuild}
+          onPurchase={handlePurchase}
+          onSpecialAttack={handleSpecialAttack}
+          onClose={() => setSelectedParcelId(null)}
+          isMining={mineMutation.isPending}
+          isUpgrading={upgradeMutation.isPending}
+          isBuilding={buildMutation.isPending}
+          isPurchasing={purchaseMutation.isPending}
+          isSpecialAttacking={specialAttackMutation.isPending}
+        />
+      )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} battleCount={activeBattleCount} />
 

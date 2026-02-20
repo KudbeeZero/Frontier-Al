@@ -12,6 +12,7 @@ interface PlanetGlobeProps {
   onParcelSelect: (parcelId: string) => void;
   className?: string;
   onLocateTerritory?: () => void;
+  onFindEnemyTarget?: () => void;
   hasOwnedPlots?: boolean;
 }
 
@@ -30,9 +31,9 @@ const BIOME_COLORS: Record<BiomeType, string> = {
 };
 
 const OWNER_COLORS = {
-  player: new THREE.Color("#00ffcc"),
-  ai: new THREE.Color("#ff4444"),
-  none: new THREE.Color("#333333"),
+  player: new THREE.Color("#00ff44"),
+  ai: new THREE.Color("#ff2222"),
+  none: new THREE.Color("#111111"),
 };
 
 function latLngToSphere(lat: number, lng: number, radius: number): THREE.Vector3 {
@@ -174,20 +175,21 @@ function PlotInstances({
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
-      const biomeColor = BIOME_COLORS[p.biome] || "#555555";
       if (p.ownerId) {
-        const ownerColor = p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai;
-        const blendAmount = p.ownerType === "player" ? 0.6 : 0.4;
-        color.set(biomeColor).lerp(ownerColor, blendAmount);
+        if (p.ownerId === currentPlayerId || p.ownerType === "player") {
+          color.copy(OWNER_COLORS.player);
+        } else {
+          color.copy(OWNER_COLORS.ai);
+        }
       } else {
-        color.set(biomeColor);
+        color.copy(OWNER_COLORS.none);
       }
       meshRef.current.setColorAt(i, color);
     }
 
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [parcels]);
+  }, [parcels, currentPlayerId]);
 
   const lastScaleRef = useRef(1);
 
@@ -206,9 +208,10 @@ function PlotInstances({
       const dummy = new THREE.Object3D();
       for (let i = 0; i < parcels.length; i++) {
         const p = parcels[i];
-        const isPlayerOwned = p.ownerId && p.ownerType === "player";
-        const elevation = isPlayerOwned ? PLOT_ELEVATION * 2.5 : PLOT_ELEVATION;
-        const scale = isPlayerOwned ? zoomScale * 1.4 : zoomScale;
+        const isPlayerOwned = p.ownerId && (p.ownerId === currentPlayerId || p.ownerType === "player");
+        const isAiOwned = p.ownerId && !isPlayerOwned;
+        const elevation = isPlayerOwned ? PLOT_ELEVATION * 3 : isAiOwned ? PLOT_ELEVATION * 2 : PLOT_ELEVATION;
+        const scale = isPlayerOwned ? zoomScale * 1.5 : isAiOwned ? zoomScale * 1.3 : zoomScale;
         const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + elevation);
         const normal = pos.clone().normalize();
         dummy.position.copy(pos);
@@ -228,17 +231,21 @@ function PlotInstances({
       const p = parcels[i];
       const isSelected = p.id === selectedParcelId;
       const isHovered = i === hoveredIndex;
-      const isPlayerOwned = p.ownerId && p.ownerType === "player";
+      const isPlayerOwned = p.ownerId && (p.ownerId === currentPlayerId || p.ownerType === "player");
 
       if (isSelected || isHovered || isPlayerOwned) {
-        const biomeColor = BIOME_COLORS[p.biome] || "#555555";
         if (isSelected) {
           const pulse = Math.sin(pulseRef.current) * 0.3 + 0.7;
-          color.set("#00ffcc").multiplyScalar(pulse);
+          color.set("#ffffff").multiplyScalar(pulse);
         } else if (isHovered) {
-          color.set(biomeColor).lerp(new THREE.Color("#ffffff"), 0.3);
+          if (p.ownerId) {
+            const base = isPlayerOwned ? OWNER_COLORS.player : OWNER_COLORS.ai;
+            color.copy(base).lerp(new THREE.Color("#ffffff"), 0.3);
+          } else {
+            color.set("#555555");
+          }
         } else if (isPlayerOwned) {
-          color.set(biomeColor).lerp(OWNER_COLORS.player, 0.6).multiplyScalar(playerGlow + 0.2);
+          color.copy(OWNER_COLORS.player).multiplyScalar(playerGlow + 0.2);
         }
         meshRef.current.setColorAt(i, color);
         needsColorUpdate = true;
@@ -265,12 +272,11 @@ function PlotInstances({
       const p = parcelMap.get(hoveredIndex);
       if (p && meshRef.current) {
         const color = new THREE.Color();
-        const biomeColor = BIOME_COLORS[p.biome] || "#555555";
         if (p.ownerId) {
-          const ownerColor = p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai;
-          color.set(biomeColor).lerp(ownerColor, 0.4);
+          const isPlayerOwned = p.ownerId === currentPlayerId || p.ownerType === "player";
+          color.copy(isPlayerOwned ? OWNER_COLORS.player : OWNER_COLORS.ai);
         } else {
-          color.set(biomeColor);
+          color.copy(OWNER_COLORS.none);
         }
         meshRef.current.setColorAt(hoveredIndex, color);
         if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
@@ -278,7 +284,7 @@ function PlotInstances({
     }
     setHoveredIndex(null);
     document.body.style.cursor = "default";
-  }, [hoveredIndex, parcelMap]);
+  }, [hoveredIndex, parcelMap, currentPlayerId]);
 
   const handleClick = useCallback(
     (e: any) => {
@@ -305,11 +311,12 @@ function PlotInstances({
     >
       <meshStandardMaterial
         vertexColors
-        roughness={0.6}
-        metalness={0.2}
+        roughness={0.4}
+        metalness={0.3}
         side={THREE.DoubleSide}
         transparent
-        opacity={0.85}
+        opacity={0.95}
+        emissiveIntensity={0.3}
       />
     </instancedMesh>
   );
@@ -378,6 +385,7 @@ export function PlanetGlobe({
   onParcelSelect,
   className,
   onLocateTerritory,
+  onFindEnemyTarget,
   hasOwnedPlots,
 }: PlanetGlobeProps) {
   return (
@@ -417,16 +425,46 @@ export function PlanetGlobe({
           />
           <CameraController />
         </Canvas>
-        {hasOwnedPlots && onLocateTerritory && (
-          <button
-            onClick={onLocateTerritory}
-            className="absolute bottom-20 right-3 z-10 bg-primary/90 hover:bg-primary text-primary-foreground px-3 py-2 rounded-md text-xs font-display uppercase tracking-wide flex items-center gap-1.5 shadow-lg"
-            data-testid="button-locate-territory"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            My Territories
-          </button>
-        )}
+
+        <div className="absolute bottom-20 left-3 z-10 flex flex-col gap-1.5 pointer-events-none" data-testid="color-legend">
+          <div className="backdrop-blur-md bg-black/60 rounded-md px-2.5 py-2 text-[10px] font-display uppercase tracking-wider space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#00ff44" }} />
+              <span className="text-green-400">Your Territory</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#ff2222" }} />
+              <span className="text-red-400">Enemy Territory</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#111111", border: "1px solid #333" }} />
+              <span className="text-gray-500">Unclaimed</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute bottom-20 right-3 z-10 flex flex-col gap-2">
+          {hasOwnedPlots && onLocateTerritory && (
+            <button
+              onClick={onLocateTerritory}
+              className="bg-green-600/90 hover:bg-green-500 text-white px-3 py-2 rounded-md text-xs font-display uppercase tracking-wide flex items-center gap-1.5 shadow-lg"
+              data-testid="button-locate-territory"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              My Bases
+            </button>
+          )}
+          {onFindEnemyTarget && (
+            <button
+              onClick={onFindEnemyTarget}
+              className="bg-red-600/90 hover:bg-red-500 text-white px-3 py-2 rounded-md text-xs font-display uppercase tracking-wide flex items-center gap-1.5 shadow-lg"
+              data-testid="button-find-enemy"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Find Targets
+            </button>
+          )}
+        </div>
       </div>
     </WebGLErrorBoundary>
   );
