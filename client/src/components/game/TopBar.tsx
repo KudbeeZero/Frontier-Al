@@ -1,4 +1,5 @@
 import { Settings, Sun, Moon, HelpCircle, Menu } from "lucide-react";
+import { SiTelegram, SiX, SiGithub, SiDiscord } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -61,7 +62,30 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
+        <div className="hidden sm:flex items-center gap-1 mr-1 border-r border-border pr-2">
+          <a href="https://t.me/frontier_game" target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" data-testid="link-telegram">
+              <SiTelegram className="w-4 h-4" />
+            </Button>
+          </a>
+          <a href="https://x.com/frontier_game" target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" data-testid="link-twitter">
+              <SiX className="w-4 h-4" />
+            </Button>
+          </a>
+          <a href="https://github.com/frontier-game" target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" data-testid="link-github">
+              <SiGithub className="w-4 h-4" />
+            </Button>
+          </a>
+          <a href="https://discord.gg/frontier" target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="icon" data-testid="link-discord">
+              <SiDiscord className="w-4 h-4" />
+            </Button>
+          </a>
+        </div>
+
         <Button
           variant="ghost"
           size="icon"

@@ -174,15 +174,28 @@ See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 ## Recent Changes (V1.1 -> V1.2)
 - **21,000 plots**: Replaced hex grid with Fibonacci sphere distribution (plotId 1-21000)
 - **3D Globe**: InstancedMesh rendering for all 21K plots simultaneously (single GPU draw call)
-- **FRONTIER Token**: ASA with 1B supply, passive earning per plot, claimable on-chain
-- **ALGO Land Purchase**: Land costs real ALGO instead of in-game resources
+- **Square Plots**: PlaneGeometry (squares) instead of circles, with dynamic zoom-based scaling (0.6x-2.5x)
+- **FRONTIER Token**: Real ASA on Algorand TestNet (ASA ID: 755818217), 1B supply, 6 decimals
+- **Server-side Algorand**: server/algorand.ts handles admin wallet, ASA creation, token transfers
+- **ASA Opt-In Flow**: Banner prompts connected wallets to opt-in to FRONTIER ASA before claiming
+- **Real ASA Transfers**: FRONTIER claim triggers admin-signed ASA transfer to player wallet
+- **ALGO Land Purchase**: Land costs real ALGO sent to admin treasury wallet
 - **Biome-based pricing**: Different ALGO costs per biome type
 - **Spatial AI neighbors**: AI factions use lat/lng proximity instead of hex adjacency
+- **Social Media Icons**: Telegram, X/Twitter, GitHub, Discord in TopBar
 - Mobile-first UI with bottom navigation
 - Bottom sheet land popup with ALGO purchase, FRONTIER claim display
 - Inventory panel with FRONTIER balance and claim button
 - ResourceHUD showing Iron, Fuel, Crystal, and FRONTIER
 - Leaderboard tracking FRONTIER earned
+
+## Blockchain API Endpoints
+- `GET /api/blockchain/status` - Blockchain status (ASA ID, admin address, balances)
+- `GET /api/blockchain/opt-in-check/:address` - Check if address opted into FRONTIER ASA
+
+## Key Files (Blockchain)
+- `server/algorand.ts` - Server-side Algorand: admin wallet, ASA creation, transfers, opt-in checks
+- `client/src/lib/algorand.ts` - Client-side Algorand: wallet signing, ASA helpers, blockchain status fetch
 
 ## Development
 Run with: `npm run dev`

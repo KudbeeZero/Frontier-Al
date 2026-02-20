@@ -17,11 +17,14 @@ import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Coins } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 
 export function GameLayout() {
   const { isConnected, balance } = useWallet();
-  const { signMineAction, signUpgradeAction, signAttackAction, signPurchaseAction, signClaimFrontierAction, isWalletConnected } = useBlockchainActions();
+  const { signMineAction, signUpgradeAction, signAttackAction, signPurchaseAction, signClaimFrontierAction, signOptInToFrontier, isWalletConnected, frontierAsaId, isOptedInToFrontier, treasuryAddress } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer();
   const { toast } = useToast();
@@ -286,8 +289,21 @@ export function GameLayout() {
             />
           ) : null}
 
+          {isConnected && frontierAsaId && !isOptedInToFrontier && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">
+              <Button
+                onClick={signOptInToFrontier}
+                className="gap-2 font-display uppercase tracking-wide text-xs animate-pulse"
+                data-testid="button-opt-in-frontier"
+              >
+                <Coins className="w-4 h-4" />
+                Opt-In to FRONTIER Token (ASA #{frontierAsaId})
+              </Button>
+            </div>
+          )}
+
           {player && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20">
+            <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && !isOptedInToFrontier ? "top-14" : "top-3")}>
               <ResourceHUD
                 iron={player.iron}
                 fuel={player.fuel}

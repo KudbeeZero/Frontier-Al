@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useWallet } from "./useWallet";
-import { createGameActionTransaction, createPurchaseWithAlgoTransaction, createClaimFrontierTransaction, GAME_TREASURY_ADDRESS } from "@/lib/algorand";
+import { createGameActionTransaction, createPurchaseWithAlgoTransaction, createClaimFrontierTransaction, fetchBlockchainStatus, getCachedTreasuryAddress, getCachedAsaId, optInToASA, isOptedInToASA } from "@/lib/algorand";
 import { useToast } from "@/hooks/use-toast";
 
 type ActionType = "mine" | "upgrade" | "attack" | "claim" | "build" | "purchase" | "claim_frontier";
@@ -10,6 +10,22 @@ export function useBlockchainActions() {
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
   const [lastTxId, setLastTxId] = useState<string | null>(null);
+  const [frontierAsaId, setFrontierAsaId] = useState<number | null>(null);
+  const [isOptedIn, setIsOptedIn] = useState(false);
+  const [treasuryAddress, setTreasuryAddress] = useState<string>("");
+
+  useEffect(() => {
+    fetchBlockchainStatus().then((status) => {
+      if (status.frontierAsaId) setFrontierAsaId(status.frontierAsaId);
+      if (status.adminAddress) setTreasuryAddress(status.adminAddress);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (address && frontierAsaId) {
+      isOptedInToASA(address, frontierAsaId).then(setIsOptedIn);
+    }
+  }, [address, frontierAsaId]);
 
   const signGameAction = useCallback(
     async (
@@ -94,9 +110,15 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
+        const targetAddress = treasuryAddress || getCachedTreasuryAddress();
+        if (!targetAddress) {
+          toast({ title: "Not Ready", description: "Blockchain not initialized yet. Try again.", variant: "destructive" });
+          setIsPending(false);
+          return null;
+        }
         const txId = await createPurchaseWithAlgoTransaction(
           address,
-          GAME_TREASURY_ADDRESS,
+          targetAddress,
           plotId,
           algoAmount
         );
@@ -156,6 +178,43 @@ export function useBlockchainActions() {
     [isConnected, address, toast]
   );
 
+  const signOptInToFrontier = useCallback(
+    async (): Promise<string | null> => {
+      if (!isConnected || !address) {
+        toast({ title: "Wallet Not Connected", description: "Connect wallet first.", variant: "destructive" });
+        return null;
+      }
+      if (!frontierAsaId) {
+        toast({ title: "Not Ready", description: "FRONTIER token not created yet.", variant: "destructive" });
+        return null;
+      }
+      if (isOptedIn) {
+        toast({ title: "Already Opted In", description: "You're already opted into FRONTIER." });
+        return null;
+      }
+
+      setIsPending(true);
+      try {
+        const txId = await optInToASA(address, frontierAsaId);
+        setLastTxId(txId);
+        setIsOptedIn(true);
+        toast({ title: "Opt-In Confirmed", description: `Opted into FRONTIER ASA. TX: ${txId.slice(0, 8)}...` });
+        return txId;
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Opt-In Cancelled", description: "You cancelled the opt-in." });
+        } else {
+          toast({ title: "Opt-In Failed", description: err?.message || "Failed", variant: "destructive" });
+        }
+        return null;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [isConnected, address, frontierAsaId, isOptedIn, toast]
+  );
+
   return {
     isPending,
     lastTxId,
@@ -164,6 +223,10 @@ export function useBlockchainActions() {
     signAttackAction,
     signPurchaseAction,
     signClaimFrontierAction,
+    signOptInToFrontier,
     isWalletConnected: isConnected,
+    frontierAsaId,
+    isOptedInToFrontier: isOptedIn,
+    treasuryAddress,
   };
 }

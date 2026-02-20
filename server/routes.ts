@@ -3,11 +3,46 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema } from "@shared/schema";
 import { z } from "zod";
+import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier } from "./algorand";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  let blockchainReady = false;
+  initializeBlockchain().then((result) => {
+    blockchainReady = true;
+    console.log(`Blockchain initialized: ASA=${result.asaId}, Admin=${result.adminAddress}, ALGO=${result.adminAlgo}`);
+  }).catch((err) => {
+    console.error("Blockchain init failed:", err);
+  });
+
+  app.get("/api/blockchain/status", async (_req, res) => {
+    try {
+      const asaId = getFrontierAsaId();
+      const adminAddress = getAdminAddress();
+      const balance = await getAdminBalance();
+      res.json({
+        ready: blockchainReady,
+        frontierAsaId: asaId,
+        adminAddress,
+        adminAlgoBalance: balance.algo,
+        adminFrontierBalance: balance.frontierAsa,
+      });
+    } catch (error) {
+      res.json({ ready: false, frontierAsaId: null, adminAddress: null });
+    }
+  });
+
+  app.get("/api/blockchain/opt-in-check/:address", async (req, res) => {
+    try {
+      const optedIn = await isAddressOptedInToFrontier(req.params.address);
+      res.json({ optedIn, asaId: getFrontierAsaId() });
+    } catch (error) {
+      res.json({ optedIn: false, asaId: getFrontierAsaId() });
+    }
+  });
 
   app.get("/api/game/state", async (req, res) => {
     try {
@@ -118,7 +153,28 @@ export async function registerRoutes(
     try {
       const action = claimFrontierActionSchema.parse(req.body);
       const result = await storage.claimFrontier(action.playerId);
-      res.json({ success: true, claimed: result });
+
+      let txId: string | undefined;
+      const asaId = getFrontierAsaId();
+      if (asaId && result.amount > 0) {
+        try {
+          const player = await storage.getPlayer(action.playerId);
+          const walletAddress = player?.address;
+          if (walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
+            const optedIn = await isAddressOptedInToFrontier(walletAddress);
+            if (optedIn) {
+              txId = await transferFrontierASA(walletAddress, result.amount);
+              console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
+            } else {
+              console.log(`Player ${walletAddress} not opted into FRONTIER ASA, skipping transfer`);
+            }
+          }
+        } catch (transferErr) {
+          console.error("ASA transfer failed (claim still recorded):", transferErr);
+        }
+      }
+
+      res.json({ success: true, claimed: result, txId, asaId });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });

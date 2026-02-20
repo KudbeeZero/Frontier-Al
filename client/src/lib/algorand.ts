@@ -267,4 +267,31 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
   }
 }
 
+let _cachedTreasuryAddress: string | null = null;
+let _cachedAsaId: number | null = null;
+
+export async function fetchBlockchainStatus(): Promise<{
+  ready: boolean;
+  frontierAsaId: number | null;
+  adminAddress: string | null;
+}> {
+  try {
+    const res = await fetch("/api/blockchain/status");
+    const data = await res.json();
+    if (data.adminAddress) _cachedTreasuryAddress = data.adminAddress;
+    if (data.frontierAsaId) _cachedAsaId = data.frontierAsaId;
+    return data;
+  } catch {
+    return { ready: false, frontierAsaId: null, adminAddress: null };
+  }
+}
+
+export function getCachedTreasuryAddress(): string {
+  return _cachedTreasuryAddress || "";
+}
+
+export function getCachedAsaId(): number | null {
+  return _cachedAsaId;
+}
+
 export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";

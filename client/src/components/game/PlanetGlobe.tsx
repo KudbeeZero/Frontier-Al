@@ -133,7 +133,7 @@ function PlotInstances({
   const pulseRef = useRef(0);
   const { camera } = useThree();
 
-  const plotSize = useMemo(() => {
+  const basePlotSize = useMemo(() => {
     const surfaceArea = 4 * Math.PI * GLOBE_RADIUS * GLOBE_RADIUS;
     const areaPerPlot = surfaceArea / parcels.length;
     return Math.sqrt(areaPerPlot) * 0.35;
@@ -146,9 +146,9 @@ function PlotInstances({
   }, [parcels]);
 
   const geometry = useMemo(() => {
-    const geo = new THREE.CircleGeometry(plotSize, 6);
+    const geo = new THREE.PlaneGeometry(basePlotSize, basePlotSize);
     return geo;
-  }, [plotSize]);
+  }, [basePlotSize]);
 
   useEffect(() => {
     return () => {
@@ -186,9 +186,33 @@ function PlotInstances({
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
   }, [parcels]);
 
+  const lastScaleRef = useRef(1);
+
   useFrame((_, delta) => {
     if (!meshRef.current) return;
     pulseRef.current += delta * 3;
+
+    const dist = camera.position.length();
+    const maxDist = GLOBE_RADIUS * 5;
+    const minDist = GLOBE_RADIUS + 0.5;
+    const t = Math.max(0, Math.min(1, (dist - minDist) / (maxDist - minDist)));
+    const zoomScale = THREE.MathUtils.lerp(2.5, 0.6, t);
+
+    if (Math.abs(zoomScale - lastScaleRef.current) > 0.01) {
+      lastScaleRef.current = zoomScale;
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < parcels.length; i++) {
+        const p = parcels[i];
+        const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + PLOT_ELEVATION);
+        const normal = pos.clone().normalize();
+        dummy.position.copy(pos);
+        dummy.lookAt(pos.clone().add(normal));
+        dummy.scale.setScalar(zoomScale);
+        dummy.updateMatrix();
+        meshRef.current.setMatrixAt(i, dummy.matrix);
+      }
+      meshRef.current.instanceMatrix.needsUpdate = true;
+    }
 
     const color = new THREE.Color();
     let needsColorUpdate = false;
