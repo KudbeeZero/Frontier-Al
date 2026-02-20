@@ -20,7 +20,7 @@ export function useBlockchainActions() {
       if (!isConnected || !address) {
         toast({
           title: "Wallet Not Connected",
-          description: "Connect your Pera Wallet to record actions on-chain.",
+          description: "Connect your wallet to record actions on-chain.",
           variant: "destructive",
         });
         return null;

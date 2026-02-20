@@ -4,18 +4,20 @@
 FRONTIER is a persistent hex-based war strategy game where players and AI factions compete for land, resources, and dominance on the Algorand blockchain (TestNet V1.1). Features mobile-first UI with bottom navigation, bottom-sheet land details, leaderboard, onboarding flow, and improvements/turrets system.
 
 ## Tech Stack
-- **Frontend**: React 18, TypeScript, Vite, TailwindCSS, Canvas-based HexGrid
+- **Frontend**: React 18, TypeScript, Vite, TailwindCSS
+- **3D Rendering**: Three.js (v0.170), @react-three/fiber (v8.17), @react-three/drei (v9.114)
 - **Backend**: Node.js, Express, In-memory storage
-- **Blockchain**: Algorand TestNet with Pera Wallet integration
+- **Blockchain**: Algorand TestNet with dual wallet support (Pera + LUTE)
   - AlgoSDK for transaction building
-  - @perawallet/connect for wallet connection
+  - @perawallet/connect for Pera Wallet connection
+  - lute-connect for LUTE Wallet connection
   - AlgoNode cloud endpoints for TestNet
   - ASA (Algorand Standard Asset) support for Iron/Fuel/Crystal tokens
 - **Styling**: Cyberpunk/Military sci-fi theme with Rajdhani + Inter fonts
 
 ## Algorand Integration
-- **Network**: Algorand TestNet (chainId: 416002)
-- **Wallet**: Pera Wallet (mobile + web)
+- **Network**: Algorand TestNet (chainId: 416002, genesisID: testnet-v1.0)
+- **Wallets**: Pera Wallet (mobile + web) and LUTE Wallet (browser-based)
 - **Endpoints**:
   - Algod: https://testnet-api.algonode.cloud
   - Indexer: https://testnet-idx.algonode.cloud
@@ -30,7 +32,8 @@ FRONTIER is a persistent hex-based war strategy game where players and AI factio
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── game/
-│   │   │   │   ├── HexGrid.tsx         # Canvas hex map with terrain textures, improvement icons, storage bars
+│   │   │   │   ├── PlanetGlobe.tsx      # 3D rotating globe with Three.js (replaces flat HexGrid on map tab)
+│   │   │   │   ├── HexGrid.tsx         # Legacy Canvas hex map (kept as fallback)
 │   │   │   │   ├── GameLayout.tsx       # Main game layout orchestrating all panels
 │   │   │   │   ├── BottomNav.tsx        # Mobile bottom navigation (Map/Inventory/Battles/Rankings/Rules)
 │   │   │   │   ├── LandSheet.tsx        # Bottom sheet land popup with mine/upgrade/build/attack/buy actions

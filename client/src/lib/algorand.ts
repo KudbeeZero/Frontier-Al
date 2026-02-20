@@ -1,8 +1,12 @@
 import algosdk from "algosdk";
 import { PeraWalletConnect } from "@perawallet/connect";
+import LuteConnect from "lute-connect";
+
+export type WalletType = "pera" | "lute";
 
 export const ALGORAND_TESTNET = {
   chainId: 416002 as const,
+  genesisID: "testnet-v1.0",
   algodUrl: "https://testnet-api.algonode.cloud",
   indexerUrl: "https://testnet-idx.algonode.cloud",
 };
@@ -23,6 +27,57 @@ export const peraWallet = new PeraWalletConnect({
   shouldShowSignTxnToast: true,
   compactMode: false,
 });
+
+export const luteWallet = new LuteConnect("FRONTIER");
+
+let activeWalletType: WalletType | null = null;
+
+export function getActiveWalletType(): WalletType | null {
+  return activeWalletType;
+}
+
+export function setActiveWalletType(type: WalletType | null) {
+  activeWalletType = type;
+}
+
+export async function signTransactionWithActiveWallet(
+  txn: algosdk.Transaction,
+  signerAddress: string
+): Promise<Uint8Array[]> {
+  if (activeWalletType === "pera") {
+    const singleTxnGroups = [{ txn, signers: [signerAddress] }];
+    const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
+    return signedTxnResult.flat().map((item: unknown) => {
+      if (item instanceof Uint8Array) return item;
+      if (typeof item === "object" && item !== null && "blob" in item) {
+        return (item as { blob: Uint8Array }).blob;
+      }
+      return item as Uint8Array;
+    });
+  } else if (activeWalletType === "lute") {
+    const encoded = algosdk.encodeUnsignedTransaction(txn);
+    let encodedTxn = "";
+    const bytes = new Uint8Array(encoded);
+    const chunk = 8192;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      encodedTxn += String.fromCharCode(...bytes.slice(i, i + chunk));
+    }
+    encodedTxn = btoa(encodedTxn);
+    const signedResult = await luteWallet.signTxns([
+      { txn: encodedTxn, signers: [signerAddress] },
+    ]);
+    return signedResult
+      .filter((s): s is Uint8Array => s !== null)
+      .map((s) => {
+        if (s instanceof Uint8Array) return s;
+        const binary = atob(s as unknown as string);
+        const arr = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+        return arr;
+      });
+  }
+  throw new Error("No wallet connected");
+}
 
 export async function getAccountBalance(address: string): Promise<number> {
   try {
@@ -55,17 +110,7 @@ export async function sendPaymentTransaction(
     suggestedParams,
   });
 
-  const singleTxnGroups = [{ txn, signers: [fromAddress] }];
-  const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
-  
-  const signedTxnBlob = signedTxnResult.flat().map((item: unknown) => {
-    if (item instanceof Uint8Array) return item;
-    if (typeof item === "object" && item !== null && "blob" in item) {
-      return (item as { blob: Uint8Array }).blob;
-    }
-    return item as Uint8Array;
-  });
-  
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
@@ -96,17 +141,7 @@ export async function createGameActionTransaction(
     suggestedParams,
   });
 
-  const singleTxnGroups = [{ txn, signers: [fromAddress] }];
-  const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
-  
-  const signedTxnBlob = signedTxnResult.flat().map((item: unknown) => {
-    if (item instanceof Uint8Array) return item;
-    if (typeof item === "object" && item !== null && "blob" in item) {
-      return (item as { blob: Uint8Array }).blob;
-    }
-    return item as Uint8Array;
-  });
-  
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
@@ -153,17 +188,7 @@ export async function optInToASA(
     suggestedParams,
   });
 
-  const singleTxnGroups = [{ txn, signers: [address] }];
-  const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
-  
-  const signedTxnBlob = signedTxnResult.flat().map((item: unknown) => {
-    if (item instanceof Uint8Array) return item;
-    if (typeof item === "object" && item !== null && "blob" in item) {
-      return (item as { blob: Uint8Array }).blob;
-    }
-    return item as Uint8Array;
-  });
-  
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, address);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);

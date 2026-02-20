@@ -1,5 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { peraWallet, getAccountBalance, formatAddress } from "@/lib/algorand";
+import {
+  peraWallet,
+  luteWallet,
+  getAccountBalance,
+  formatAddress,
+  setActiveWalletType,
+  ALGORAND_TESTNET,
+  type WalletType,
+} from "@/lib/algorand";
 
 interface WalletState {
   isConnected: boolean;
@@ -8,10 +16,12 @@ interface WalletState {
   balance: number;
   isConnecting: boolean;
   error: string | null;
+  walletType: WalletType | null;
 }
 
 interface WalletContextValue extends WalletState {
-  connect: () => Promise<void>;
+  connectPera: () => Promise<void>;
+  connectLute: () => Promise<void>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
 }
@@ -26,11 +36,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     balance: 0,
     isConnecting: false,
     error: null,
+    walletType: null,
   });
   
   const isReconnecting = useRef(false);
 
   const handleDisconnect = useCallback(() => {
+    setActiveWalletType(null);
+    localStorage.removeItem("frontier_wallet_type");
+    localStorage.removeItem("frontier_wallet_address");
     setState({
       isConnected: false,
       address: null,
@@ -38,6 +52,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       balance: 0,
       isConnecting: false,
       error: null,
+      walletType: null,
     });
   }, []);
 
@@ -46,9 +61,43 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, balance }));
   }, []);
 
+  const setConnected = useCallback((address: string, walletType: WalletType, balance: number) => {
+    setActiveWalletType(walletType);
+    localStorage.setItem("frontier_wallet_type", walletType);
+    localStorage.setItem("frontier_wallet_address", address);
+    setState({
+      isConnected: true,
+      address,
+      displayAddress: formatAddress(address),
+      balance,
+      isConnecting: false,
+      error: null,
+      walletType,
+    });
+  }, []);
+
   useEffect(() => {
     if (isReconnecting.current) return;
     isReconnecting.current = true;
+
+    const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;
+    const savedAddress = localStorage.getItem("frontier_wallet_address");
+
+    if (savedType === "lute" && savedAddress) {
+      setActiveWalletType("lute");
+      setState({
+        isConnected: true,
+        address: savedAddress,
+        displayAddress: formatAddress(savedAddress),
+        balance: 0,
+        isConnecting: false,
+        error: null,
+        walletType: "lute",
+      });
+      updateBalance(savedAddress);
+      isReconnecting.current = false;
+      return;
+    }
 
     peraWallet
       .reconnectSession()
@@ -57,6 +106,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         
         if (accounts.length > 0) {
           const address = accounts[0];
+          setActiveWalletType("pera");
+          localStorage.setItem("frontier_wallet_type", "pera");
+          localStorage.setItem("frontier_wallet_address", address);
           setState({
             isConnected: true,
             address,
@@ -64,6 +116,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             balance: 0,
             isConnecting: false,
             error: null,
+            walletType: "pera",
           });
           updateBalance(address);
         }
@@ -76,7 +129,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       });
   }, [handleDisconnect, updateBalance]);
 
-  const connect = useCallback(async () => {
+  const connectPera = useCallback(async () => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
     
     try {
@@ -86,38 +139,51 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (accounts.length > 0) {
         const address = accounts[0];
         const balance = await getAccountBalance(address);
-        
-        setState({
-          isConnected: true,
-          address,
-          displayAddress: formatAddress(address),
-          balance,
-          isConnecting: false,
-          error: null,
-        });
+        setConnected(address, "pera", balance);
       }
     } catch (error: unknown) {
       const err = error as { data?: { type?: string }; message?: string };
       if (err?.data?.type !== "CONNECT_MODAL_CLOSED") {
-        console.error("Wallet connection failed:", error);
+        console.error("Pera connection failed:", error);
         setState((prev) => ({
           ...prev,
           isConnecting: false,
-          error: err?.message || "Failed to connect wallet",
+          error: err?.message || "Failed to connect Pera Wallet",
         }));
       } else {
-        setState((prev) => ({
-          ...prev,
-          isConnecting: false,
-        }));
+        setState((prev) => ({ ...prev, isConnecting: false }));
       }
     }
-  }, [handleDisconnect]);
+  }, [handleDisconnect, setConnected]);
+
+  const connectLute = useCallback(async () => {
+    setState((prev) => ({ ...prev, isConnecting: true, error: null }));
+    
+    try {
+      const accounts = await luteWallet.connect(ALGORAND_TESTNET.genesisID);
+      
+      if (accounts.length > 0) {
+        const address = accounts[0];
+        const balance = await getAccountBalance(address);
+        setConnected(address, "lute", balance);
+      }
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      console.error("LUTE connection failed:", error);
+      setState((prev) => ({
+        ...prev,
+        isConnecting: false,
+        error: err?.message || "Failed to connect LUTE Wallet",
+      }));
+    }
+  }, [setConnected]);
 
   const disconnect = useCallback(() => {
-    peraWallet.disconnect();
+    if (state.walletType === "pera") {
+      peraWallet.disconnect();
+    }
     handleDisconnect();
-  }, [handleDisconnect]);
+  }, [state.walletType, handleDisconnect]);
 
   const refreshBalance = useCallback(async () => {
     if (state.address) {
@@ -126,7 +192,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [state.address, updateBalance]);
 
   return (
-    <WalletContext.Provider value={{ ...state, connect, disconnect, refreshBalance }}>
+    <WalletContext.Provider value={{
+      ...state,
+      connectPera,
+      connectLute,
+      disconnect,
+      refreshBalance,
+    }}>
       {children}
     </WalletContext.Provider>
   );

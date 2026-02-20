@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { HexGrid } from "./HexGrid";
+import { PlanetGlobe } from "./PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BottomNav, type NavTab } from "./BottomNav";
 import { LandSheet } from "./LandSheet";
@@ -216,7 +217,7 @@ export function GameLayout() {
               </div>
             </div>
           ) : gameState ? (
-            <HexGrid
+            <PlanetGlobe
               parcels={gameState.parcels}
               selectedParcelId={selectedParcelId}
               currentPlayerId={player?.id || null}
