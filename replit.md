@@ -171,6 +171,14 @@ See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 - LandSheet: special attack buttons when expanded on enemy territory
 - FRONTIER burn tracking (totalFrontierBurned on player)
 
+## Recent Changes (V1.2 -> V1.3)
+- **Multiple Commander Avatars**: Players can now mint multiple commanders (Sentinel, Phantom, Reaper) and switch between them. Each has unique random stat rolls.
+- **Floating Plot Info Popup**: When selecting a plot on the map, a floating info popup appears near it showing plot name, sector, biome, richness, defense, yield, FRONTIER/hr, owner status.
+- **Plot Names & Sectors**: Each plot now has a deterministic name based on biome (e.g., "Ironwood-3421") and belongs to a named sector (Arctic Command, Nordic Sector, Atlantic Zone, Central Theater, Southern Front, Pacific Rim).
+- **Visual Effects**: Animated star field with twinkling, shooting stars with gradient trails, atmospheric blue glow around map edges.
+- **Switch Commander API**: `POST /api/actions/switch-commander` to change active commander
+- **Ref-based star field**: Stars persist across canvas re-renders using useRef
+
 ## Recent Changes (V1.1 -> V1.2)
 - **21,000 plots**: Replaced hex grid with Fibonacci sphere distribution (plotId 1-21000)
 - **3D Globe**: InstancedMesh rendering for all 21K plots simultaneously (single GPU draw call)
