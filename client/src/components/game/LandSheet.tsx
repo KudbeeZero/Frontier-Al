@@ -1,11 +1,18 @@
 import { useState } from "react";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins } from "lucide-react";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import type { LandParcel, Player, ImprovementType } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, IMPROVEMENT_INFO } from "@shared/schema";
+import type { LandParcel, Player, ImprovementType, SpecialAttackType } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO } from "@shared/schema";
+
+const ATTACK_ICONS: Record<SpecialAttackType, React.ElementType> = {
+  orbital_strike: Target,
+  emp_blast: Zap,
+  siege_barrage: Crosshair,
+  sabotage: Skull,
+};
 
 interface LandSheetProps {
   parcel: LandParcel | null;
@@ -15,11 +22,13 @@ interface LandSheetProps {
   onAttack: () => void;
   onBuild: (type: ImprovementType) => void;
   onPurchase: () => void;
+  onSpecialAttack?: (type: SpecialAttackType) => void;
   onClose: () => void;
   isMining: boolean;
   isUpgrading: boolean;
   isBuilding: boolean;
   isPurchasing: boolean;
+  isSpecialAttacking?: boolean;
 }
 
 function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
@@ -57,11 +66,13 @@ export function LandSheet({
   onAttack,
   onBuild,
   onPurchase,
+  onSpecialAttack,
   onClose,
   isMining,
   isUpgrading,
   isBuilding,
   isPurchasing,
+  isSpecialAttacking,
 }: LandSheetProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -194,16 +205,18 @@ export function LandSheet({
               </>
             )}
             {isEnemyOwned && player && parcel.biome !== "water" && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={onAttack}
-                className="flex-1 font-display uppercase tracking-wide text-xs"
-                data-testid="button-attack"
-              >
-                <Swords className="w-3.5 h-3.5 mr-1" />
-                Attack
-              </Button>
+              <>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={onAttack}
+                  className="flex-1 font-display uppercase tracking-wide text-xs"
+                  data-testid="button-attack"
+                >
+                  <Swords className="w-3.5 h-3.5 mr-1" />
+                  Attack
+                </Button>
+              </>
             )}
             {isUnclaimed && player && parcel.purchasePriceAlgo !== null && (
               <Button
@@ -282,6 +295,42 @@ export function LandSheet({
                     <span className="text-[9px] text-muted-foreground font-mono">{cost.iron}I {cost.fuel}F</span>
                   </Button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {expanded && isEnemyOwned && player?.commander && onSpecialAttack && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5" /> Special Attacks
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(SPECIAL_ATTACK_INFO) as [SpecialAttackType, typeof SPECIAL_ATTACK_INFO[SpecialAttackType]][]).map(([type, info]) => {
+                  const Icon = ATTACK_ICONS[type];
+                  const isAvailable = info.requiredTier.includes(player.commander!.tier);
+                  const record = player.specialAttacks.find(sa => sa.type === type);
+                  const isOnCooldown = record ? (Date.now() - record.lastUsedTs) < info.cooldownMs : false;
+                  const canAfford = player.frontier >= info.costFrontier;
+
+                  return (
+                    <Button
+                      key={type}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSpecialAttack(type)}
+                      disabled={!isAvailable || isOnCooldown || !canAfford || isSpecialAttacking}
+                      className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                      data-testid={`button-special-${type}`}
+                    >
+                      <span className="text-[10px] font-display uppercase tracking-wide flex items-center gap-1">
+                        <Icon className="w-3 h-3" /> {info.name}
+                      </span>
+                      <span className="text-[9px] text-muted-foreground font-mono">
+                        {isOnCooldown ? "Cooldown" : `${info.costFrontier} FRNTR`}
+                      </span>
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}

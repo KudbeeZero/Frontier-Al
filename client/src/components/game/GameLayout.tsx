@@ -335,13 +335,21 @@ export function GameLayout() {
                 players={gameState.players}
               />
             )}
+            {activeTab === "commander" && gameState && (
+              <CommanderPanel
+                player={player}
+                onMintAvatar={handleMintAvatar}
+                onDeployDrone={handleDeployDrone}
+                isMinting={mintAvatarMutation.isPending}
+                isDeployingDrone={deployDroneMutation.isPending}
+              />
+            )}
             {activeTab === "leaderboard" && gameState && (
               <LeaderboardPanel
                 entries={gameState.leaderboard}
                 currentPlayerId={player?.id || null}
               />
             )}
-            {activeTab === "rules" && <RulesPanel />}
           </div>
         )}
 
@@ -354,11 +362,13 @@ export function GameLayout() {
             onAttack={handleAttackClick}
             onBuild={handleBuild}
             onPurchase={handlePurchase}
+            onSpecialAttack={handleSpecialAttack}
             onClose={() => setSelectedParcelId(null)}
             isMining={mineMutation.isPending}
             isUpgrading={upgradeMutation.isPending}
             isBuilding={buildMutation.isPending}
             isPurchasing={purchaseMutation.isPending}
+            isSpecialAttacking={specialAttackMutation.isPending}
           />
         )}
       </div>

@@ -142,6 +142,35 @@ FRONTIER is a persistent globe-based war strategy game where players and AI fact
 ## Design Guidelines
 See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 
+### Commander Avatar System
+- **3 Tiers**: Sentinel (50 FRNTR), Phantom (150 FRNTR), Reaper (400 FRNTR)
+- Each commander has ATK/DEF bonuses, special ability, and random stat roll on mint
+- One commander per player, minted by burning FRONTIER tokens
+- Commander images: sentinel (blue soldier), phantom (purple soldier), reaper (orange skull)
+
+### Special Attacks (requires Commander)
+- **Orbital Strike**: Heavy damage, halves target defense (30 FRNTR, 45min cooldown, Phantom/Reaper)
+- **EMP Blast**: Disables turrets/shields, -2 defense (15 FRNTR, 20min cooldown, all tiers)
+- **Siege Barrage**: Area damage to target + nearby plots (40 FRNTR, 45min cooldown, Reaper only)
+- **Sabotage**: Halves target mining yield (10 FRNTR, 15min cooldown, all tiers)
+- Available in LandSheet expanded view when targeting enemy territory
+
+### Recon Drones
+- Cost 20 FRONTIER each, max 5 per player
+- Scout enemy territory for 15 minutes, report discovered resources
+- Deployed from Commander panel
+
+### API Endpoints (new)
+- `POST /api/actions/mint-avatar` - Mint commander avatar (burns FRONTIER)
+- `POST /api/actions/special-attack` - Execute special attack on enemy plot
+- `POST /api/actions/deploy-drone` - Deploy recon drone
+
+### UI Updates
+- Commander tab in bottom navigation (replaced Rules tab)
+- CommanderPanel: mint avatars, view stats, manage drones
+- LandSheet: special attack buttons when expanded on enemy territory
+- FRONTIER burn tracking (totalFrontierBurned on player)
+
 ## Recent Changes (V1.1 -> V1.2)
 - **21,000 plots**: Replaced hex grid with Fibonacci sphere distribution (plotId 1-21000)
 - **3D Globe**: InstancedMesh rendering for all 21K plots simultaneously (single GPU draw call)
