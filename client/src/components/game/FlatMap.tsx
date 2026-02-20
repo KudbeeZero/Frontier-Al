@@ -97,6 +97,7 @@ export function FlatMap({
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
+  const pulseRef = useRef(0);
 
   const starsRef = useRef<{ x: number; y: number; size: number; brightness: number; twinkleSpeed: number }[]>([]);
   const shootingStarsRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; length: number }[]>([]);
@@ -131,11 +132,12 @@ export function FlatMap({
 
   // Compute the globe's pixel radius from canvas dimensions and zoom level.
   // The 0.9 factor leaves a small margin so the atmosphere glow is visible.
+  // Uses cameraRef so the render loop never needs to restart just because zoom changed.
   const getGlobeRadius = useCallback(
     (canvasW: number, canvasH: number) => {
-      return Math.min(canvasW, canvasH) / 2 * camera.zoom * 0.9;
+      return Math.min(canvasW, canvasH) / 2 * cameraRef.current.zoom * 0.9;
     },
-    [camera.zoom]
+    [] // cameraRef is a stable ref — no deps needed
   );
 
   /**
@@ -149,8 +151,9 @@ export function FlatMap({
       const R = getGlobeRadius(canvasW, canvasH);
       const φ  = lat  * Math.PI / 180;
       const λ  = lng  * Math.PI / 180;
-      const φ0 = camera.centerLat * Math.PI / 180;
-      const λ0 = camera.centerLng * Math.PI / 180;
+      // Read from cameraRef so this callback stays stable across camera updates
+      const φ0 = cameraRef.current.centerLat * Math.PI / 180;
+      const λ0 = cameraRef.current.centerLng * Math.PI / 180;
 
       // cos(angular distance from center) — negative means behind the globe
       const cosC =
@@ -163,7 +166,7 @@ export function FlatMap({
 
       return { x: canvasW / 2 + x, y: canvasH / 2 + y };
     },
-    [camera, getGlobeRadius]
+    [getGlobeRadius] // getGlobeRadius is stable; cameraRef never changes reference
   );
 
   /**
@@ -180,8 +183,9 @@ export function FlatMap({
       if (ρ > 1) return null;
 
       const c    = Math.asin(Math.min(1, ρ));
-      const φ0   = camera.centerLat * Math.PI / 180;
-      const λ0   = camera.centerLng * Math.PI / 180;
+      // Read from cameraRef so this callback stays stable across camera updates
+      const φ0   = cameraRef.current.centerLat * Math.PI / 180;
+      const λ0   = cameraRef.current.centerLng * Math.PI / 180;
       const sinC = Math.sin(c);
       const cosC = Math.cos(c);
 
@@ -190,7 +194,7 @@ export function FlatMap({
 
       return { lat: φ * 180 / Math.PI, lng: λ * 180 / Math.PI };
     },
-    [camera, getGlobeRadius]
+    [getGlobeRadius] // getGlobeRadius is stable; cameraRef never changes reference
   );
 
   const getPlotSize = useCallback(
@@ -209,7 +213,6 @@ export function FlatMap({
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
 
-    let pulse = 0;
     const stars = starsRef.current;
     const shootingStars = shootingStarsRef.current;
 
@@ -239,7 +242,7 @@ export function FlatMap({
 
       // ── Stars ─────────────────────────────────────────────────────────────
       for (const star of stars) {
-        const twinkle = Math.sin(pulse * star.twinkleSpeed) * 0.3 + 0.7;
+        const twinkle = Math.sin(pulseRef.current * star.twinkleSpeed) * 0.3 + 0.7;
         const alpha   = star.brightness * twinkle;
         ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
         ctx.beginPath();
@@ -312,7 +315,7 @@ export function FlatMap({
       }
 
       // ── Lat/Lng grid lines using the orthographic projection ───────────────
-      const gridAlpha = Math.min(0.18, 0.06 + camera.zoom * 0.015);
+      const gridAlpha = Math.min(0.18, 0.06 + cameraRef.current.zoom * 0.015);
       ctx.strokeStyle = `rgba(100, 200, 255, ${gridAlpha})`;
       ctx.lineWidth   = 0.5;
 
@@ -343,8 +346,8 @@ export function FlatMap({
 
       // ── Plots ─────────────────────────────────────────────────────────────
       const plotSize   = getPlotSize(w, h);
-      const playerPulse = Math.sin(pulse * 2) * 0.15 + 0.85;
-      pulse += 0.02;
+      pulseRef.current += 0.02;
+      const playerPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
 
       const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : null;
 
@@ -461,7 +464,10 @@ export function FlatMap({
 
     animFrameRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [parcels, selectedParcelId, hoveredPlotId, currentPlayerId, camera, getPlotSize, getGlobeRadius, latLngToScreen, plotIndex]);
+  // camera is intentionally omitted — the render loop reads cameraRef.current on
+  // every frame instead, so there is no need to restart the loop on each drag/zoom.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parcels, selectedParcelId, hoveredPlotId, currentPlayerId, getPlotSize, latLngToScreen, plotIndex]);
 
   const findPlotAt = useCallback(
     (clientX: number, clientY: number) => {
@@ -520,6 +526,7 @@ export function FlatMap({
             centerLng: ((prev.centerLng - dx * degPerPx) + 540) % 360 - 180,
             centerLat: Math.max(-85, Math.min(85, prev.centerLat + dy * degPerPx)),
           }));
+          canvas.style.cursor = "grabbing";
         }
         lastMouse.current = { x: e.clientX, y: e.clientY };
       } else {
@@ -539,6 +546,8 @@ export function FlatMap({
         if (plot) onParcelSelect(plot.id);
       }
       isDragging.current = false;
+      const canvas = canvasRef.current;
+      if (canvas) canvas.style.cursor = "grab";
     },
     [findPlotAt, onParcelSelect]
   );
