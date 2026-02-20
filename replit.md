@@ -1,7 +1,7 @@
-# FRONTIER V1.1 - Algorand Strategy Game
+# FRONTIER V1.2 - Algorand Strategy Game
 
 ## Overview
-FRONTIER is a persistent globe-based war strategy game where players and AI factions compete for 21,000 land plots on a 3D rotating planet, powered by the Algorand blockchain (TestNet V1.1). Features mobile-first UI with bottom navigation, bottom-sheet land details, leaderboard, onboarding flow, improvements/turrets system, and FRONTIER token economy.
+FRONTIER is a persistent globe-based war strategy game where players and AI factions compete for 21,000 land plots on a 3D rotating planet, powered by the Algorand blockchain (TestNet). Features wallet-gated gameplay, two-tier economy (defense improvements cost iron/fuel, facilities cost FRONTIER tokens burned), 500 FRNTR welcome bonus, enhanced globe visibility for owned territories, mobile-first UI with bottom navigation.
 
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS

@@ -12,13 +12,14 @@ import { CommanderPanel } from "./CommanderPanel";
 import { OnboardingFlow } from "./OnboardingFlow";
 import { BaseInfoPanel } from "./BaseInfoPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
+import { WalletConnect } from "./WalletConnect";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins } from "lucide-react";
+import { Coins, Shield, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 
@@ -35,6 +36,17 @@ export function GameLayout() {
   const [activeTab, setActiveTab] = useState<NavTab>("map");
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  const mineMutation = useMine();
+  const upgradeMutation = useUpgrade();
+  const attackMutation = useAttack();
+  const buildMutation = useBuild();
+  const purchaseMutation = usePurchase();
+  const collectMutation = useCollectAll();
+  const claimFrontierMutation = useClaimFrontier();
+  const mintAvatarMutation = useMintAvatar();
+  const specialAttackMutation = useSpecialAttack();
+  const deployDroneMutation = useDeployDrone();
+
   useEffect(() => {
     const seen = localStorage.getItem("frontier_onboarding_done");
     if (!seen) setShowOnboarding(true);
@@ -47,7 +59,17 @@ export function GameLayout() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ playerId: player.id, address: wallet.address }),
-        }).catch((err) => console.error("Failed to sync wallet address:", err));
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.welcomeBonus) {
+              toast({
+                title: "Welcome Commander!",
+                description: "You've received 500 FRONTIER tokens as a welcome bonus. Use them to build facilities and grow your empire!",
+              });
+            }
+          })
+          .catch((err) => console.error("Failed to sync wallet address:", err));
       }
     }
   }, [player?.id, wallet.address, wallet.isConnected]);
@@ -56,17 +78,6 @@ export function GameLayout() {
     localStorage.setItem("frontier_onboarding_done", "true");
     setShowOnboarding(false);
   };
-
-  const mineMutation = useMine();
-  const upgradeMutation = useUpgrade();
-  const attackMutation = useAttack();
-  const buildMutation = useBuild();
-  const purchaseMutation = usePurchase();
-  const collectMutation = useCollectAll();
-  const claimFrontierMutation = useClaimFrontier();
-  const mintAvatarMutation = useMintAvatar();
-  const specialAttackMutation = useSpecialAttack();
-  const deployDroneMutation = useDeployDrone();
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
@@ -211,6 +222,17 @@ export function GameLayout() {
     setActiveTab("map");
   };
 
+  const handleLocateTerritory = () => {
+    if (!player || !gameState) return;
+    const ownedPlots = gameState.parcels.filter(p => p.ownerId === player.id);
+    if (ownedPlots.length > 0) {
+      setSelectedParcelId(ownedPlots[0].id);
+      setActiveTab("map");
+    }
+  };
+
+  const playerHasOwnedPlots = player && gameState ? gameState.parcels.some(p => p.ownerId === player.id) : false;
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-screen bg-background" data-testid="game-error">
@@ -224,6 +246,30 @@ export function GameLayout() {
 
   if (showOnboarding) {
     return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+  }
+
+  if (!isConnected) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-background" data-testid="wallet-gate">
+        <div className="text-center p-8 max-w-md space-y-6">
+          <div className="flex justify-center">
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+              <Globe className="w-10 h-10 text-primary" />
+            </div>
+          </div>
+          <h1 className="font-display text-3xl uppercase tracking-wide text-primary">FRONTIER</h1>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            Connect your Algorand wallet to enter the game. Compete for 21,000 land plots on a 3D globe, build facilities, and earn FRONTIER tokens.
+          </p>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+            <Shield className="w-4 h-4" />
+            <span>New players receive 500 FRONTIER tokens</span>
+          </div>
+          <WalletConnect className="w-full" />
+          <p className="text-[10px] text-muted-foreground/60">Algorand TestNet | Pera Wallet & LUTE Wallet Supported</p>
+        </div>
+      </div>
+    );
   }
 
   const mobileMenuContent = (
@@ -286,6 +332,8 @@ export function GameLayout() {
               currentPlayerId={player?.id || null}
               onParcelSelect={setSelectedParcelId}
               className="absolute inset-0"
+              onLocateTerritory={handleLocateTerritory}
+              hasOwnedPlots={playerHasOwnedPlots}
             />
           ) : null}
 

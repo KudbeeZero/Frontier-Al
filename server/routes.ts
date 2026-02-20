@@ -54,7 +54,30 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid Algorand address" });
       }
       await storage.updatePlayerAddress(playerId, address);
-      res.json({ success: true });
+
+      const player = await storage.getPlayer(playerId);
+      let welcomeBonus = false;
+      let welcomeBonusTxId: string | undefined;
+      if (player && !player.welcomeBonusReceived) {
+        await storage.grantWelcomeBonus(playerId);
+        welcomeBonus = true;
+        console.log(`Welcome bonus of 500 FRONTIER granted to player ${player.name} (${address})`);
+
+        const asaId = getFrontierAsaId();
+        if (asaId && address && !address.startsWith("AI_")) {
+          try {
+            const optedIn = await isAddressOptedInToFrontier(address);
+            if (optedIn) {
+              welcomeBonusTxId = await transferFrontierASA(address, 500);
+              console.log(`Welcome bonus ASA transfer: 500 FRONTIER to ${address}, TX: ${welcomeBonusTxId}`);
+            }
+          } catch (err) {
+            console.error("Welcome bonus ASA transfer failed (in-game balance still granted):", err);
+          }
+        }
+      }
+
+      res.json({ success: true, welcomeBonus, welcomeBonusTxId });
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Failed to connect wallet" });
     }

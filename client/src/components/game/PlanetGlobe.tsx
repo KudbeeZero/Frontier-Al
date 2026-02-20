@@ -11,6 +11,8 @@ interface PlanetGlobeProps {
   currentPlayerId: string | null;
   onParcelSelect: (parcelId: string) => void;
   className?: string;
+  onLocateTerritory?: () => void;
+  hasOwnedPlots?: boolean;
 }
 
 const GLOBE_RADIUS = 3;
@@ -175,7 +177,8 @@ function PlotInstances({
       const biomeColor = BIOME_COLORS[p.biome] || "#555555";
       if (p.ownerId) {
         const ownerColor = p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai;
-        color.set(biomeColor).lerp(ownerColor, 0.4);
+        const blendAmount = p.ownerType === "player" ? 0.6 : 0.4;
+        color.set(biomeColor).lerp(ownerColor, blendAmount);
       } else {
         color.set(biomeColor);
       }
@@ -203,11 +206,14 @@ function PlotInstances({
       const dummy = new THREE.Object3D();
       for (let i = 0; i < parcels.length; i++) {
         const p = parcels[i];
-        const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + PLOT_ELEVATION);
+        const isPlayerOwned = p.ownerId && p.ownerType === "player";
+        const elevation = isPlayerOwned ? PLOT_ELEVATION * 2.5 : PLOT_ELEVATION;
+        const scale = isPlayerOwned ? zoomScale * 1.4 : zoomScale;
+        const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + elevation);
         const normal = pos.clone().normalize();
         dummy.position.copy(pos);
         dummy.lookAt(pos.clone().add(normal));
-        dummy.scale.setScalar(zoomScale);
+        dummy.scale.setScalar(scale);
         dummy.updateMatrix();
         meshRef.current.setMatrixAt(i, dummy.matrix);
       }
@@ -216,19 +222,23 @@ function PlotInstances({
 
     const color = new THREE.Color();
     let needsColorUpdate = false;
+    const playerGlow = Math.sin(pulseRef.current * 0.5) * 0.15 + 0.85;
 
     for (let i = 0; i < parcels.length; i++) {
       const p = parcels[i];
       const isSelected = p.id === selectedParcelId;
       const isHovered = i === hoveredIndex;
+      const isPlayerOwned = p.ownerId && p.ownerType === "player";
 
-      if (isSelected || isHovered) {
+      if (isSelected || isHovered || isPlayerOwned) {
         const biomeColor = BIOME_COLORS[p.biome] || "#555555";
         if (isSelected) {
           const pulse = Math.sin(pulseRef.current) * 0.3 + 0.7;
           color.set("#00ffcc").multiplyScalar(pulse);
-        } else {
+        } else if (isHovered) {
           color.set(biomeColor).lerp(new THREE.Color("#ffffff"), 0.3);
+        } else if (isPlayerOwned) {
+          color.set(biomeColor).lerp(OWNER_COLORS.player, 0.6).multiplyScalar(playerGlow + 0.2);
         }
         meshRef.current.setColorAt(i, color);
         needsColorUpdate = true;
@@ -367,10 +377,12 @@ export function PlanetGlobe({
   currentPlayerId,
   onParcelSelect,
   className,
+  onLocateTerritory,
+  hasOwnedPlots,
 }: PlanetGlobeProps) {
   return (
     <WebGLErrorBoundary fallback={<WebGLFallback className={className} />}>
-      <div className={className} data-testid="planet-globe">
+      <div className={className} data-testid="planet-globe" style={{ position: "relative" }}>
         <Canvas
           camera={{ fov: 45, near: 0.1, far: 100 }}
           gl={{
@@ -405,6 +417,16 @@ export function PlanetGlobe({
           />
           <CameraController />
         </Canvas>
+        {hasOwnedPlots && onLocateTerritory && (
+          <button
+            onClick={onLocateTerritory}
+            className="absolute bottom-20 right-3 z-10 bg-primary/90 hover:bg-primary text-primary-foreground px-3 py-2 rounded-md text-xs font-display uppercase tracking-wide flex items-center gap-1.5 shadow-lg"
+            data-testid="button-locate-territory"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            My Territories
+          </button>
+        )}
       </div>
     </WebGLErrorBoundary>
   );

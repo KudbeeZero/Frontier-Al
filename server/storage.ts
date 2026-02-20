@@ -31,17 +31,21 @@ import {
   BATTLE_DURATION_MS,
   ATTACK_BASE_COST,
   IMPROVEMENT_INFO,
+  DEFENSE_IMPROVEMENT_INFO,
+  FACILITY_INFO,
   BASE_STORAGE_CAPACITY,
   LAND_PURCHASE_ALGO,
   TOTAL_PLOTS,
   FRONTIER_TOTAL_SUPPLY,
-  FRONTIER_PER_HOUR_BY_BIOME,
+  WELCOME_BONUS_FRONTIER,
   COMMANDER_INFO,
   SPECIAL_ATTACK_INFO,
   DRONE_MINT_COST_FRONTIER,
   DRONE_SCOUT_DURATION_MS,
   MAX_DRONES,
+  calculateFrontierPerDay,
 } from "@shared/schema";
+import type { FacilityType, DefenseImprovementType } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
 
 const AI_NAMES = ["NEXUS-7", "KRONOS", "VANGUARD", "SPECTRE"];
@@ -122,7 +126,6 @@ export class MemStorage implements IStorage {
       const id = randomUUID();
       const biome = biomeFromLatitude(coord.lat, coord.plotId);
       const richness = Math.floor(Math.random() * 60) + 40;
-      const frontierRate = FRONTIER_PER_HOUR_BY_BIOME[biome];
 
       const parcel: LandParcel = {
         id,
@@ -145,7 +148,7 @@ export class MemStorage implements IStorage {
         purchasePriceAlgo: LAND_PURCHASE_ALGO[biome],
         frontierAccumulated: 0,
         lastFrontierClaimTs: Date.now(),
-        frontierPerHour: frontierRate,
+        frontierPerDay: 1,
       };
       this.parcels.set(id, parcel);
       this.parcelByPlotId.set(coord.plotId, id);
@@ -172,6 +175,7 @@ export class MemStorage implements IStorage {
       commander: null,
       specialAttacks: [],
       drones: [],
+      welcomeBonusReceived: false,
     };
     this.players.set(humanPlayerId, humanPlayer);
 
@@ -211,6 +215,7 @@ export class MemStorage implements IStorage {
         commander: null,
         specialAttacks: [],
         drones: [],
+        welcomeBonusReceived: true,
       };
       this.players.set(aiId, aiPlayer);
 
@@ -241,30 +246,12 @@ export class MemStorage implements IStorage {
   private updateFrontierAccumulation(parcel: LandParcel) {
     if (!parcel.ownerId) return;
     const now = Date.now();
-    const hoursSinceLastClaim = (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60);
-    if (hoursSinceLastClaim <= 0) return;
+    const daysSinceLastClaim = (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60 * 24);
+    if (daysSinceLastClaim <= 0) return;
 
-    const drillBonus = parcel.improvements
-      .filter((i) => i.type === "mine_drill")
-      .reduce((sum, i) => sum + i.level * 0.25, 0);
-    const turretBonus = parcel.improvements
-      .filter((i) => i.type === "turret")
-      .reduce((sum, i) => sum + i.level * 0.1, 0);
-    const shieldBonus = parcel.improvements
-      .filter((i) => i.type === "shield_gen")
-      .reduce((sum, i) => sum + i.level * 0.15, 0);
-    const storageBonus = parcel.improvements
-      .filter((i) => i.type === "storage_depot")
-      .reduce((sum, i) => sum + i.level * 0.05, 0);
-    const radarBonus = parcel.improvements
-      .filter((i) => i.type === "radar")
-      .reduce((sum, i) => sum + i.level * 0.1, 0);
-    const fortressBonus = parcel.improvements
-      .filter((i) => i.type === "fortress")
-      .reduce((sum, i) => sum + i.level * 0.2, 0);
-    const totalBonus = drillBonus + turretBonus + shieldBonus + storageBonus + radarBonus + fortressBonus;
-    const rate = parcel.frontierPerHour * (1 + totalBonus) * (parcel.richness / 100);
-    const earned = rate * hoursSinceLastClaim;
+    const perDay = calculateFrontierPerDay(parcel.improvements);
+    parcel.frontierPerDay = perDay;
+    const earned = perDay * daysSinceLastClaim;
     parcel.frontierAccumulated += earned;
   }
 
@@ -338,10 +325,8 @@ export class MemStorage implements IStorage {
 
     const biomeBonus = biomeBonuses[parcel.biome];
     const richnessMultiplier = parcel.richness / 100;
-    const drillBonus = parcel.improvements.filter((i) => i.type === "mine_drill").reduce((sum, i) => sum + i.level * 0.25, 0);
-
-    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * (parcel.yieldMultiplier + drillBonus));
-    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * (parcel.yieldMultiplier + drillBonus));
+    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier);
+    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier);
     const crystalYield = Math.floor(BASE_YIELD.crystal * richnessMultiplier);
 
     const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
@@ -426,6 +411,27 @@ export class MemStorage implements IStorage {
     player.address = address;
   }
 
+  async grantWelcomeBonus(playerId: string): Promise<void> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player) throw new Error("Player not found");
+    if (player.welcomeBonusReceived) return;
+
+    player.frontier += WELCOME_BONUS_FRONTIER;
+    player.totalFrontierEarned += WELCOME_BONUS_FRONTIER;
+    player.welcomeBonusReceived = true;
+    this.frontierCirculating += WELCOME_BONUS_FRONTIER;
+
+    this.events.push({
+      id: randomUUID(),
+      type: "claim_frontier",
+      playerId: player.id,
+      description: `${player.name} received ${WELCOME_BONUS_FRONTIER} FRONTIER welcome bonus!`,
+      timestamp: Date.now(),
+    });
+    this.lastUpdateTs = Date.now();
+  }
+
   async claimFrontier(playerId: string): Promise<{ amount: number }> {
     await this.initialize();
     const player = this.players.get(playerId);
@@ -482,19 +488,38 @@ export class MemStorage implements IStorage {
     if (!parcel || !player) throw new Error("Invalid parcel or player");
     if (parcel.ownerId !== player.id) throw new Error("You don't own this territory");
 
-    const info = IMPROVEMENT_INFO[action.improvementType];
-    if (!info) throw new Error("Invalid improvement type");
+    const isFacility = action.improvementType in FACILITY_INFO;
+    const isDefense = action.improvementType in DEFENSE_IMPROVEMENT_INFO;
+    if (!isFacility && !isDefense) throw new Error("Invalid improvement type");
 
     const existing = parcel.improvements.find((i) => i.type === action.improvementType);
-    if (existing && existing.level >= info.maxLevel) throw new Error("Improvement already at max level");
-
     const level = existing ? existing.level + 1 : 1;
-    const cost = { iron: info.cost.iron * level, fuel: info.cost.fuel * level };
 
-    if (player.iron < cost.iron || player.fuel < cost.fuel) throw new Error("Insufficient resources");
+    if (isFacility) {
+      const facilityInfo = FACILITY_INFO[action.improvementType as FacilityType];
+      if (existing && existing.level >= facilityInfo.maxLevel) throw new Error("Facility already at max level");
 
-    player.iron -= cost.iron;
-    player.fuel -= cost.fuel;
+      if (facilityInfo.prerequisite) {
+        const hasPrereq = parcel.improvements.find(i => i.type === facilityInfo.prerequisite);
+        if (!hasPrereq) throw new Error(`Requires ${FACILITY_INFO[facilityInfo.prerequisite!].name} first`);
+      }
+
+      const cost = facilityInfo.costFrontier[level - 1];
+      if (player.frontier < cost) throw new Error(`Insufficient FRONTIER (need ${cost})`);
+
+      player.frontier -= cost;
+      player.totalFrontierBurned += cost;
+      this.frontierCirculating -= cost;
+    } else {
+      const defInfo = DEFENSE_IMPROVEMENT_INFO[action.improvementType as DefenseImprovementType];
+      if (existing && existing.level >= defInfo.maxLevel) throw new Error("Improvement already at max level");
+
+      const cost = { iron: defInfo.cost.iron * level, fuel: defInfo.cost.fuel * level };
+      if (player.iron < cost.iron || player.fuel < cost.fuel) throw new Error("Insufficient resources");
+
+      player.iron -= cost.iron;
+      player.fuel -= cost.fuel;
+    }
 
     if (existing) {
       existing.level = level;
@@ -513,12 +538,18 @@ export class MemStorage implements IStorage {
       parcel.storageCapacity += 100;
     }
 
+    parcel.frontierPerDay = calculateFrontierPerDay(parcel.improvements);
+
+    const displayName = isFacility
+      ? FACILITY_INFO[action.improvementType as FacilityType].name
+      : DEFENSE_IMPROVEMENT_INFO[action.improvementType as DefenseImprovementType].name;
+
     this.events.push({
       id: randomUUID(),
       type: "build",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} built ${info.name} (Lv${level}) at plot #${parcel.plotId}`,
+      description: `${player.name} built ${displayName} (Lv${level}) at plot #${parcel.plotId}`,
       timestamp: Date.now(),
     });
 

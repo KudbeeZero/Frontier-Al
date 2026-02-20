@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import type { LandParcel, Player, ImprovementType, SpecialAttackType } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO } from "@shared/schema";
+import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO } from "@shared/schema";
 
 const ATTACK_ICONS: Record<SpecialAttackType, React.ElementType> = {
   orbital_strike: Target,
@@ -120,17 +120,7 @@ export function LandSheet({
                   {isOwned && <span className="text-primary font-display uppercase">Your Territory</span>}
                   {isEnemyOwned && <span className="text-destructive font-display uppercase">Enemy Territory</span>}
                   {isUnclaimed && <span className="font-display uppercase">Unclaimed</span>}
-                  <span className="font-mono">{(() => {
-                    const drillBonus = parcel.improvements.filter(i => i.type === "mine_drill").reduce((s, i) => s + i.level * 0.25, 0);
-                    const turretBonus = parcel.improvements.filter(i => i.type === "turret").reduce((s, i) => s + i.level * 0.1, 0);
-                    const shieldBonus = parcel.improvements.filter(i => i.type === "shield_gen").reduce((s, i) => s + i.level * 0.15, 0);
-                    const storageBonus = parcel.improvements.filter(i => i.type === "storage_depot").reduce((s, i) => s + i.level * 0.05, 0);
-                    const radarBonus = parcel.improvements.filter(i => i.type === "radar").reduce((s, i) => s + i.level * 0.1, 0);
-                    const fortressBonus = parcel.improvements.filter(i => i.type === "fortress").reduce((s, i) => s + i.level * 0.2, 0);
-                    const totalBonus = drillBonus + turretBonus + shieldBonus + storageBonus + radarBonus + fortressBonus;
-                    const effectiveRate = parcel.frontierPerHour * (1 + totalBonus) * (parcel.richness / 100);
-                    return effectiveRate.toFixed(2);
-                  })()} FRNTR/hr</span>
+                  <span className="font-mono">{parcel.frontierPerDay.toFixed(1)} FRNTR/day</span>
                 </div>
               </div>
             </div>
@@ -246,10 +236,10 @@ export function LandSheet({
             <div className="mt-3 pt-3 border-t border-border space-y-3">
               <div>
                 <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
-                  <Hammer className="w-3.5 h-3.5" /> Build Improvements
+                  <Shield className="w-3.5 h-3.5" /> Defense (Iron/Fuel)
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
-                  {(Object.entries(IMPROVEMENT_INFO) as [ImprovementType, typeof IMPROVEMENT_INFO[ImprovementType]][]).map(([type, info]) => {
+                  {(Object.entries(DEFENSE_IMPROVEMENT_INFO) as [DefenseImprovementType, typeof DEFENSE_IMPROVEMENT_INFO[DefenseImprovementType]][]).map(([type, info]) => {
                     const existing = parcel.improvements.find(i => i.type === type);
                     const atMax = existing && existing.level >= info.maxLevel;
                     const level = existing ? existing.level + 1 : 1;
@@ -271,6 +261,43 @@ export function LandSheet({
                         <span className="text-[9px] text-muted-foreground font-mono">
                           {atMax ? "MAX" : `${cost.iron}I ${cost.fuel}F`}
                         </span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-display uppercase tracking-wide text-primary mb-2 flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5" /> Facilities (FRONTIER burned)
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(FACILITY_INFO) as [FacilityType, typeof FACILITY_INFO[FacilityType]][]).map(([type, info]) => {
+                    const existing = parcel.improvements.find(i => i.type === type);
+                    const atMax = existing && existing.level >= info.maxLevel;
+                    const level = existing ? existing.level + 1 : 1;
+                    const cost = atMax ? 0 : info.costFrontier[level - 1];
+                    const canAfford = player && player.frontier >= cost;
+                    const hasPrereq = !info.prerequisite || parcel.improvements.find(i => i.type === info.prerequisite);
+                    const perDay = atMax ? info.frontierPerDay[info.maxLevel - 1] : info.frontierPerDay[level - 1];
+
+                    return (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBuild(type)}
+                        disabled={isBuilding || !!atMax || !canAfford || !hasPrereq}
+                        className={cn("flex-col items-start h-auto py-2 px-2.5 text-left", !hasPrereq && "opacity-50")}
+                        data-testid={`button-build-${type}`}
+                      >
+                        <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
+                        {existing && <span className="text-[9px] text-primary font-mono">Lv{existing.level}</span>}
+                        <span className="text-[9px] text-muted-foreground font-mono">
+                          {atMax ? "MAX" : `${cost} FRNTR`}
+                        </span>
+                        <span className="text-[9px] text-primary/70 font-mono">+{perDay}/day</span>
+                        {!hasPrereq && <span className="text-[8px] text-destructive">Needs Electricity</span>}
                       </Button>
                     );
                   })}

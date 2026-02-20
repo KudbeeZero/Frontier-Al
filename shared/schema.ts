@@ -24,25 +24,16 @@ export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: num
   swamp: { yieldMod: 0.9, defenseMod: 0.6 },
 };
 
-export const FRONTIER_PER_HOUR_BY_BIOME: Record<BiomeType, number> = {
-  forest: 1.2,
-  desert: 0.8,
-  mountain: 1.0,
-  plains: 1.0,
-  water: 0.5,
-  tundra: 0.7,
-  volcanic: 1.5,
-  swamp: 0.9,
-};
-
-export type ImprovementType = "turret" | "shield_gen" | "mine_drill" | "storage_depot" | "radar" | "fortress";
+export type DefenseImprovementType = "turret" | "shield_gen" | "storage_depot" | "radar" | "fortress";
+export type FacilityType = "electricity" | "blockchain_node" | "data_centre" | "ai_lab";
+export type ImprovementType = DefenseImprovementType | FacilityType;
 
 export interface Improvement {
   type: ImprovementType;
   level: number;
 }
 
-export const IMPROVEMENT_INFO: Record<ImprovementType, {
+export const DEFENSE_IMPROVEMENT_INFO: Record<DefenseImprovementType, {
   name: string;
   description: string;
   cost: { iron: number; fuel: number };
@@ -51,10 +42,69 @@ export const IMPROVEMENT_INFO: Record<ImprovementType, {
 }> = {
   turret: { name: "Turret", description: "Automated defense turret", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense per level" },
   shield_gen: { name: "Shield Generator", description: "Energy shield for base", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense per level" },
-  mine_drill: { name: "Mining Drill", description: "Automated mining drill", cost: { iron: 50, fuel: 30 }, maxLevel: 3, effect: "+25% yield per level" },
   storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+100 capacity per level" },
   radar: { name: "Radar Array", description: "Early warning system", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "See incoming attacks" },
   fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
+};
+
+export const FACILITY_INFO: Record<FacilityType, {
+  name: string;
+  description: string;
+  costFrontier: number[];
+  maxLevel: number;
+  frontierPerDay: number[];
+  effect: string;
+  prerequisite?: FacilityType;
+}> = {
+  electricity: {
+    name: "Electricity",
+    description: "Power grid enabling advanced facilities",
+    costFrontier: [30],
+    maxLevel: 1,
+    frontierPerDay: [1],
+    effect: "+1 FRNTR/day",
+  },
+  blockchain_node: {
+    name: "Blockchain Node",
+    description: "Decentralized computing node generating tokens",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [2, 3, 4],
+    effect: "+2/3/4 FRNTR/day per level",
+    prerequisite: "electricity",
+  },
+  data_centre: {
+    name: "Data Centre",
+    description: "High-performance data processing facility",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [2, 3, 4],
+    effect: "+2/3/4 FRNTR/day per level",
+    prerequisite: "electricity",
+  },
+  ai_lab: {
+    name: "AI Lab",
+    description: "Artificial intelligence research laboratory",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [2, 3, 4],
+    effect: "+2/3/4 FRNTR/day per level",
+    prerequisite: "electricity",
+  },
+};
+
+export const IMPROVEMENT_INFO: Record<ImprovementType, {
+  name: string;
+  description: string;
+  cost: { iron: number; fuel: number };
+  maxLevel: number;
+  effect: string;
+}> = {
+  ...DEFENSE_IMPROVEMENT_INFO,
+  electricity: { name: "Electricity", description: "Power grid", cost: { iron: 0, fuel: 0 }, maxLevel: 1, effect: "+1 FRNTR/day" },
+  blockchain_node: { name: "Blockchain Node", description: "Computing node", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
+  data_centre: { name: "Data Centre", description: "Data processing", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
+  ai_lab: { name: "AI Lab", description: "AI research", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
 };
 
 export interface LandParcel {
@@ -78,7 +128,7 @@ export interface LandParcel {
   purchasePriceAlgo: number | null;
   frontierAccumulated: number;
   lastFrontierClaimTs: number;
-  frontierPerHour: number;
+  frontierPerDay: number;
 }
 
 export interface Player {
@@ -102,6 +152,7 @@ export interface Player {
   commander: CommanderAvatar | null;
   specialAttacks: SpecialAttackRecord[];
   drones: ReconDrone[];
+  welcomeBonusReceived: boolean;
 }
 
 export interface Battle {
@@ -181,7 +232,7 @@ export const attackActionSchema = z.object({
 export const buildActionSchema = z.object({
   playerId: z.string(),
   parcelId: z.string(),
-  improvementType: z.enum(["turret", "shield_gen", "mine_drill", "storage_depot", "radar", "fortress"]),
+  improvementType: z.enum(["turret", "shield_gen", "storage_depot", "radar", "fortress", "electricity", "blockchain_node", "data_centre", "ai_lab"]),
 });
 
 export const purchaseActionSchema = z.object({
@@ -219,6 +270,7 @@ export const ATTACK_BASE_COST = { iron: 30, fuel: 20 };
 
 export const TOTAL_PLOTS = 21000;
 export const FRONTIER_TOTAL_SUPPLY = 1_000_000_000;
+export const WELCOME_BONUS_FRONTIER = 500;
 
 export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = {
   forest: 0.5,
@@ -368,3 +420,23 @@ export const deployDroneActionSchema = z.object({
 export type MintAvatarAction = z.infer<typeof mintAvatarActionSchema>;
 export type SpecialAttackAction = z.infer<typeof specialAttackActionSchema>;
 export type DeployDroneAction = z.infer<typeof deployDroneActionSchema>;
+
+export function calculateFrontierPerDay(improvements: Improvement[]): number {
+  let perDay = 1;
+  
+  const electricity = improvements.find(i => i.type === "electricity");
+  if (electricity) {
+    perDay += 1;
+    
+    const bcNode = improvements.find(i => i.type === "blockchain_node");
+    if (bcNode) perDay += FACILITY_INFO.blockchain_node.frontierPerDay[bcNode.level - 1];
+    
+    const dc = improvements.find(i => i.type === "data_centre");
+    if (dc) perDay += FACILITY_INFO.data_centre.frontierPerDay[dc.level - 1];
+    
+    const aiLab = improvements.find(i => i.type === "ai_lab");
+    if (aiLab) perDay += FACILITY_INFO.ai_lab.frontierPerDay[aiLab.level - 1];
+  }
+  
+  return perDay;
+}

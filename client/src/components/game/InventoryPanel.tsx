@@ -59,7 +59,7 @@ function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => vo
       <Progress value={storagePercent} className="h-1" />
       <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
         <span>{totalStored}/{parcel.storageCapacity}</span>
-        <span>{parcel.frontierPerHour.toFixed(1)} FRNTR/hr</span>
+        <span>{parcel.frontierPerDay.toFixed(1)} FRNTR/day</span>
       </div>
     </button>
   );
@@ -80,7 +80,7 @@ export function InventoryPanel({ player, parcels, onCollectAll, onClaimFrontier,
   const totalStoredFuel = ownedParcels.reduce((s, p) => s + p.fuelStored, 0);
   const totalStoredCrystal = ownedParcels.reduce((s, p) => s + p.crystalStored, 0);
   const hasStored = totalStoredIron > 0 || totalStoredFuel > 0 || totalStoredCrystal > 0;
-  const totalFrontierRate = ownedParcels.reduce((s, p) => s + p.frontierPerHour, 0);
+  const totalFrontierRate = ownedParcels.reduce((s, p) => s + p.frontierPerDay, 0);
   const totalFrontierPending = ownedParcels.reduce((s, p) => s + p.frontierAccumulated, 0);
 
   return (
@@ -142,7 +142,7 @@ export function InventoryPanel({ player, parcels, onCollectAll, onClaimFrontier,
 
         {ownedParcels.length > 0 && (
           <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center">
-            Earning {totalFrontierRate.toFixed(2)} FRNTR/hr across {ownedParcels.length} plots
+            Earning {totalFrontierRate.toFixed(1)} FRNTR/day across {ownedParcels.length} plots
           </div>
         )}
       </div>
