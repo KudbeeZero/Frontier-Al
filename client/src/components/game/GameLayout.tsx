@@ -102,12 +102,18 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueMineAction(selectedParcel.plotId);
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
-        onSuccess: () => toast({ title: "Mining Complete", description: "Resources extracted successfully." }),
+        onSuccess: (data: any) => {
+          const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
+          // Log to chain (batched, fire-and-forget) with actual mineral yields
+          queueMineAction(selectedParcel.plotId, yields);
+          const desc = yields
+            ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
+            : "Resources extracted successfully.";
+          toast({ title: "Mining Complete", description: desc });
+        },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -403,6 +409,20 @@ export function GameLayout() {
             crystal={player.crystal}
             frontier={player.frontier}
             algoBalance={balance}
+            frontierDailyRate={
+              gameState
+                ? gameState.parcels
+                    .filter(p => p.ownerId === player.id)
+                    .reduce((s, p) => s + p.frontierPerDay, 0)
+                : undefined
+            }
+            frontierPending={
+              gameState
+                ? gameState.parcels
+                    .filter(p => p.ownerId === player.id)
+                    .reduce((s, p) => s + p.frontierAccumulated, 0)
+                : undefined
+            }
           />
         </div>
       )}

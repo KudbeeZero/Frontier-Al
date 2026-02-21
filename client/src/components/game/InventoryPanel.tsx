@@ -1,4 +1,4 @@
-import { Package, Pickaxe, Fuel, Gem, MapPin, Shield, ArrowDownToLine, Coins, Zap } from "lucide-react";
+import { Package, Pickaxe, Fuel, Gem, MapPin, Shield, ArrowDownToLine, Coins, Zap, TrendingUp, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -82,15 +82,64 @@ export function InventoryPanel({ player, parcels, onCollectAll, onClaimFrontier,
   const hasStored = totalStoredIron > 0 || totalStoredFuel > 0 || totalStoredCrystal > 0;
   const totalFrontierRate = ownedParcels.reduce((s, p) => s + p.frontierPerDay, 0);
   const totalFrontierPending = ownedParcels.reduce((s, p) => s + p.frontierAccumulated, 0);
+  const hasPendingFrontier = totalFrontierPending > 0.01;
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="inventory-panel">
-      <div className="p-4 border-b border-border">
+
+      {/* ── Cumulative FRNTR Accumulation Banner ── */}
+      {ownedParcels.length > 0 && (
+        <div className="mx-4 mt-4 p-3 rounded-lg border border-primary/40 bg-primary/5" data-testid="frntr-accumulation-banner">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-primary shrink-0" />
+            <span className="font-display text-xs font-bold uppercase tracking-wide text-primary">FRNTR Generation</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="text-center">
+              <span className="font-mono text-xl font-bold text-primary block" data-testid="text-frontier-daily-rate">
+                {totalFrontierRate.toFixed(1)}
+              </span>
+              <span className="text-[10px] text-muted-foreground font-display uppercase">FRNTR / Day</span>
+              <div className="text-[9px] text-muted-foreground mt-0.5">across {ownedParcels.length} plot{ownedParcels.length !== 1 ? "s" : ""}</div>
+            </div>
+            <div className="text-center">
+              <span className="font-mono text-xl font-bold text-yellow-400 block" data-testid="text-frontier-pending">
+                {totalFrontierPending.toFixed(2)}
+              </span>
+              <span className="text-[10px] text-muted-foreground font-display uppercase">Accumulated</span>
+              <div className="text-[9px] text-muted-foreground mt-0.5">ready to mint</div>
+            </div>
+          </div>
+
+          <Button
+            onClick={onClaimFrontier}
+            disabled={isClaimingFrontier || !hasPendingFrontier}
+            className="w-full font-display uppercase tracking-wide bg-primary hover:bg-primary/90"
+            data-testid="button-mint-all-frontier"
+          >
+            <Zap className="w-4 h-4 mr-2" />
+            {isClaimingFrontier
+              ? "Minting..."
+              : hasPendingFrontier
+              ? `Mint All — ${totalFrontierPending.toFixed(2)} FRNTR`
+              : "No FRNTR to Mint Yet"}
+          </Button>
+          {hasPendingFrontier && (
+            <p className="text-[9px] text-muted-foreground text-center mt-1.5">
+              Large claims are sent in max-size batches on-chain
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="p-4 border-b border-border mt-3">
         <div className="flex items-center gap-2 mb-3">
           <Package className="w-5 h-5 text-primary" />
           <h2 className="font-display text-lg font-bold uppercase tracking-wide">Inventory</h2>
         </div>
 
+        {/* ── Wallet balances ── */}
         <div className="grid grid-cols-4 gap-2 mb-3">
           <div className="p-2.5 rounded-md bg-muted/50 text-center">
             <Pickaxe className="w-4 h-4 mx-auto mb-1 text-iron" />
@@ -114,36 +163,39 @@ export function InventoryPanel({ player, parcels, onCollectAll, onClaimFrontier,
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {hasStored && (
-            <Button
-              onClick={onCollectAll}
-              disabled={isCollecting}
-              className="flex-1 font-display uppercase tracking-wide"
-              data-testid="button-collect-all"
-            >
-              <ArrowDownToLine className="w-4 h-4 mr-2" />
-              {isCollecting ? "Collecting..." : `Collect All (+${totalStoredIron}I +${totalStoredFuel}F +${totalStoredCrystal}C)`}
-            </Button>
-          )}
-          {ownedParcels.length > 0 && (
-            <Button
-              variant="secondary"
-              onClick={onClaimFrontier}
-              disabled={isClaimingFrontier}
-              className="font-display uppercase tracking-wide"
-              data-testid="button-claim-frontier"
-            >
-              <Zap className="w-4 h-4 mr-2" />
-              {isClaimingFrontier ? "Claiming..." : `Claim FRNTR`}
-            </Button>
-          )}
+        {/* ── Lifetime mineral extraction totals ── */}
+        <div className="rounded-md bg-muted/30 p-2.5 mb-3">
+          <div className="flex items-center gap-1 mb-1.5">
+            <FlaskConical className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Total Extracted (Lifetime)</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <span className="font-mono text-sm font-bold text-iron block">{player.totalIronMined.toLocaleString()}</span>
+              <span className="text-[9px] text-muted-foreground uppercase">Iron</span>
+            </div>
+            <div>
+              <span className="font-mono text-sm font-bold text-fuel block">{player.totalFuelMined.toLocaleString()}</span>
+              <span className="text-[9px] text-muted-foreground uppercase">Fuel</span>
+            </div>
+            <div>
+              <span className="font-mono text-sm font-bold text-crystal block">{(player.totalCrystalMined ?? 0).toLocaleString()}</span>
+              <span className="text-[9px] text-muted-foreground uppercase">Crystal</span>
+            </div>
+          </div>
         </div>
 
-        {ownedParcels.length > 0 && (
-          <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center">
-            Earning {totalFrontierRate.toFixed(1)} FRNTR/day across {ownedParcels.length} plots
-          </div>
+        {/* ── Collect stored minerals button ── */}
+        {hasStored && (
+          <Button
+            onClick={onCollectAll}
+            disabled={isCollecting}
+            className="w-full font-display uppercase tracking-wide mb-1"
+            data-testid="button-collect-all"
+          >
+            <ArrowDownToLine className="w-4 h-4 mr-2" />
+            {isCollecting ? "Collecting..." : `Collect Minerals — +${totalStoredIron}Fe +${totalStoredFuel}Fu +${totalStoredCrystal}Cr`}
+          </Button>
         )}
       </div>
 

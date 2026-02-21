@@ -125,19 +125,23 @@ export async function createGameActionTransaction(
   metadata?: Record<string, unknown>
 ): Promise<string> {
   const suggestedParams = await getTransactionParams();
-  
+
   const actionData = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
     action: actionType,
     plotId,
-    timestamp: Date.now(),
+    player: fromAddress.slice(0, 8),
+    ts: Date.now(),
+    network: "testnet",
     ...metadata,
   });
-  
+
   const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
     sender: fromAddress,
     receiver: fromAddress,
     amount: 0,
-    note: new TextEncoder().encode(`FRONTIER:${actionData}`),
+    note: new TextEncoder().encode(`FRNTR:${actionData}`),
     suggestedParams,
   });
 
@@ -159,17 +163,21 @@ export async function createPurchaseWithAlgoTransaction(
   const microAlgos = Math.floor(algoAmount * 1_000_000);
   
   const actionData = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
     action: "purchase",
     plotId,
     algoAmount,
-    timestamp: Date.now(),
+    player: fromAddress.slice(0, 8),
+    ts: Date.now(),
+    network: "testnet",
   });
-  
+
   const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
     sender: fromAddress,
     receiver: treasuryAddress,
     amount: microAlgos,
-    note: new TextEncoder().encode(`FRONTIER:${actionData}`),
+    note: new TextEncoder().encode(`FRNTR:${actionData}`),
     suggestedParams,
   });
 
@@ -188,16 +196,20 @@ export async function createClaimFrontierTransaction(
   const suggestedParams = await getTransactionParams();
   
   const actionData = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
     action: "claim_frontier",
     amount: frontierAmount,
-    timestamp: Date.now(),
+    player: fromAddress.slice(0, 8),
+    ts: Date.now(),
+    network: "testnet",
   });
-  
+
   const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
     sender: fromAddress,
     receiver: fromAddress,
     amount: 0,
-    note: new TextEncoder().encode(`FRONTIER:${actionData}`),
+    note: new TextEncoder().encode(`FRNTR:${actionData}`),
     suggestedParams,
   });
 
@@ -322,10 +334,12 @@ export interface BatchedAction {
   a: string;
   /** Plot ID (0 if not plot-specific) */
   p: number;
-  /** Optional extra fields (improvement type, troops, tier, etc.) */
+  /** Optional extra fields (improvement type, troops, tier, mineral yields, etc.) */
   x?: Record<string, unknown>;
   /** Unix ms timestamp */
   t: number;
+  /** Mineral yields (mine actions only): iron, fuel, crystal */
+  m?: { fe: number; fu: number; cr: number };
 }
 
 type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
@@ -340,7 +354,8 @@ const MAX_BATCH_NOTE_BYTES = 1000; // stay under Algorand's 1024-byte note limit
 const BATCH_FLUSH_DELAY_MS = 10_000; // 10-second safety flush
 
 function _encodeBatch(actions: BatchedAction[]): Uint8Array {
-  return new TextEncoder().encode(`FB:${JSON.stringify(actions)}`);
+  const payload = { game: "FRONTIER", v: 1, network: "testnet", actions };
+  return new TextEncoder().encode(`FRNTR:${JSON.stringify(payload)}`);
 }
 
 function _estimatedBatchBytes(): number {
@@ -360,9 +375,12 @@ export function registerBatchSignCallback(
 export function enqueueGameAction(
   type: string,
   plotId: number,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
+  minerals?: { fe: number; fu: number; cr: number }
 ) {
-  _actionQueue.push({ a: type, p: plotId, x: extra, t: Date.now() });
+  const action: BatchedAction = { a: type, p: plotId, x: extra, t: Date.now() };
+  if (minerals) action.m = minerals;
+  _actionQueue.push(action);
 
   if (_estimatedBatchBytes() >= MAX_BATCH_NOTE_BYTES) {
     // Hit the 1 KB threshold — flush immediately
