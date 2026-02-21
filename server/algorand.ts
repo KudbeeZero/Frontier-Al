@@ -76,7 +76,7 @@ export async function createFrontierASA(): Promise<number> {
     defaultFrozen: false,
     unitName: "FRNTR",
     assetName: "FRONTIER",
-    assetURL: "https://frontier-game.replit.app",
+    assetURL: "https://frontier-al.app",
     manager: account.addr.toString(),
     reserve: account.addr.toString(),
     freeze: undefined,
@@ -186,7 +186,7 @@ interface PendingTransfer {
 }
 
 class FrontierTransferBatcher {
-  private queue: PendingTransfer[] = [];
+  private _pending: PendingTransfer[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   /** Maximum total estimated serialized bytes before an immediate flush */
   private readonly maxBatchBytes = 1024;
@@ -198,14 +198,14 @@ class FrontierTransferBatcher {
   /** Queue a transfer and return a promise that resolves with its on-chain txId */
   async queue(toAddress: string, amount: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.queue.push({ toAddress, amount, resolve, reject });
+      this._pending.push({ toAddress, amount, resolve, reject });
       this.maybeFlush();
     });
   }
 
   private estimatedBytes(): number {
     // ~200 bytes base overhead per txn + note content length
-    return this.queue.reduce((sum, item) => {
+    return this._pending.reduce((sum, item) => {
       const note = `FRONTIER claim: ${item.amount}`;
       return sum + 200 + note.length;
     }, 0);
@@ -213,7 +213,7 @@ class FrontierTransferBatcher {
 
   private maybeFlush() {
     const shouldFlushNow =
-      this.queue.length >= this.maxBatchCount ||
+      this._pending.length >= this.maxBatchCount ||
       this.estimatedBytes() >= this.maxBatchBytes;
 
     if (shouldFlushNow) {
@@ -231,10 +231,10 @@ class FrontierTransferBatcher {
   }
 
   private async doFlush() {
-    if (this.queue.length === 0) return;
+    if (this._pending.length === 0) return;
 
     // Take up to maxBatchCount items
-    const batch = this.queue.splice(0, this.maxBatchCount);
+    const batch = this._pending.splice(0, this.maxBatchCount);
 
     try {
       const txIds = await sendAtomicFrontierTransfers(
@@ -247,7 +247,7 @@ class FrontierTransferBatcher {
     }
 
     // If more items arrived while flushing, schedule another check
-    if (this.queue.length > 0) {
+    if (this._pending.length > 0) {
       this.maybeFlush();
     }
   }

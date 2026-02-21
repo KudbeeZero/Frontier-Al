@@ -58,7 +58,7 @@ function SceneLighting() {
 }
 
 // Wireframe grid overlay — sits just above the planet surface
-// giving the Zero Colony "cells on a sphere" look
+// instanced hexagonal cells rendered on the globe surface
 function GridOverlay() {
   const geometry = useMemo(() => new THREE.SphereGeometry(GLOBE_RADIUS + 0.025, 48, 32), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
