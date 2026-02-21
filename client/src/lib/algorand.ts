@@ -304,3 +304,126 @@ export function getCachedAsaId(): number | null {
 }
 
 export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";
+
+// ---------------------------------------------------------------------------
+// Client-side game action batch queue
+//
+// All significant game actions (mine, upgrade, attack, build, turrets,
+// commander actions, drones, special attacks) are logged on-chain via a
+// compact batch transaction. Instead of one transaction per action, actions
+// accumulate until the encoded note reaches ~1 KB, then a SINGLE 0-ALGO
+// self-payment transaction is signed (one wallet popup covers many actions).
+// A 10-second safety timer ensures partial batches are flushed promptly.
+// ---------------------------------------------------------------------------
+
+/** Compact on-chain action record (short keys keep the note small). */
+export interface BatchedAction {
+  /** Action type abbreviation */
+  a: string;
+  /** Plot ID (0 if not plot-specific) */
+  p: number;
+  /** Optional extra fields (improvement type, troops, tier, etc.) */
+  x?: Record<string, unknown>;
+  /** Unix ms timestamp */
+  t: number;
+}
+
+type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
+
+// Module-level queue state (survives re-renders)
+let _actionQueue: BatchedAction[] = [];
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+let _batchSignFn: BatchSignCallback | null = null;
+let _batchAddress: string | null = null;
+
+const MAX_BATCH_NOTE_BYTES = 1000; // stay under Algorand's 1024-byte note limit
+const BATCH_FLUSH_DELAY_MS = 10_000; // 10-second safety flush
+
+function _encodeBatch(actions: BatchedAction[]): Uint8Array {
+  return new TextEncoder().encode(`FB:${JSON.stringify(actions)}`);
+}
+
+function _estimatedBatchBytes(): number {
+  return _encodeBatch(_actionQueue).length;
+}
+
+/** Called by the hook when the player's wallet address or connection changes. */
+export function registerBatchSignCallback(
+  address: string,
+  callback: BatchSignCallback
+) {
+  _batchAddress = address;
+  _batchSignFn = callback;
+}
+
+/** Enqueue a game action for batched on-chain logging. Fire-and-forget. */
+export function enqueueGameAction(
+  type: string,
+  plotId: number,
+  extra?: Record<string, unknown>
+) {
+  _actionQueue.push({ a: type, p: plotId, x: extra, t: Date.now() });
+
+  if (_estimatedBatchBytes() >= MAX_BATCH_NOTE_BYTES) {
+    // Hit the 1 KB threshold — flush immediately
+    if (_flushTimer) {
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+    }
+    _triggerFlush();
+  } else if (!_flushTimer) {
+    // Schedule a safety flush so the batch doesn't sit forever
+    _flushTimer = setTimeout(() => {
+      _flushTimer = null;
+      _triggerFlush();
+    }, BATCH_FLUSH_DELAY_MS);
+  }
+}
+
+function _triggerFlush() {
+  if (_actionQueue.length === 0 || !_batchSignFn) return;
+  const batch = _actionQueue.splice(0); // drain the queue atomically
+  _batchSignFn(batch)
+    .then((txId) => {
+      if (txId) {
+        console.log(
+          `Game action batch confirmed: ${batch.length} action(s), TX: ${txId}`
+        );
+      }
+    })
+    .catch((err) => {
+      console.error("Game action batch failed — re-queuing:", err);
+      // Re-queue at the front so the actions aren't lost
+      _actionQueue.unshift(...batch);
+    });
+}
+
+/**
+ * Create and submit a single 0-ALGO self-payment transaction whose note field
+ * encodes a batch of game actions (up to ~1 KB).
+ */
+export async function createBatchedGameActionTransaction(
+  fromAddress: string,
+  actions: BatchedAction[]
+): Promise<string> {
+  const noteBytes = _encodeBatch(actions);
+  if (noteBytes.length > 1024) {
+    throw new Error(`Batch note too large: ${noteBytes.length} bytes`);
+  }
+
+  const suggestedParams = await getTransactionParams();
+  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: fromAddress,
+    receiver: fromAddress,
+    amount: 0,
+    note: noteBytes,
+    suggestedParams,
+  });
+
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
+  const txId = response.txid || txn.txID();
+  await algosdk.waitForConfirmation(algodClient, txId, 4);
+
+  return txId;
+}

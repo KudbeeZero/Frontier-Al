@@ -26,7 +26,23 @@ import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/
 export function GameLayout() {
   const wallet = useWallet();
   const { isConnected, balance } = wallet;
-  const { signMineAction, signUpgradeAction, signAttackAction, signPurchaseAction, signClaimFrontierAction, signOptInToFrontier, isWalletConnected, frontierAsaId, isOptedInToFrontier, treasuryAddress } = useBlockchainActions();
+  const {
+    signPurchaseAction,
+    signClaimFrontierAction,
+    signOptInToFrontier,
+    queueMineAction,
+    queueUpgradeAction,
+    queueAttackAction,
+    queueBuildAction,
+    queueMintAvatarAction,
+    queueSpecialAttackAction,
+    queueSwitchCommanderAction,
+    queueDeployDroneAction,
+    isWalletConnected,
+    frontierAsaId,
+    isOptedInToFrontier,
+    treasuryAddress,
+  } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer();
   const { toast } = useToast();
@@ -85,6 +101,8 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log to chain (batched, fire-and-forget)
+    queueMineAction(selectedParcel.plotId);
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -96,6 +114,8 @@ export function GameLayout() {
 
   const handleUpgrade = async (type: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log to chain (batched, fire-and-forget)
+    queueUpgradeAction(selectedParcel.plotId, type);
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
       {
@@ -109,6 +129,8 @@ export function GameLayout() {
 
   const handleAttackConfirm = async (troops: number, iron: number, fuel: number) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log to chain (batched, fire-and-forget)
+    queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
     attackMutation.mutate(
       { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel } },
       {
@@ -122,7 +144,10 @@ export function GameLayout() {
   };
 
   const handleBuild = (type: ImprovementType) => {
-    if (!player || !selectedParcelId) return;
+    if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log to chain (batched, fire-and-forget) — covers turrets, shield_gen,
+    // electricity, blockchain_node, data_centre, ai_lab, radar, fortress, etc.
+    queueBuildAction(selectedParcel.plotId, type);
     buildMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, improvementType: type },
       {
@@ -179,6 +204,8 @@ export function GameLayout() {
 
   const handleMintAvatar = (tier: CommanderTier) => {
     if (!player) return;
+    // Log commander mint to chain (batched)
+    queueMintAvatarAction(tier);
     mintAvatarMutation.mutate(
       { playerId: player.id, tier },
       {
@@ -189,7 +216,9 @@ export function GameLayout() {
   };
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
-    if (!player || !selectedParcelId) return;
+    if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log special attack to chain with target plot + attack type (batched)
+    queueSpecialAttackAction(selectedParcel.plotId, attackType);
     specialAttackMutation.mutate(
       { playerId: player.id, attackType, targetParcelId: selectedParcelId },
       {
@@ -204,6 +233,8 @@ export function GameLayout() {
 
   const handleSwitchCommander = (index: number) => {
     if (!player) return;
+    // Log commander selection to chain (batched)
+    queueSwitchCommanderAction(index);
     switchCommanderMutation.mutate(
       { playerId: player.id, commanderIndex: index },
       {
@@ -215,6 +246,11 @@ export function GameLayout() {
 
   const handleDeployDrone = (targetParcelId?: string) => {
     if (!player) return;
+    // Log drone deployment to chain (batched) — targetParcelId resolved to plotId below
+    const targetParcel = targetParcelId
+      ? gameState?.parcels.find((p) => p.id === targetParcelId)
+      : null;
+    queueDeployDroneAction(targetParcel?.plotId);
     deployDroneMutation.mutate(
       { playerId: player.id, targetParcelId },
       {
