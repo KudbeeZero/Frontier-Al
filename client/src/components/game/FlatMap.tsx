@@ -306,7 +306,7 @@ export function FlatMap({
       // not a pixel-perfect warp, but gives the correct visual impression of
       // a globe with a visible surface texture).
       if (mapImageLoaded.current && mapImageRef.current) {
-        ctx.globalAlpha = 0.45;
+        ctx.globalAlpha = 0.85; // Increased visibility of the image
         ctx.drawImage(mapImageRef.current, cx - R, cy - R, R * 2, R * 2);
         ctx.globalAlpha = 1.0;
       } else {
@@ -315,7 +315,7 @@ export function FlatMap({
       }
 
       // ── Lat/Lng grid lines using the orthographic projection ───────────────
-      const gridAlpha = Math.min(0.18, 0.06 + cameraRef.current.zoom * 0.015);
+      const gridAlpha = Math.min(0.08, 0.02 + cameraRef.current.zoom * 0.005); // Reduced grid opacity
       ctx.strokeStyle = `rgba(100, 200, 255, ${gridAlpha})`;
       ctx.lineWidth   = 0.5;
 
@@ -367,12 +367,16 @@ export function FlatMap({
         else if (isEnemyOwned) size = plotSize * 1.2;
 
         let color = COLORS.unclaimed;
+        let plotAlpha = 0.3; // Default low opacity for unclaimed plots
+        
         if (isSelected) {
           color = COLORS.selected;
           size  = plotSize * 1.8;
+          plotAlpha = 0.9;
         } else if (isHovered) {
           color = isPlayerOwned ? COLORS.playerGlow : isEnemyOwned ? COLORS.enemyGlow : COLORS.hover;
           size  = plotSize * 1.5;
+          plotAlpha = 0.8;
         } else if (isPlayerOwned) {
           const r  = parseInt(COLORS.player.slice(1, 3), 16);
           const g  = parseInt(COLORS.player.slice(3, 5), 16);
@@ -381,8 +385,10 @@ export function FlatMap({
           const pg = Math.min(255, Math.round(g * (playerPulse + 0.15)));
           const pb = Math.min(255, Math.round(b * (playerPulse + 0.15)));
           color = `rgb(${pr},${pg},${pb})`;
+          plotAlpha = 0.6;
         } else if (isEnemyOwned) {
           color = COLORS.enemy;
+          plotAlpha = 0.6;
         }
 
         if (isPlayerOwned && !isSelected && !isHovered) {
@@ -396,8 +402,10 @@ export function FlatMap({
           ctx.shadowBlur  = 0;
         }
 
+        ctx.globalAlpha = plotAlpha;
         ctx.fillStyle = color;
         ctx.fillRect(x - size / 2, y - size / 2, size, size);
+        ctx.globalAlpha = 1.0;
 
         ctx.shadowColor = "transparent";
         ctx.shadowBlur  = 0;

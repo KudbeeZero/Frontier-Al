@@ -68,7 +68,7 @@ function GridOverlay() {
         color="#00ccff"
         wireframe={true}
         transparent={true}
-        opacity={0.08}
+        opacity={0.04} // Reduced from 0.08
         depthWrite={false}
       />
     </mesh>
@@ -297,8 +297,8 @@ function PlotInstances({
         metalness={0.5}
         side={THREE.DoubleSide}
         transparent
-        opacity={0.9}
-        emissiveIntensity={0.4}
+        opacity={0.4} // Reduced from 0.9 to see globe image better
+        emissiveIntensity={0.2}
       />
     </instancedMesh>
   );
