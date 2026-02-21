@@ -12,8 +12,11 @@ export async function registerRoutes(
 
   let blockchainReady = false;
   initializeBlockchain().then((result) => {
-    blockchainReady = true;
+    blockchainReady = result.asaId !== null;
     console.log(`Blockchain initialized: ASA=${result.asaId}, Admin=${result.adminAddress}, ALGO=${result.adminAlgo}`);
+    if (!blockchainReady) {
+      console.warn("Blockchain initialization incomplete: ASA not created (check ALGO balance and env vars).");
+    }
   }).catch((err) => {
     console.error("Blockchain init failed:", err);
   });
