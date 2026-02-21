@@ -33,7 +33,7 @@ const BIOME_COLORS: Record<BiomeType, string> = {
 const OWNER_COLORS = {
   player: new THREE.Color("#00ff44"),
   ai: new THREE.Color("#ff2222"),
-  none: new THREE.Color("#111111"),
+  none: new THREE.Color("#1a1a2e"),
 };
 
 function latLngToSphere(lat: number, lng: number, radius: number): THREE.Vector3 {
@@ -57,32 +57,42 @@ function SceneLighting() {
   );
 }
 
+// Wireframe grid overlay — sits just above the planet surface
+// giving the Zero Colony "cells on a sphere" look
+function GridOverlay() {
+  const geometry = useMemo(() => new THREE.SphereGeometry(GLOBE_RADIUS + 0.025, 48, 32), []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <mesh geometry={geometry}>
+      <meshBasicMaterial
+        color="#00ccff"
+        wireframe={true}
+        transparent={true}
+        opacity={0.08}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+// Planet no longer self-rotates — the parent RotatingGlobe group handles it
 function Planet() {
-  const meshRef = useRef<THREE.Mesh>(null!);
   const texture = useMemo(() => {
     const loader = new THREE.TextureLoader();
     const tex = loader.load(planetTexturePath);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
-
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.02;
-    }
-  });
-
   return (
-    <mesh ref={meshRef}>
+    <mesh>
       <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
       <meshStandardMaterial map={texture} roughness={0.8} metalness={0.1} />
     </mesh>
   );
 }
 
+// Atmosphere stays OUTSIDE the rotating group — it's a world-space glow
 function AtmosphereGlow() {
-  const shaderRef = useRef<THREE.ShaderMaterial>(null!);
-
   const vertexShader = `
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -92,7 +102,6 @@ function AtmosphereGlow() {
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
-
   const fragmentShader = `
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -103,12 +112,10 @@ function AtmosphereGlow() {
       gl_FragColor = vec4(0.3, 0.6, 1.0, fresnel * 0.6);
     }
   `;
-
   return (
     <mesh>
       <sphereGeometry args={[GLOBE_RADIUS * 1.05, 64, 64]} />
       <shaderMaterial
-        ref={shaderRef}
         vertexShader={vertexShader}
         fragmentShader={fragmentShader}
         transparent={true}
@@ -139,7 +146,7 @@ function PlotInstances({
   const basePlotSize = useMemo(() => {
     const surfaceArea = 4 * Math.PI * GLOBE_RADIUS * GLOBE_RADIUS;
     const areaPerPlot = surfaceArea / parcels.length;
-    return Math.sqrt(areaPerPlot) * 0.35;
+    return Math.sqrt(areaPerPlot) * 0.42; // slightly larger than before
   }, [parcels.length]);
 
   const parcelMap = useMemo(() => {
@@ -148,45 +155,28 @@ function PlotInstances({
     return map;
   }, [parcels]);
 
-  const geometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(basePlotSize, basePlotSize);
-    return geo;
-  }, [basePlotSize]);
-
-  useEffect(() => {
-    return () => {
-      geometry.dispose();
-    };
-  }, [geometry]);
+  const geometry = useMemo(() => new THREE.PlaneGeometry(basePlotSize, basePlotSize), [basePlotSize]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
   useEffect(() => {
     if (!meshRef.current || parcels.length === 0) return;
-
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
-
     for (let i = 0; i < parcels.length; i++) {
       const p = parcels[i];
       const pos = latLngToSphere(p.lat, p.lng, GLOBE_RADIUS + PLOT_ELEVATION);
       const normal = pos.clone().normalize();
-
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().add(normal));
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
-
       if (p.ownerId) {
-        if (p.ownerId === currentPlayerId || p.ownerType === "player") {
-          color.copy(OWNER_COLORS.player);
-        } else {
-          color.copy(OWNER_COLORS.ai);
-        }
+        color.copy(p.ownerId === currentPlayerId || p.ownerType === "player" ? OWNER_COLORS.player : OWNER_COLORS.ai);
       } else {
         color.copy(OWNER_COLORS.none);
       }
       meshRef.current.setColorAt(i, color);
     }
-
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
   }, [parcels, currentPlayerId]);
@@ -242,7 +232,7 @@ function PlotInstances({
             const base = isPlayerOwned ? OWNER_COLORS.player : OWNER_COLORS.ai;
             color.copy(base).lerp(new THREE.Color("#ffffff"), 0.3);
           } else {
-            color.set("#555555");
+            color.set("#334455");
           }
         } else if (isPlayerOwned) {
           color.copy(OWNER_COLORS.player).multiplyScalar(playerGlow + 0.2);
@@ -257,15 +247,12 @@ function PlotInstances({
     }
   });
 
-  const handlePointerMove = useCallback(
-    (e: THREE.Intersection) => {
-      if (e.instanceId !== undefined) {
-        setHoveredIndex(e.instanceId);
-        document.body.style.cursor = "pointer";
-      }
-    },
-    []
-  );
+  const handlePointerMove = useCallback((e: THREE.Intersection) => {
+    if (e.instanceId !== undefined) {
+      setHoveredIndex(e.instanceId);
+      document.body.style.cursor = "pointer";
+    }
+  }, []);
 
   const handlePointerOut = useCallback(() => {
     if (hoveredIndex !== null) {
@@ -286,18 +273,13 @@ function PlotInstances({
     document.body.style.cursor = "default";
   }, [hoveredIndex, parcelMap, currentPlayerId]);
 
-  const handleClick = useCallback(
-    (e: any) => {
-      e.stopPropagation();
-      if (e.instanceId !== undefined) {
-        const p = parcelMap.get(e.instanceId);
-        if (p) {
-          onParcelSelect(p.id);
-        }
-      }
-    },
-    [parcelMap, onParcelSelect]
-  );
+  const handleClick = useCallback((e: any) => {
+    e.stopPropagation();
+    if (e.instanceId !== undefined) {
+      const p = parcelMap.get(e.instanceId);
+      if (p) onParcelSelect(p.id);
+    }
+  }, [parcelMap, onParcelSelect]);
 
   if (parcels.length === 0) return null;
 
@@ -311,14 +293,49 @@ function PlotInstances({
     >
       <meshStandardMaterial
         vertexColors
-        roughness={0.4}
-        metalness={0.3}
+        roughness={0.3}
+        metalness={0.5}
         side={THREE.DoubleSide}
         transparent
-        opacity={0.95}
-        emissiveIntensity={0.3}
+        opacity={0.9}
+        emissiveIntensity={0.4}
       />
     </instancedMesh>
+  );
+}
+
+// THE KEY FIX: Planet + Grid + Plots all inside ONE rotating group
+// Previously Planet rotated alone while Plots stayed static in world space
+function RotatingGlobe({
+  parcels,
+  selectedParcelId,
+  currentPlayerId,
+  onParcelSelect,
+}: {
+  parcels: LandParcel[];
+  selectedParcelId: string | null;
+  currentPlayerId: string | null;
+  onParcelSelect: (id: string) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null!);
+
+  useFrame((_, delta) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y += delta * 0.02;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <Planet />
+      <GridOverlay />
+      <PlotInstances
+        parcels={parcels}
+        selectedParcelId={selectedParcelId}
+        currentPlayerId={currentPlayerId}
+        onParcelSelect={onParcelSelect}
+      />
+    </group>
   );
 }
 
@@ -337,25 +354,14 @@ function CameraController() {
   );
 }
 
-interface WebGLErrorBoundaryState {
-  hasError: boolean;
-}
-
 class WebGLErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
-  WebGLErrorBoundaryState
+  { hasError: boolean }
 > {
-  state: WebGLErrorBoundaryState = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
   render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-    return this.props.children;
+    return this.state.hasError ? this.props.fallback : this.props.children;
   }
 }
 
@@ -393,36 +399,26 @@ export function PlanetGlobe({
       <div className={className} data-testid="planet-globe" style={{ position: "relative" }}>
         <Canvas
           camera={{ fov: 45, near: 0.1, far: 100 }}
-          gl={{
-            antialias: true,
-            alpha: false,
-            powerPreference: "high-performance",
-          }}
+          gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           style={{ background: "#000005" }}
           onCreated={({ gl }) => {
-            if (!gl.getContext()) {
-              throw new Error("WebGL context unavailable");
-            }
+            if (!gl.getContext()) throw new Error("WebGL context unavailable");
           }}
         >
           <SceneLighting />
-          <Stars
-            radius={50}
-            depth={50}
-            count={3000}
-            factor={4}
-            saturation={0.3}
-            fade
-            speed={0.5}
-          />
-          <Planet />
+          <Stars radius={50} depth={50} count={3000} factor={4} saturation={0.3} fade speed={0.5} />
+
+          {/* Atmosphere stays outside the rotating group */}
           <AtmosphereGlow />
-          <PlotInstances
+
+          {/* Everything that should rotate together */}
+          <RotatingGlobe
             parcels={parcels}
             selectedParcelId={selectedParcelId}
             currentPlayerId={currentPlayerId}
             onParcelSelect={onParcelSelect}
           />
+
           <CameraController />
         </Canvas>
 
@@ -437,7 +433,7 @@ export function PlanetGlobe({
               <span className="text-red-400">Enemy Territory</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#111111", border: "1px solid #333" }} />
+              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#1a1a2e", border: "1px solid #333" }} />
               <span className="text-gray-500">Unclaimed</span>
             </div>
           </div>
