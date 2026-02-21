@@ -38,6 +38,67 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/economics", async (_req, res) => {
+    try {
+      const gameState = await storage.getGameState();
+      const asaId = getFrontierAsaId();
+      const adminAddress = getAdminAddress();
+
+      // Sum burned tokens across all players
+      const totalBurned = gameState.players.reduce(
+        (sum, p) => sum + (p.totalFrontierBurned || 0),
+        0
+      );
+
+      // Total earned by all players (includes unclaimed still held in-game)
+      const totalEarned = gameState.players.reduce(
+        (sum, p) => sum + (p.totalFrontierEarned || 0),
+        0
+      );
+
+      // Tokens held in-game by players right now
+      const totalHeld = gameState.players.reduce(
+        (sum, p) => sum + (p.frontier || 0),
+        0
+      );
+
+      // Tokens locked in accumulation (pending claim)
+      const totalPendingClaim = gameState.parcels.reduce(
+        (sum, p) => sum + (p.frontierAccumulated || 0),
+        0
+      );
+
+      // FRONTIER generated per day across all plots
+      const totalFrontierPerDay = gameState.parcels.reduce(
+        (sum, p) => sum + (p.frontierPerDay || 0),
+        0
+      );
+
+      const humanPlayerCount = gameState.players.filter(p => !p.isAI).length;
+
+      res.json({
+        asaId,
+        adminAddress,
+        totalSupply: gameState.frontierTotalSupply,
+        circulating: Math.round(gameState.frontierCirculating * 100) / 100,
+        totalBurned: Math.round(totalBurned * 100) / 100,
+        totalEarned: Math.round(totalEarned * 100) / 100,
+        totalHeld: Math.round(totalHeld * 100) / 100,
+        totalPendingClaim: Math.round(totalPendingClaim * 100) / 100,
+        totalFrontierPerDay: Math.round(totalFrontierPerDay * 100) / 100,
+        totalPlots: gameState.totalPlots,
+        claimedPlots: gameState.claimedPlots,
+        humanPlayerCount,
+        network: "Algorand TestNet",
+        unitName: "FRNTR",
+        assetName: "FRONTIER",
+        decimals: 6,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch economics data" });
+    }
+  });
+
   app.get("/api/blockchain/opt-in-check/:address", async (req, res) => {
     try {
       const optedIn = await isAddressOptedInToFrontier(req.params.address);
