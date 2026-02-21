@@ -1234,6 +1234,9 @@ export class DbStorage implements IStorage {
   private initPromise: Promise<void> | null = null;
 
   constructor() {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is required to use DbStorage. Set the env var or leave it unset to use MemStorage.");
+    }
     this.db = db;
   }
 
