@@ -128,7 +128,12 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
-        const targetAddress = treasuryAddress || getCachedTreasuryAddress();
+        // Use state value first, fall back to module cache, then try a fresh fetch
+        let targetAddress = treasuryAddress || getCachedTreasuryAddress();
+        if (!targetAddress) {
+          const fresh = await fetchBlockchainStatus();
+          targetAddress = fresh.adminAddress || "";
+        }
         if (!targetAddress) {
           toast({ title: "Not Ready", description: "Blockchain not initialized yet. Try again.", variant: "destructive" });
           setIsPending(false);
@@ -158,7 +163,7 @@ export function useBlockchainActions() {
         setIsPending(false);
       }
     },
-    [isConnected, address, toast]
+    [isConnected, address, toast, treasuryAddress]
   );
 
   const signClaimFrontierAction = useCallback(

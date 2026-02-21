@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema } from "@shared/schema";
 import { z } from "zod";
-import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier } from "./algorand";
+import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA } from "./algorand";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -68,7 +68,7 @@ export async function registerRoutes(
           try {
             const optedIn = await isAddressOptedInToFrontier(address);
             if (optedIn) {
-              welcomeBonusTxId = await transferFrontierASA(address, 500);
+              welcomeBonusTxId = await batchedTransferFrontierASA(address, 500);
               console.log(`Welcome bonus ASA transfer: 500 FRONTIER to ${address}, TX: ${welcomeBonusTxId}`);
             }
           } catch (err) {
@@ -201,17 +201,22 @@ export async function registerRoutes(
       const walletAddress = player.address;
       const asaId = getFrontierAsaId();
       if (asaId && result.amount > 0 && walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
-        try {
-          const optedIn = await isAddressOptedInToFrontier(walletAddress);
+        // Queue into the batcher (fire-and-forget) so the HTTP response is immediate.
+        // Multiple concurrent claims are grouped into Algorand atomic transaction
+        // batches that flush once 1 KB of combined data is accumulated (≤ 16 txns).
+        isAddressOptedInToFrontier(walletAddress).then((optedIn) => {
           if (optedIn) {
-            txId = await transferFrontierASA(walletAddress, result.amount);
-            console.log(`FRONTIER ASA transfer: ${result.amount} to ${walletAddress}, TX: ${txId}`);
+            batchedTransferFrontierASA(walletAddress, result.amount)
+              .then((batchTxId) =>
+                console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
+              )
+              .catch((err) =>
+                console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
+              );
           } else {
             console.log(`Player ${walletAddress} not opted into FRONTIER ASA, claim recorded in-game only`);
           }
-        } catch (transferErr) {
-          console.error("ASA transfer failed (claim still recorded in-game):", transferErr);
-        }
+        }).catch((err) => console.error("Opt-in check failed:", err));
       }
 
       res.json({ success: true, claimed: result, txId, asaId });
