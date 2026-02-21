@@ -9,6 +9,7 @@ import { InventoryPanel } from "./InventoryPanel";
 import { BattlesPanel } from "./BattlesPanel";
 import { LeaderboardPanel } from "./LeaderboardPanel";
 import { CommanderPanel } from "./CommanderPanel";
+import { EconomicsPanel } from "./EconomicsPanel";
 import { OnboardingFlow } from "./OnboardingFlow";
 import { BaseInfoPanel } from "./BaseInfoPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
@@ -476,6 +477,9 @@ export function GameLayout() {
               entries={gameState.leaderboard}
               currentPlayerId={player?.id || null}
             />
+          )}
+          {activeTab === "economics" && (
+            <EconomicsPanel className="h-full" />
           )}
         </div>
       )}
