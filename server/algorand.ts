@@ -29,7 +29,11 @@ export function getAdminAccount(): algosdk.Account {
 }
 
 export function getAdminAddress(): string {
-  return getAdminAccount().addr.toString();
+  try {
+    return getAdminAccount().addr.toString();
+  } catch {
+    return process.env.ALGORAND_ADMIN_ADDRESS || "";
+  }
 }
 
 export function getFrontierAsaId(): number | null {
