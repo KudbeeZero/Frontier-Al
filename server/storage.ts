@@ -1152,6 +1152,7 @@ function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     aiBehavior:           (row.aiBehavior ?? undefined) as Player["aiBehavior"],
     totalIronMined:       row.totalIronMined,
     totalFuelMined:       row.totalFuelMined,
+    totalCrystalMined:    row.totalCrystalMined,
     totalFrontierEarned:  row.totalFrontierEarned,
     totalFrontierBurned:  row.totalFrontierBurned,
     attacksWon:           row.attacksWon,
@@ -1209,6 +1210,7 @@ function computeLeaderboard(playerRows: PlayerRow[], parcelRows: ParcelRow[]): L
       territories:         countByOwner.get(r.id) ?? 0,
       totalIronMined:      r.totalIronMined,
       totalFuelMined:      r.totalFuelMined,
+      totalCrystalMined:   r.totalCrystalMined,
       totalFrontierEarned: r.totalFrontierEarned,
       attacksWon:          r.attacksWon,
       attacksLost:         r.attacksLost,
@@ -1255,6 +1257,13 @@ export class DbStorage implements IStorage {
   }
 
   private async _doInitialize(): Promise<void> {
+    // ── Schema migrations (safe to run on every startup) ─────────────────────
+    // Add columns introduced after the initial DB release so that existing
+    // deployments self-heal without requiring a manual `drizzle-kit push`.
+    await this.db.execute(
+      sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_crystal_mined REAL NOT NULL DEFAULT 0`
+    );
+
     // Check whether the world has already been seeded.
     const [meta] = await this.db
       .insert(gameMeta)
