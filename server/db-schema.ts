@@ -45,6 +45,7 @@ export const players = pgTable("players", {
   aiBehavior:           varchar("ai_behavior", { length: 20 }),
   totalIronMined:       real("total_iron_mined").notNull().default(0),
   totalFuelMined:       real("total_fuel_mined").notNull().default(0),
+  totalCrystalMined:    real("total_crystal_mined").notNull().default(0),
   totalFrontierEarned:  real("total_frontier_earned").notNull().default(0),
   totalFrontierBurned:  real("total_frontier_burned").notNull().default(0),
   attacksWon:           integer("attacks_won").notNull().default(0),

@@ -144,6 +144,7 @@ export interface Player {
   aiBehavior?: "expansionist" | "defensive" | "raider" | "economic" | "adaptive";
   totalIronMined: number;
   totalFuelMined: number;
+  totalCrystalMined: number;
   totalFrontierEarned: number;
   totalFrontierBurned: number;
   attacksWon: number;
@@ -190,6 +191,7 @@ export interface LeaderboardEntry {
   territories: number;
   totalIronMined: number;
   totalFuelMined: number;
+  totalCrystalMined: number;
   totalFrontierEarned: number;
   attacksWon: number;
   attacksLost: number;

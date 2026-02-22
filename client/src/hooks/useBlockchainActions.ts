@@ -96,8 +96,13 @@ export function useBlockchainActions() {
   // -------------------------------------------------------------------------
 
   const queueMineAction = useCallback(
-    (plotId: number) => {
-      if (isConnected && address) enqueueGameAction("mine", plotId);
+    (plotId: number, minerals?: { iron: number; fuel: number; crystal: number }) => {
+      if (isConnected && address) {
+        const mineralData = minerals
+          ? { fe: minerals.iron, fu: minerals.fuel, cr: minerals.crystal }
+          : undefined;
+        enqueueGameAction("mine", plotId, undefined, mineralData);
+      }
     },
     [isConnected, address]
   );

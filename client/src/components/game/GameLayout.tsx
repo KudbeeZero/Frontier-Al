@@ -11,7 +11,7 @@ import { LeaderboardPanel } from "./LeaderboardPanel";
 import { CommanderPanel } from "./CommanderPanel";
 import { EconomicsPanel } from "./EconomicsPanel";
 import { OnboardingFlow } from "./OnboardingFlow";
-import { BaseInfoPanel } from "./BaseInfoPanel";
+import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { WalletConnect } from "./WalletConnect";
 import { useWallet } from "@/hooks/useWallet";
@@ -102,12 +102,18 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueMineAction(selectedParcel.plotId);
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
-        onSuccess: () => toast({ title: "Mining Complete", description: "Resources extracted successfully." }),
+        onSuccess: (data: any) => {
+          const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
+          // Log to chain (batched, fire-and-forget) with actual mineral yields
+          queueMineAction(selectedParcel.plotId, yields);
+          const desc = yields
+            ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
+            : "Resources extracted successfully.";
+          toast({ title: "Mining Complete", description: desc });
+        },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -334,23 +340,26 @@ export function GameLayout() {
     );
   }
 
+  const commandCenterProps = {
+    player,
+    parcels: gameState?.parcels ?? [],
+    selectedParcel,
+    onSelectParcel: (id: string) => {
+      setSelectedParcelId(id);
+    },
+    onClaimFrontier: handleClaimFrontier,
+    onCollectAll: handleCollectAll,
+    onMine: handleMine,
+    onUpgrade: handleUpgrade,
+    onAttack: handleAttackClick,
+    isMining: mineMutation.isPending,
+    isUpgrading: upgradeMutation.isPending,
+    isClaimingFrontier: claimFrontierMutation.isPending,
+    isCollecting: collectMutation.isPending,
+  };
+
   const mobileMenuContent = (
-    <div className="flex flex-col h-full bg-sidebar">
-      <div className="p-4 border-b border-sidebar-border">
-        <h2 className="font-display text-lg uppercase tracking-wide">FRONTIER</h2>
-      </div>
-      <div className="flex-1 overflow-auto p-4 space-y-4">
-        <BaseInfoPanel
-          parcel={selectedParcel}
-          player={player}
-          onMine={handleMine}
-          onUpgrade={handleUpgrade}
-          onAttack={handleAttackClick}
-          isMining={mineMutation.isPending}
-          isUpgrading={upgradeMutation.isPending}
-        />
-      </div>
-    </div>
+    <CommandCenterPanel {...commandCenterProps} className="h-full" />
   );
 
   const showFullscreenPanel = activeTab !== "map";
@@ -403,26 +412,33 @@ export function GameLayout() {
             crystal={player.crystal}
             frontier={player.frontier}
             algoBalance={balance}
+            frontierDailyRate={
+              gameState
+                ? gameState.parcels
+                    .filter(p => p.ownerId === player.id)
+                    .reduce((s, p) => s + p.frontierPerDay, 0)
+                : undefined
+            }
+            frontierPending={
+              gameState
+                ? gameState.parcels
+                    .filter(p => p.ownerId === player.id)
+                    .reduce((s, p) => s + p.frontierAccumulated, 0)
+                : undefined
+            }
           />
         </div>
       )}
 
-      <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border p-4 space-y-4 overflow-auto">
+      <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
         {isLoading ? (
-          <>
+          <div className="p-4 space-y-3">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-16 w-full" />
             <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-32 w-full" />
-          </>
+          </div>
         ) : (
-          <BaseInfoPanel
-            parcel={selectedParcel}
-            player={player}
-            onMine={handleMine}
-            onUpgrade={handleUpgrade}
-            onAttack={handleAttackClick}
-            isMining={mineMutation.isPending}
-            isUpgrading={upgradeMutation.isPending}
-          />
+          <CommandCenterPanel {...commandCenterProps} className="h-full" />
         )}
       </aside>
 

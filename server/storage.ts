@@ -178,6 +178,7 @@ export class MemStorage implements IStorage {
       isAI: false,
       totalIronMined: 0,
       totalFuelMined: 0,
+      totalCrystalMined: 0,
       totalFrontierEarned: 0,
       totalFrontierBurned: 0,
       attacksWon: 0,
@@ -220,6 +221,7 @@ export class MemStorage implements IStorage {
         aiBehavior: AI_BEHAVIORS[i],
         totalIronMined: 0,
         totalFuelMined: 0,
+        totalCrystalMined: 0,
         totalFrontierEarned: 0,
         totalFrontierBurned: 0,
         attacksWon: 0,
@@ -281,6 +283,7 @@ export class MemStorage implements IStorage {
         territories: player.ownedParcels.length,
         totalIronMined: player.totalIronMined,
         totalFuelMined: player.totalFuelMined,
+        totalCrystalMined: player.totalCrystalMined,
         totalFrontierEarned: player.totalFrontierEarned,
         attacksWon: player.attacksWon,
         attacksLost: player.attacksLost,
@@ -360,6 +363,7 @@ export class MemStorage implements IStorage {
 
     player.totalIronMined += finalIron;
     player.totalFuelMined += finalFuel;
+    player.totalCrystalMined += finalCrystal;
 
     if (parcel.richness > 20) {
       parcel.richness = Math.max(20, parcel.richness - 1);
@@ -370,7 +374,7 @@ export class MemStorage implements IStorage {
       type: "mine",
       playerId: player.id,
       parcelId: parcel.id,
-      description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel from plot #${parcel.plotId}`,
+      description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel, ${finalCrystal} crystal from plot #${parcel.plotId} [${parcel.biome}] (richness: ${parcel.richness})`,
       timestamp: now,
     });
 

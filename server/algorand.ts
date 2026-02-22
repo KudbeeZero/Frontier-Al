@@ -117,13 +117,23 @@ export async function transferFrontierASA(
 
   const amountUnits = Math.floor(amount * Math.pow(10, FRONTIER_ASA_DECIMALS));
 
+  const noteData = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
+    type: "claim",
+    amt: amount,
+    to: toAddress,
+    ts: Date.now(),
+    network: "testnet",
+  });
+
   const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
     sender: account.addr.toString(),
     receiver: toAddress,
     amount: amountUnits,
     assetIndex: frontierAsaId,
     suggestedParams,
-    note: new TextEncoder().encode(`FRONTIER claim: ${amount}`),
+    note: new TextEncoder().encode(`FRNTR:${noteData}`),
   });
 
   const signedTxn = txn.signTxn(account.sk);
@@ -208,9 +218,9 @@ class FrontierTransferBatcher {
   }
 
   private estimatedBytes(): number {
-    // ~200 bytes base overhead per txn + note content length
+    // ~200 bytes base overhead per txn + structured JSON note content length
     return this._pending.reduce((sum, item) => {
-      const note = `FRONTIER claim: ${item.amount}`;
+      const note = `FRNTR:{"game":"FRONTIER","v":1,"type":"batch_claim","amt":${item.amount},"to":"${item.toAddress}","batchIdx":0,"batchSize":1,"ts":${Date.now()},"network":"testnet"}`;
       return sum + 200 + note.length;
     }, 0);
   }
@@ -265,15 +275,27 @@ async function sendAtomicFrontierTransfers(
   const account = getAdminAccount();
   const suggestedParams = await algodClient.getTransactionParams().do();
 
-  const txns = transfers.map(({ toAddress, amount }) => {
+  const batchTs = Date.now();
+  const txns = transfers.map(({ toAddress, amount }, index) => {
     const amountUnits = Math.floor(amount * Math.pow(10, FRONTIER_ASA_DECIMALS));
+    const noteData = JSON.stringify({
+      game: "FRONTIER",
+      v: 1,
+      type: "batch_claim",
+      amt: amount,
+      to: toAddress,
+      batchIdx: index,
+      batchSize: transfers.length,
+      ts: batchTs,
+      network: "testnet",
+    });
     return algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
       sender: account.addr.toString(),
       receiver: toAddress,
       amount: amountUnits,
       assetIndex: frontierAsaId!,
       suggestedParams,
-      note: new TextEncoder().encode(`FRONTIER claim: ${amount}`),
+      note: new TextEncoder().encode(`FRNTR:${noteData}`),
     });
   });
 
