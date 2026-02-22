@@ -52,6 +52,13 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every second for live FRNTR accumulation display in ResourceHUD.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const mineMutation = useMine();
   const upgradeMutation = useUpgrade();
@@ -423,7 +430,10 @@ export function GameLayout() {
               gameState
                 ? gameState.parcels
                     .filter(p => p.ownerId === player.id)
-                    .reduce((s, p) => s + p.frontierAccumulated, 0)
+                    .reduce((s, p) => {
+                      const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
+                      return s + p.frontierAccumulated + days * p.frontierPerDay;
+                    }, 0)
                 : undefined
             }
           />

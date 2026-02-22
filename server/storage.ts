@@ -1528,8 +1528,9 @@ export class DbStorage implements IStorage {
           .where(eq(parcelsTable.id, parcel.id)),
         tx.update(playersTable)
           .set({
-            totalIronMined: playerRow.totalIronMined + finalIron,
-            totalFuelMined: playerRow.totalFuelMined + finalFuel,
+            totalIronMined:    playerRow.totalIronMined    + finalIron,
+            totalFuelMined:    playerRow.totalFuelMined    + finalFuel,
+            totalCrystalMined: playerRow.totalCrystalMined + finalCrystal,
           })
           .where(eq(playersTable.id, player.id)),
       ]);
@@ -1538,7 +1539,7 @@ export class DbStorage implements IStorage {
         type:        "mine",
         playerId:    player.id,
         parcelId:    parcel.id,
-        description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel from plot #${parcel.plotId}`,
+        description: `${player.name} mined ${finalIron} iron, ${finalFuel} fuel, ${finalCrystal} crystal from plot #${parcel.plotId}`,
         timestamp:   now,
       }, tx);
       await this.bumpLastTs(now, tx);
@@ -1882,7 +1883,7 @@ export class DbStorage implements IStorage {
       const battleValues = {
         id:               battleId,
         attackerId:       attacker.id,
-        defenderId:       target.ownerId ?? undefined,
+        defenderId:       target.ownerId ?? null,
         targetParcelId:   target.id,
         attackerPower,
         defenderPower,
