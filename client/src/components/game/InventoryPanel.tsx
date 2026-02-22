@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Package, Pickaxe, Fuel, Gem, MapPin, Shield, ArrowDownToLine, Zap, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +19,8 @@ interface InventoryPanelProps {
   className?: string;
 }
 
-function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => void }) {
+function LandCard({ parcel, onSelect, now }: { parcel: LandParcel; onSelect: () => void; now: number }) {
+  const liveAccum = parcel.frontierAccumulated + Math.max(0, (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60 * 24)) * parcel.frontierPerDay;
   const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
   const storagePercent = (totalStored / parcel.storageCapacity) * 100;
 
@@ -62,8 +64,8 @@ function LandCard({ parcel, onSelect }: { parcel: LandParcel; onSelect: () => vo
       <Progress value={storagePercent} className="h-1" />
       <div className="flex items-center justify-between mt-1 text-[9px] text-muted-foreground">
         <span>{totalStored}/{parcel.storageCapacity} stored</span>
-        {parcel.frontierAccumulated > 0.01 && (
-          <span className="text-yellow-400">{parcel.frontierAccumulated.toFixed(2)} FRNTR pending</span>
+        {liveAccum > 0.001 && (
+          <span className="text-yellow-400">{liveAccum.toFixed(4)} FRNTR pending</span>
         )}
       </div>
     </button>
@@ -89,12 +91,21 @@ export function InventoryPanel({
     );
   }
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const ownedParcels = parcels.filter(p => p.ownerId === player.id);
   const totalStoredIron = ownedParcels.reduce((s, p) => s + p.ironStored, 0);
   const totalStoredFuel = ownedParcels.reduce((s, p) => s + p.fuelStored, 0);
   const totalStoredCrystal = ownedParcels.reduce((s, p) => s + p.crystalStored, 0);
   const hasStored = totalStoredIron > 0 || totalStoredFuel > 0 || totalStoredCrystal > 0;
-  const totalFrontierPending = ownedParcels.reduce((s, p) => s + p.frontierAccumulated, 0);
+  const totalFrontierPending = ownedParcels.reduce((s, p) => {
+    const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
+    return s + p.frontierAccumulated + days * p.frontierPerDay;
+  }, 0);
   const hasPending = totalFrontierPending > 0.01;
 
   return (
@@ -204,7 +215,7 @@ export function InventoryPanel({
             </div>
           ) : (
             ownedParcels.map((p) => (
-              <LandCard key={p.id} parcel={p} onSelect={() => onSelectParcel(p.id)} />
+              <LandCard key={p.id} parcel={p} onSelect={() => onSelectParcel(p.id)} now={now} />
             ))
           )}
         </div>

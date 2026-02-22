@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   MapPin, Pickaxe, Fuel, Gem, Shield, Zap, TrendingUp,
   Search, Clock, CheckCircle, Swords, Hammer, ChevronDown, ChevronUp,
@@ -22,18 +22,25 @@ function formatCooldown(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Live accumulated FRNTR = stored amount + time-based earnings since last claim. */
+function liveFrontierAccumulated(parcel: LandParcel, now: number): number {
+  const days = Math.max(0, (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
+  return parcel.frontierAccumulated + days * parcel.frontierPerDay;
+}
+
 // ─── PlotRow ─────────────────────────────────────────────────────────────────
 
 function PlotRow({
   parcel,
   isSelected,
   onSelect,
+  now,
 }: {
   parcel: LandParcel;
   isSelected: boolean;
   onSelect: () => void;
+  now: number;
 }) {
-  const now = Date.now();
   const elapsed = now - parcel.lastMineTs;
   const remaining = Math.max(0, MINE_COOLDOWN_MS - elapsed);
   const mineReady = remaining === 0;
@@ -100,10 +107,10 @@ function PlotRow({
         </span>
       </div>
 
-      {/* Pending FRNTR if any */}
-      {parcel.frontierAccumulated > 0.01 && (
+      {/* Pending FRNTR — live computed */}
+      {liveFrontierAccumulated(parcel, now) > 0.001 && (
         <div className="mt-1.5 text-[9px] text-yellow-400 font-mono">
-          {parcel.frontierAccumulated.toFixed(2)} FRNTR accumulated
+          {liveFrontierAccumulated(parcel, now).toFixed(4)} FRNTR accumulated
         </div>
       )}
     </button>
@@ -339,6 +346,13 @@ export function CommandCenterPanel({
   className,
 }: CommandCenterPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every second so accumulated FRNTR counts up in real time.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const ownedParcels = useMemo(
     () => parcels.filter((p) => player && p.ownerId === player.id),
@@ -357,9 +371,10 @@ export function CommandCenterPanel({
     () => ownedParcels.reduce((s, p) => s + p.frontierPerDay, 0),
     [ownedParcels]
   );
+  // Live total: stored DB amount + time-elapsed earnings since last claim.
   const totalFrontierPending = useMemo(
-    () => ownedParcels.reduce((s, p) => s + p.frontierAccumulated, 0),
-    [ownedParcels]
+    () => ownedParcels.reduce((s, p) => s + liveFrontierAccumulated(p, now), 0),
+    [ownedParcels, now]
   );
   const totalStoredIron = ownedParcels.reduce((s, p) => s + p.ironStored, 0);
   const totalStoredFuel = ownedParcels.reduce((s, p) => s + p.fuelStored, 0);
@@ -554,6 +569,7 @@ export function CommandCenterPanel({
                 parcel={p}
                 isSelected={selectedParcel?.id === p.id}
                 onSelect={() => onSelectParcel(p.id)}
+                now={now}
               />
             ))
           )}
