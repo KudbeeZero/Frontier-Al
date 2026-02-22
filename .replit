@@ -32,11 +32,21 @@ args = "Start Game"
 [[workflows.workflow]]
 name = "Start Game"
 author = "agent"
+mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Update dependencies"
+mode = "sequential"
+author = 55102651
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "Npm update "
 
 [rules]
 
