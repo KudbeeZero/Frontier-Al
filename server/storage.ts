@@ -44,6 +44,11 @@ import {
   DRONE_SCOUT_DURATION_MS,
   MAX_DRONES,
   calculateFrontierPerDay,
+  MORALE_DEBUFF_BASE_MS,
+  MORALE_ATTACK_PENALTY,
+  ATTACK_COOLDOWN_PER_LOSS_MS,
+  PILLAGE_RATE,
+  CASCADE_DEFENSE_PENALTY,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
@@ -664,14 +669,20 @@ export class MemStorage implements IStorage {
     attacker.iron -= totalIron;
     attacker.fuel -= totalFuel;
 
-    const attackerPower = action.troopsCommitted * 10 + totalIron * 0.5 + totalFuel * 0.8;
+    const rawAttackerPower = action.troopsCommitted * 10 + totalIron * 0.5 + totalFuel * 0.8;
+    // Apply morale debuff: reduces attack power when attacker has recently lost territory
+    const now = Date.now();
+    const moraleActive = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
+    const attackerPower = moraleActive
+      ? rawAttackerPower * (1 - MORALE_ATTACK_PENALTY)
+      : rawAttackerPower;
+
     const biomeBonus = biomeBonuses[targetParcel.biome];
     const turretBonus = targetParcel.improvements
       .filter((i) => i.type === "turret" || i.type === "shield_gen" || i.type === "fortress")
       .reduce((sum, i) => sum + i.level * 5, 0);
     const defenderPower = (targetParcel.defenseLevel * 15 + turretBonus) * biomeBonus.defenseMod;
 
-    const now = Date.now();
     const battleId = randomUUID();
 
     const battle: Battle = {
@@ -915,10 +926,38 @@ export class MemStorage implements IStorage {
           targetParcel.activeBattleId = null;
 
           if (attackerWins) {
+            // ── Pillage stored resources ────────────────────────────────────
+            const pillagedIron    = Math.floor(targetParcel.ironStored    * PILLAGE_RATE);
+            const pillagedFuel    = Math.floor(targetParcel.fuelStored    * PILLAGE_RATE);
+            const pillagedCrystal = Math.floor(targetParcel.crystalStored * PILLAGE_RATE);
+            targetParcel.ironStored    -= pillagedIron;
+            targetParcel.fuelStored    -= pillagedFuel;
+            targetParcel.crystalStored -= pillagedCrystal;
+            attacker.iron    += pillagedIron;
+            attacker.fuel    += pillagedFuel;
+            attacker.crystal += pillagedCrystal;
+
             if (defender) {
               defender.ownedParcels = defender.ownedParcels.filter((id) => id !== targetParcel.id);
               defender.attacksLost++;
+
+              // ── Morale debuff: scales with consecutive losses ─────────────
+              const prevConsecutive = defender.consecutiveLosses ?? 0;
+              defender.consecutiveLosses = prevConsecutive + 1;
+              const debuffMs = MORALE_DEBUFF_BASE_MS * (1 + prevConsecutive * 0.5);
+              defender.moraleDebuffUntil = now + debuffMs;
+
+              // ── Attack cooldown: stacks per consecutive loss ──────────────
+              defender.attackCooldownUntil = now + ATTACK_COOLDOWN_PER_LOSS_MS * defender.consecutiveLosses;
+
+              // ── Cascade vulnerability: adjacent defender parcels lose 1 def
+              const adjacentDefenderParcels = this.findNearbyParcels(targetParcel, 0.05)
+                .filter((p) => p.ownerId === defender!.id);
+              for (const adj of adjacentDefenderParcels) {
+                adj.defenseLevel = Math.max(1, adj.defenseLevel - CASCADE_DEFENSE_PENALTY);
+              }
             }
+
             targetParcel.ownerId = attacker.id;
             targetParcel.ownerType = attacker.isAI ? "ai" : "player";
             targetParcel.defenseLevel = Math.max(1, Math.floor(targetParcel.defenseLevel / 2));
@@ -927,6 +966,15 @@ export class MemStorage implements IStorage {
             attacker.ownedParcels.push(targetParcel.id);
             attacker.attacksWon++;
             attacker.territoriesCaptured++;
+            // Reset attacker's consecutive losses on a win
+            attacker.consecutiveLosses = 0;
+
+            const pillageMsg = (pillagedIron > 0 || pillagedFuel > 0 || pillagedCrystal > 0)
+              ? ` Pillaged: ${pillagedIron} iron, ${pillagedFuel} fuel, ${pillagedCrystal} crystal.`
+              : "";
+            const penaltyMsg = defender
+              ? ` ${defender.name} suffers morale debuff and attack cooldown.`
+              : "";
 
             this.events.push({
               id: randomUUID(),
@@ -934,19 +982,23 @@ export class MemStorage implements IStorage {
               playerId: attacker.id,
               parcelId: targetParcel.id,
               battleId: battle.id,
-              description: `${attacker.name} conquered plot #${targetParcel.plotId}!`,
+              description: `${attacker.name} conquered plot #${targetParcel.plotId}!${pillageMsg}${penaltyMsg}`,
               timestamp: now,
             });
           } else {
             attacker.attacksLost++;
-            if (defender) defender.attacksWon++;
+            if (defender) {
+              defender.attacksWon++;
+              // Successful defence resets the defender's consecutive-loss streak
+              defender.consecutiveLosses = 0;
+            }
             this.events.push({
               id: randomUUID(),
               type: "battle_resolved",
               playerId: defender?.id || attacker.id,
               parcelId: targetParcel.id,
               battleId: battle.id,
-              description: `Defense held at plot #${targetParcel.plotId}. Attack repelled.`,
+              description: `Defense held at plot #${targetParcel.plotId}. ${attacker.name}'s attack was repelled.`,
               timestamp: now,
             });
           }
@@ -1051,33 +1103,41 @@ export class MemStorage implements IStorage {
       }
 
       if (player.aiBehavior === "expansionist" || player.aiBehavior === "raider") {
-        const canAttack = player.iron >= ATTACK_BASE_COST.iron && player.fuel >= ATTACK_BASE_COST.fuel;
-        if (canAttack && Math.random() > 0.7) {
-          let attackTarget: LandParcel | null = null;
-          for (const owned of ownedParcels) {
-            const nearby = this.findNearbyParcels(owned, 0.08);
-            const targets = nearby.filter((p) => p.ownerId !== player.id && !p.activeBattleId && p.biome !== "water");
-            if (targets.length > 0) {
-              attackTarget = targets[Math.floor(Math.random() * targets.length)];
-              break;
+        // Respect attack cooldown imposed by consecutive losses
+        const inCooldown = player.attackCooldownUntil && now < player.attackCooldownUntil;
+        if (!inCooldown) {
+          const canAttack = player.iron >= ATTACK_BASE_COST.iron && player.fuel >= ATTACK_BASE_COST.fuel;
+          // Raise the random threshold when morale-debuffed so the AI attacks less aggressively
+          const moraleDebuffed = player.moraleDebuffUntil && now < player.moraleDebuffUntil;
+          const attackThreshold = moraleDebuffed ? 0.85 : 0.7;
+          if (canAttack && Math.random() > attackThreshold) {
+            let attackTarget: LandParcel | null = null;
+            for (const owned of ownedParcels) {
+              const nearby = this.findNearbyParcels(owned, 0.08);
+              const targets = nearby.filter((p) => p.ownerId !== player.id && !p.activeBattleId && p.biome !== "water");
+              if (targets.length > 0) {
+                attackTarget = targets[Math.floor(Math.random() * targets.length)];
+                break;
+              }
             }
-          }
-          if (attackTarget) {
-            try {
-              await this.deployAttack({
-                attackerId: player.id,
-                targetParcelId: attackTarget.id,
-                troopsCommitted: 1,
-                resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
-              });
-              newEvents.push({
-                id: randomUUID(),
-                type: "ai_action",
-                playerId: player.id,
-                description: `${player.name} deployed troops`,
-                timestamp: now,
-              });
-            } catch (e) {}
+            if (attackTarget) {
+              try {
+                await this.deployAttack({
+                  attackerId: player.id,
+                  targetParcelId: attackTarget.id,
+                  troopsCommitted: 1,
+                  resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                });
+                const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
+                newEvents.push({
+                  id: randomUUID(),
+                  type: "ai_action",
+                  playerId: player.id,
+                  description: `${player.name} deployed troops${statusMsg}`,
+                  timestamp: now,
+                });
+              } catch (e) {}
+            }
           }
         }
       }
@@ -1164,6 +1224,9 @@ function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     specialAttacks:       (row.specialAttacks ?? []) as SpecialAttackRecord[],
     drones:               (row.drones ?? []) as ReconDrone[],
     welcomeBonusReceived: row.welcomeBonusReceived,
+    moraleDebuffUntil:    row.moraleDebuffUntil ?? 0,
+    attackCooldownUntil:  row.attackCooldownUntil ?? 0,
+    consecutiveLosses:    row.consecutiveLosses ?? 0,
   };
 }
 
@@ -1262,6 +1325,15 @@ export class DbStorage implements IStorage {
     // deployments self-heal without requiring a manual `drizzle-kit push`.
     await this.db.execute(
       sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_crystal_mined REAL NOT NULL DEFAULT 0`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS morale_debuff_until BIGINT NOT NULL DEFAULT 0`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS attack_cooldown_until BIGINT NOT NULL DEFAULT 0`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS consecutive_losses INT NOT NULL DEFAULT 0`
     );
 
     // Check whether the world has already been seeded.
@@ -1870,14 +1942,20 @@ export class DbStorage implements IStorage {
       const { iron, fuel } = action.resourcesBurned;
       if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
 
-      const attackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8;
+      const now            = Date.now();
+      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8;
+      // Apply morale debuff: attacker power is reduced when they recently lost territory
+      const moraleActive   = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
+      const attackerPower  = moraleActive
+        ? rawAttackerPower * (1 - MORALE_ATTACK_PENALTY)
+        : rawAttackerPower;
+
       const biomeBonus    = biomeBonuses[target.biome];
       const turretBonus   = target.improvements
         .filter((i) => ["turret", "shield_gen", "fortress"].includes(i.type))
         .reduce((sum, i) => sum + i.level * 5, 0);
       const defenderPower = (target.defenseLevel * 15 + turretBonus) * biomeBonus.defenseMod;
 
-      const now      = Date.now();
       const battleId = randomUUID();
 
       const battleValues = {
@@ -2205,18 +2283,60 @@ export class DbStorage implements IStorage {
           .where(eq(parcelsTable.id, targetRow.id));
 
         if (attackerWins) {
-          // Update previous owner
+          // ── Pillage stored resources ──────────────────────────────────────
+          const pillagedIron    = Math.floor(targetRow.ironStored    * PILLAGE_RATE);
+          const pillagedFuel    = Math.floor(targetRow.fuelStored    * PILLAGE_RATE);
+          const pillagedCrystal = Math.floor(targetRow.crystalStored * PILLAGE_RATE);
+
+          // ── Apply morale/cooldown penalties to defender ───────────────────
+          let defenderPenaltyMsg = "";
           if (battleRow.defenderId) {
-            await tx.update(playersTable)
-              .set({ attacksLost: sql`${playersTable.attacksLost} + 1` })
+            const [defenderRow] = await tx.select().from(playersTable)
               .where(eq(playersTable.id, battleRow.defenderId));
+            if (defenderRow) {
+              const prevConsecutive = defenderRow.consecutiveLosses ?? 0;
+              const newConsecutive  = prevConsecutive + 1;
+              const debuffMs        = MORALE_DEBUFF_BASE_MS * (1 + prevConsecutive * 0.5);
+              const moraleUntil     = now + debuffMs;
+              const cooldownUntil   = now + ATTACK_COOLDOWN_PER_LOSS_MS * newConsecutive;
+
+              await tx.update(playersTable)
+                .set({
+                  attacksLost:        sql`${playersTable.attacksLost} + 1`,
+                  consecutiveLosses:  newConsecutive,
+                  moraleDebuffUntil:  moraleUntil,
+                  attackCooldownUntil: cooldownUntil,
+                })
+                .where(eq(playersTable.id, battleRow.defenderId));
+
+              defenderPenaltyMsg = ` ${defenderRow.name} suffers morale debuff and attack cooldown.`;
+
+              // ── Cascade vulnerability: adjacent defender parcels ──────────
+              const allDefenderNearby = await tx.select().from(parcelsTable)
+                .where(eq(parcelsTable.ownerId, battleRow.defenderId));
+              for (const adj of allDefenderNearby) {
+                if (adj.id === targetRow.id) continue;
+                const dist = Math.sqrt(
+                  Math.pow(adj.lat - targetRow.lat, 2) + Math.pow(adj.lng - targetRow.lng, 2)
+                );
+                if (dist < 5) { // ~5 degree proximity as rough equivalent
+                  await tx.update(parcelsTable)
+                    .set({ defenseLevel: Math.max(1, adj.defenseLevel - CASCADE_DEFENSE_PENALTY) })
+                    .where(eq(parcelsTable.id, adj.id));
+                }
+              }
+            }
           }
+
           await Promise.all([
             tx.update(parcelsTable)
               .set({
                 ownerId:              attackerRow.id,
                 ownerType:            attackerRow.isAi ? "ai" : "player",
                 defenseLevel:         Math.max(1, Math.floor(targetRow.defenseLevel / 2)),
+                ironStored:           targetRow.ironStored    - pillagedIron,
+                fuelStored:           targetRow.fuelStored    - pillagedFuel,
+                crystalStored:        targetRow.crystalStored - pillagedCrystal,
                 purchasePriceAlgo:    null,
                 lastFrontierClaimTs:  now,
               })
@@ -2225,16 +2345,24 @@ export class DbStorage implements IStorage {
               .set({
                 attacksWon:          sql`${playersTable.attacksWon} + 1`,
                 territoriesCaptured: sql`${playersTable.territoriesCaptured} + 1`,
+                consecutiveLosses:   0,
+                iron:                attackerRow.iron + pillagedIron,
+                fuel:                attackerRow.fuel + pillagedFuel,
+                crystal:             attackerRow.crystal + pillagedCrystal,
               })
               .where(eq(playersTable.id, attackerRow.id)),
           ]);
+
+          const pillageMsg = (pillagedIron > 0 || pillagedFuel > 0 || pillagedCrystal > 0)
+            ? ` Pillaged: ${pillagedIron} iron, ${pillagedFuel} fuel, ${pillagedCrystal} crystal.`
+            : "";
 
           await this.addEvent({
             type:        "battle_resolved",
             playerId:    attackerRow.id,
             parcelId:    targetRow.id,
             battleId:    battleRow.id,
-            description: `${attackerRow.name} conquered plot #${targetRow.plotId}!`,
+            description: `${attackerRow.name} conquered plot #${targetRow.plotId}!${pillageMsg}${defenderPenaltyMsg}`,
             timestamp:   now,
           }, tx);
         } else {
@@ -2243,7 +2371,11 @@ export class DbStorage implements IStorage {
             .where(eq(playersTable.id, attackerRow.id));
           if (battleRow.defenderId) {
             await tx.update(playersTable)
-              .set({ attacksWon: sql`${playersTable.attacksWon} + 1` })
+              .set({
+                attacksWon:       sql`${playersTable.attacksWon} + 1`,
+                // Successful defence resets the consecutive-loss streak
+                consecutiveLosses: 0,
+              })
               .where(eq(playersTable.id, battleRow.defenderId));
           }
 
@@ -2252,7 +2384,7 @@ export class DbStorage implements IStorage {
             playerId:    battleRow.defenderId ?? attackerRow.id,
             parcelId:    targetRow.id,
             battleId:    battleRow.id,
-            description: `Defense held at plot #${targetRow.plotId}. Attack repelled.`,
+            description: `Defense held at plot #${targetRow.plotId}. ${attackerRow.name}'s attack was repelled.`,
             timestamp:   now,
           }, tx);
         }
@@ -2333,29 +2465,36 @@ export class DbStorage implements IStorage {
         }
       }
 
-      // Attack
+      // Attack (skip if under post-defeat cooldown)
       if (ai.aiBehavior === "expansionist" || ai.aiBehavior === "raider") {
-        const canAttack = ai.iron >= ATTACK_BASE_COST.iron && ai.fuel >= ATTACK_BASE_COST.fuel;
-        if (canAttack && Math.random() > 0.7) {
-          for (const parcel of ownedParcels) {
-            const targets = allParcels.filter((p) => {
-              if (!p.ownerId || p.ownerId === ai.id || p.activeBattleId || p.biome === "water") return false;
-              return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < 0.08;
-            });
-            if (targets.length > 0) {
-              const attackTarget = targets[Math.floor(Math.random() * targets.length)];
-              try {
-                await this.deployAttack({
-                  attackerId: ai.id, targetParcelId: attackTarget.id,
-                  troopsCommitted: 1,
-                  resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
-                });
-                newEvents.push({
-                  id: randomUUID(), type: "ai_action", playerId: ai.id,
-                  description: `${ai.name} deployed troops`, timestamp: now,
-                });
-              } catch {}
-              break;
+        const inCooldown = ai.attackCooldownUntil && now < ai.attackCooldownUntil;
+        if (!inCooldown) {
+          const canAttack = ai.iron >= ATTACK_BASE_COST.iron && ai.fuel >= ATTACK_BASE_COST.fuel;
+          // Raise threshold when morale-debuffed so the AI attacks less often
+          const moraleDebuffed = ai.moraleDebuffUntil && now < ai.moraleDebuffUntil;
+          const attackThreshold = moraleDebuffed ? 0.85 : 0.7;
+          if (canAttack && Math.random() > attackThreshold) {
+            for (const parcel of ownedParcels) {
+              const targets = allParcels.filter((p) => {
+                if (!p.ownerId || p.ownerId === ai.id || p.activeBattleId || p.biome === "water") return false;
+                return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < 0.08;
+              });
+              if (targets.length > 0) {
+                const attackTarget = targets[Math.floor(Math.random() * targets.length)];
+                try {
+                  await this.deployAttack({
+                    attackerId: ai.id, targetParcelId: attackTarget.id,
+                    troopsCommitted: 1,
+                    resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                  });
+                  const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
+                  newEvents.push({
+                    id: randomUUID(), type: "ai_action", playerId: ai.id,
+                    description: `${ai.name} deployed troops${statusMsg}`, timestamp: now,
+                  });
+                } catch {}
+                break;
+              }
             }
           }
         }
