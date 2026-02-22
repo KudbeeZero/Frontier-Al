@@ -27,6 +27,7 @@ type ActionType =
   | "mint_avatar"
   | "special_attack"
   | "deploy_drone"
+  | "deploy_satellite"
   | "switch_commander";
 
 export function useBlockchainActions() {
@@ -156,6 +157,14 @@ export function useBlockchainActions() {
     (targetPlotId?: number) => {
       if (isConnected && address)
         enqueueGameAction("deploy_drone", targetPlotId ?? 0);
+    },
+    [isConnected, address]
+  );
+
+  const queueDeploySatelliteAction = useCallback(
+    () => {
+      if (isConnected && address)
+        enqueueGameAction("deploy_satellite", 0);
     },
     [isConnected, address]
   );
@@ -374,6 +383,7 @@ export function useBlockchainActions() {
     queueSpecialAttackAction,
     queueSwitchCommanderAction,
     queueDeployDroneAction,
+    queueDeploySatelliteAction,
     isWalletConnected: isConnected,
     frontierAsaId,
     isOptedInToFrontier: isOptedIn,

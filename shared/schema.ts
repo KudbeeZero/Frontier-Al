@@ -155,6 +155,7 @@ export interface Player {
   activeCommanderIndex: number;
   specialAttacks: SpecialAttackRecord[];
   drones: ReconDrone[];
+  satellites: OrbitalSatellite[];
   welcomeBonusReceived: boolean;
 }
 
@@ -176,7 +177,7 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone" | "deploy_satellite";
   playerId: string;
   parcelId?: string;
   battleId?: string;
@@ -405,6 +406,18 @@ export const DRONE_MINT_COST_FRONTIER = 20;
 export const DRONE_SCOUT_DURATION_MS = 15 * 60 * 1000;
 export const MAX_DRONES = 5;
 
+export interface OrbitalSatellite {
+  id: string;
+  deployedAt: number;
+  expiresAt: number;
+  status: "active" | "expired";
+}
+
+export const SATELLITE_DEPLOY_COST_FRONTIER = 50;
+export const SATELLITE_ORBIT_DURATION_MS = 60 * 60 * 1000; // 1 hour
+export const MAX_SATELLITES = 2;
+export const SATELLITE_YIELD_BONUS = 0.25; // +25% mining yield
+
 export const mintAvatarActionSchema = z.object({
   playerId: z.string(),
   tier: z.enum(["sentinel", "phantom", "reaper"]),
@@ -421,9 +434,14 @@ export const deployDroneActionSchema = z.object({
   targetParcelId: z.string().optional(),
 });
 
+export const deploySatelliteActionSchema = z.object({
+  playerId: z.string(),
+});
+
 export type MintAvatarAction = z.infer<typeof mintAvatarActionSchema>;
 export type SpecialAttackAction = z.infer<typeof specialAttackActionSchema>;
 export type DeployDroneAction = z.infer<typeof deployDroneActionSchema>;
+export type DeploySatelliteAction = z.infer<typeof deploySatelliteActionSchema>;
 
 export function calculateFrontierPerDay(improvements: Improvement[]): number {
   let perDay = 1;

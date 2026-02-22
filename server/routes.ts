@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
 import { z } from "zod";
 import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA } from "./algorand";
 
@@ -331,6 +331,17 @@ export async function registerRoutes(
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Drone deployment failed" });
+    }
+  });
+
+  app.post("/api/actions/deploy-satellite", async (req, res) => {
+    try {
+      const action = deploySatelliteActionSchema.parse(req.body);
+      const satellite = await storage.deploySatellite(action);
+      res.json({ success: true, satellite });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Satellite deployment failed" });
     }
   });
 

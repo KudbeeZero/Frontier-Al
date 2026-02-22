@@ -55,6 +55,7 @@ export const players = pgTable("players", {
   activeCommanderIndex: integer("active_commander_index").notNull().default(0),
   specialAttacks:       jsonb("special_attacks").$type<object[]>().notNull().default([]),
   drones:               jsonb("drones").$type<object[]>().notNull().default([]),
+  satellites:           jsonb("satellites").$type<object[]>().notNull().default([]),
   welcomeBonusReceived: boolean("welcome_bonus_received").notNull().default(false),
 });
 

@@ -17,8 +17,10 @@ import type {
   MintAvatarAction,
   SpecialAttackAction,
   DeployDroneAction,
+  DeploySatelliteAction,
   CommanderAvatar,
   ReconDrone,
+  OrbitalSatellite,
   SpecialAttackRecord,
   CommanderTier,
   SpecialAttackType,
@@ -43,6 +45,10 @@ import {
   DRONE_MINT_COST_FRONTIER,
   DRONE_SCOUT_DURATION_MS,
   MAX_DRONES,
+  SATELLITE_DEPLOY_COST_FRONTIER,
+  SATELLITE_ORBIT_DURATION_MS,
+  MAX_SATELLITES,
+  SATELLITE_YIELD_BONUS,
   calculateFrontierPerDay,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType } from "@shared/schema";
@@ -94,6 +100,7 @@ export interface IStorage {
   mintAvatar(action: MintAvatarAction): Promise<CommanderAvatar>;
   executeSpecialAttack(action: SpecialAttackAction): Promise<{ damage: number; effect: string }>;
   deployDrone(action: DeployDroneAction): Promise<ReconDrone>;
+  deploySatellite(action: DeploySatelliteAction): Promise<OrbitalSatellite>;
   /** Grant the 500 FRONTIER welcome bonus (idempotent). */
   grantWelcomeBonus(playerId: string): Promise<void>;
   /**
@@ -189,6 +196,7 @@ export class MemStorage implements IStorage {
       activeCommanderIndex: 0,
       specialAttacks: [],
       drones: [],
+      satellites: [],
       welcomeBonusReceived: false,
     };
     this.players.set(humanPlayerId, humanPlayer);
@@ -232,6 +240,7 @@ export class MemStorage implements IStorage {
         activeCommanderIndex: 0,
         specialAttacks: [],
         drones: [],
+        satellites: [],
         welcomeBonusReceived: true,
       };
       this.players.set(aiId, aiPlayer);
@@ -341,11 +350,14 @@ export class MemStorage implements IStorage {
     const now = Date.now();
     if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
 
+    const activeSatellites = player.satellites.filter(s => s.status === "active" && s.expiresAt > now);
+    const satelliteMult = activeSatellites.length > 0 ? 1 + SATELLITE_YIELD_BONUS : 1;
+
     const biomeBonus = biomeBonuses[parcel.biome];
     const richnessMultiplier = parcel.richness / 100;
-    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier);
-    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier);
-    const crystalYield = Math.floor(BASE_YIELD.crystal * richnessMultiplier);
+    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
+    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
+    const crystalYield = Math.floor(BASE_YIELD.crystal * richnessMultiplier * satelliteMult);
 
     const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
     const remaining = parcel.storageCapacity - totalStored;
@@ -886,6 +898,47 @@ export class MemStorage implements IStorage {
     return drone;
   }
 
+  async deploySatellite(action: DeploySatelliteAction): Promise<OrbitalSatellite> {
+    await this.initialize();
+    const player = this.players.get(action.playerId);
+    if (!player) throw new Error("Player not found");
+
+    const now = Date.now();
+    // Expire stale satellites first
+    player.satellites = player.satellites.map(s =>
+      s.status === "active" && s.expiresAt <= now ? { ...s, status: "expired" as const } : s
+    );
+    const activeSatellites = player.satellites.filter(s => s.status === "active");
+    if (activeSatellites.length >= MAX_SATELLITES) throw new Error(`Maximum ${MAX_SATELLITES} active satellites allowed`);
+    if (player.frontier < SATELLITE_DEPLOY_COST_FRONTIER) {
+      throw new Error(`Insufficient FRONTIER. Need ${SATELLITE_DEPLOY_COST_FRONTIER}, have ${player.frontier.toFixed(2)}`);
+    }
+
+    player.frontier -= SATELLITE_DEPLOY_COST_FRONTIER;
+    player.totalFrontierBurned += SATELLITE_DEPLOY_COST_FRONTIER;
+    this.frontierCirculating -= SATELLITE_DEPLOY_COST_FRONTIER;
+
+    const satellite: OrbitalSatellite = {
+      id: randomUUID(),
+      deployedAt: now,
+      expiresAt: now + SATELLITE_ORBIT_DURATION_MS,
+      status: "active",
+    };
+
+    player.satellites.push(satellite);
+
+    this.events.push({
+      id: randomUUID(),
+      type: "deploy_satellite",
+      playerId: player.id,
+      description: `${player.name} launched an Orbital Satellite — +${SATELLITE_YIELD_BONUS * 100}% mining yield for 1 hour`,
+      timestamp: now,
+    });
+
+    this.lastUpdateTs = now;
+    return satellite;
+  }
+
   async resolveBattles(): Promise<Battle[]> {
     const now = Date.now();
     const resolvedBattles: Battle[] = [];
@@ -1163,6 +1216,7 @@ function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     commander:            commanders[row.activeCommanderIndex] ?? null,
     specialAttacks:       (row.specialAttacks ?? []) as SpecialAttackRecord[],
     drones:               (row.drones ?? []) as ReconDrone[],
+    satellites:           (row.satellites ?? []) as OrbitalSatellite[],
     welcomeBonusReceived: row.welcomeBonusReceived,
   };
 }
@@ -1500,11 +1554,15 @@ export class DbStorage implements IStorage {
       const now = Date.now();
       if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
 
+      const playerSatellites = (playerRow.satellites ?? []) as OrbitalSatellite[];
+      const activeSatellites = playerSatellites.filter(s => s.status === "active" && s.expiresAt > now);
+      const satelliteMult = activeSatellites.length > 0 ? 1 + SATELLITE_YIELD_BONUS : 1;
+
       const biomeBonus  = biomeBonuses[parcel.biome];
       const richMult    = parcel.richness / 100;
-      const ironYield   = Math.floor(BASE_YIELD.iron   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier);
-      const fuelYield   = Math.floor(BASE_YIELD.fuel   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier);
-      const crystalYield= Math.floor(BASE_YIELD.crystal * richMult);
+      const ironYield   = Math.floor(BASE_YIELD.iron   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
+      const fuelYield   = Math.floor(BASE_YIELD.fuel   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
+      const crystalYield= Math.floor(BASE_YIELD.crystal * richMult * satelliteMult);
 
       const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
       const remaining   = parcel.storageCapacity - totalStored;
@@ -2131,6 +2189,49 @@ export class DbStorage implements IStorage {
       await this.bumpLastTs(now, tx);
 
       return drone;
+    });
+  }
+
+  async deploySatellite(action: DeploySatelliteAction): Promise<OrbitalSatellite> {
+    await this.initialize();
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(playersTable).where(eq(playersTable.id, action.playerId));
+      if (!row) throw new Error("Player not found");
+
+      const now = Date.now();
+      const satellites = ((row.satellites ?? []) as OrbitalSatellite[]).map(s =>
+        s.status === "active" && s.expiresAt <= now ? { ...s, status: "expired" as const } : s
+      );
+      const activeSatellites = satellites.filter(s => s.status === "active");
+      if (activeSatellites.length >= MAX_SATELLITES)
+        throw new Error(`Maximum ${MAX_SATELLITES} active satellites allowed`);
+      if (row.frontier < SATELLITE_DEPLOY_COST_FRONTIER)
+        throw new Error(`Insufficient FRONTIER. Need ${SATELLITE_DEPLOY_COST_FRONTIER}, have ${row.frontier.toFixed(2)}`);
+
+      const satellite: OrbitalSatellite = {
+        id:          randomUUID(),
+        deployedAt:  now,
+        expiresAt:   now + SATELLITE_ORBIT_DURATION_MS,
+        status:      "active",
+      };
+
+      await tx.update(playersTable)
+        .set({
+          frontier:            row.frontier            - SATELLITE_DEPLOY_COST_FRONTIER,
+          totalFrontierBurned: row.totalFrontierBurned + SATELLITE_DEPLOY_COST_FRONTIER,
+          satellites:          [...satellites, satellite],
+        })
+        .where(eq(playersTable.id, action.playerId));
+
+      await this.addEvent({
+        type:        "deploy_satellite",
+        playerId:    action.playerId,
+        description: `${row.name} launched an Orbital Satellite — +${SATELLITE_YIELD_BONUS * 100}% mining yield for 1 hour`,
+        timestamp:   now,
+      }, tx);
+      await this.bumpLastTs(now, tx);
+
+      return satellite;
     });
   }
 
