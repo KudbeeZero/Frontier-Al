@@ -7,11 +7,13 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { WalletProvider } from "@/contexts/WalletContext";
 import NotFound from "@/pages/not-found";
 import GamePage from "@/pages/game";
+import TestnetPage from "@/pages/testnet";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={GamePage} />
+      <Route path="/testnet" component={TestnetPage} />
       <Route component={NotFound} />
     </Switch>
   );
