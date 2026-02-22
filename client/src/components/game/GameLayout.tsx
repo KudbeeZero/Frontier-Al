@@ -16,7 +16,7 @@ import { WarRoomPanel } from "./WarRoomPanel";
 import { WalletConnect } from "./WalletConnect";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
-import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone } from "@/hooks/useGameState";
+import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export function GameLayout() {
     queueSpecialAttackAction,
     queueSwitchCommanderAction,
     queueDeployDroneAction,
+    queueDeploySatelliteAction,
     isWalletConnected,
     frontierAsaId,
     isOptedInToFrontier,
@@ -71,6 +72,7 @@ export function GameLayout() {
   const specialAttackMutation = useSpecialAttack();
   const switchCommanderMutation = useSwitchCommander();
   const deployDroneMutation = useDeployDrone();
+  const deploySatelliteMutation = useDeploySatellite();
 
   useEffect(() => {
     const seen = localStorage.getItem("frontier_onboarding_done");
@@ -270,6 +272,18 @@ export function GameLayout() {
       {
         onSuccess: () => toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." }),
         onError: (error) => toast({ title: "Deploy Failed", description: error.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleDeploySatellite = () => {
+    if (!player) return;
+    queueDeploySatelliteAction();
+    deploySatelliteMutation.mutate(
+      { playerId: player.id },
+      {
+        onSuccess: () => toast({ title: "Satellite Launched", description: "+25% mining yield on all your territories for 1 hour." }),
+        onError: (error) => toast({ title: "Launch Failed", description: error.message, variant: "destructive" }),
       }
     );
   };
@@ -493,9 +507,11 @@ export function GameLayout() {
               player={player}
               onMintAvatar={handleMintAvatar}
               onDeployDrone={handleDeployDrone}
+              onDeploySatellite={handleDeploySatellite}
               onSwitchCommander={handleSwitchCommander}
               isMinting={mintAvatarMutation.isPending}
               isDeployingDrone={deployDroneMutation.isPending}
+              isDeployingSatellite={deploySatelliteMutation.isPending}
             />
           )}
           {activeTab === "leaderboard" && gameState && (

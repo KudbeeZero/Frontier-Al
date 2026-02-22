@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, PurchaseAction, MintAvatarAction, SpecialAttackAction, DeployDroneAction } from "@shared/schema";
+import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, PurchaseAction, MintAvatarAction, SpecialAttackAction, DeployDroneAction, DeploySatelliteAction } from "@shared/schema";
 
 export function useGameState() {
   return useQuery<GameState>({
@@ -151,6 +151,18 @@ export function useDeployDrone() {
   return useMutation({
     mutationFn: async (action: DeployDroneAction) => {
       const response = await apiRequest("POST", "/api/actions/deploy-drone", action);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+}
+
+export function useDeploySatellite() {
+  return useMutation({
+    mutationFn: async (action: DeploySatelliteAction) => {
+      const response = await apiRequest("POST", "/api/actions/deploy-satellite", action);
       return response.json();
     },
     onSuccess: () => {
