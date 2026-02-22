@@ -19,5 +19,14 @@ export default defineConfig({
   },
   server: {
     fs: { strict: true, deny: ["**/.*"] },
+    allowedHosts: true,
+    host: "0.0.0.0",
+    port: 5000,
+    proxy: {
+      "/api": {
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+    },
   },
 });
