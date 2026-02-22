@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock } from "lucide-react";
+import { Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock, Satellite } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { Player, CommanderTier, SpecialAttackType } from "@shared/schema";
-import { COMMANDER_INFO, SPECIAL_ATTACK_INFO, DRONE_MINT_COST_FRONTIER, MAX_DRONES, DRONE_SCOUT_DURATION_MS } from "@shared/schema";
+import { COMMANDER_INFO, SPECIAL_ATTACK_INFO, DRONE_MINT_COST_FRONTIER, MAX_DRONES, DRONE_SCOUT_DURATION_MS, SATELLITE_DEPLOY_COST_FRONTIER, MAX_SATELLITES, SATELLITE_ORBIT_DURATION_MS, SATELLITE_YIELD_BONUS } from "@shared/schema";
 import sentinelImg from "@assets/image_1771570491560.png";
 import phantomImg from "@assets/image_1771570495782.png";
 import reaperImg from "@assets/image_1771570500912.png";
@@ -35,10 +35,58 @@ interface CommanderPanelProps {
   player: Player | null;
   onMintAvatar: (tier: CommanderTier) => void;
   onDeployDrone: (targetParcelId?: string) => void;
+  onDeploySatellite: () => void;
   onSwitchCommander?: (index: number) => void;
   isMinting: boolean;
   isDeployingDrone: boolean;
+  isDeployingSatellite: boolean;
   className?: string;
+}
+
+function SatelliteCard({ satellite, index }: { satellite: Player["satellites"][0]; index: number }) {
+  const now = Date.now();
+  const remaining = Math.max(0, satellite.expiresAt - now);
+  const elapsed = now - satellite.deployedAt;
+  const progressPct = satellite.status === "active" ? Math.min(100, (elapsed / SATELLITE_ORBIT_DURATION_MS) * 100) : 100;
+
+  const formatTime = (ms: number) => {
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const isExpired = satellite.status === "expired" || remaining === 0;
+
+  return (
+    <Card className={cn("p-2 border text-xs", isExpired ? "border-muted opacity-60" : "border-yellow-500/50 bg-yellow-500/5")}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-display uppercase tracking-wide text-[10px]">
+          SAT-{String(index + 1).padStart(2, "0")}
+        </span>
+        <Badge variant={isExpired ? "secondary" : "default"} className="text-[9px] px-1 py-0">
+          {isExpired ? "expired" : "orbiting"}
+        </Badge>
+      </div>
+      {!isExpired && (
+        <>
+          <div className="w-full bg-muted rounded-full h-1 mb-1">
+            <div
+              className="h-1 rounded-full bg-yellow-500 transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <Clock className="w-2.5 h-2.5" />
+            <span>{formatTime(remaining)} remaining</span>
+          </div>
+        </>
+      )}
+    </Card>
+  );
 }
 
 function DroneCard({ drone, index }: { drone: Player["drones"][0]; index: number }) {
@@ -83,7 +131,7 @@ function DroneCard({ drone, index }: { drone: Player["drones"][0]; index: number
   );
 }
 
-export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onSwitchCommander, isMinting, isDeployingDrone, className }: CommanderPanelProps) {
+export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySatellite, onSwitchCommander, isMinting, isDeployingDrone, isDeployingSatellite, className }: CommanderPanelProps) {
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
   const [showMintSection, setShowMintSection] = useState(false);
 
@@ -103,6 +151,8 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onSwitchCo
     if (d.status !== "scouting") return true;
     return Date.now() - d.deployedAt < DRONE_SCOUT_DURATION_MS + 300000;
   });
+  const now = Date.now();
+  const activeSatellites = (player.satellites ?? []).filter(s => s.status === "active" && s.expiresAt > now);
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="commander-panel">
@@ -345,6 +395,44 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onSwitchCo
               <div className="text-center py-4 text-muted-foreground">
                 <Radar className="w-6 h-6 mx-auto mb-1 opacity-30" />
                 <p className="text-[10px]">No drones deployed</p>
+              </div>
+            )}
+          </div>
+
+          <div data-testid="satellite-section">
+            <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Satellite className="w-3.5 h-3.5" /> Orbital Satellites ({activeSatellites.length}/{MAX_SATELLITES})
+            </h3>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-10 h-10 rounded-md bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center shrink-0">
+                <Satellite className="w-5 h-5 text-yellow-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[10px] text-muted-foreground block">
+                  +{SATELLITE_YIELD_BONUS * 100}% mining yield on all owned plots for 1 hour. Cost: {SATELLITE_DEPLOY_COST_FRONTIER} FRNTR.
+                </span>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => onDeploySatellite()}
+                disabled={isDeployingSatellite || activeSatellites.length >= MAX_SATELLITES || player.frontier < SATELLITE_DEPLOY_COST_FRONTIER}
+                className="font-display uppercase tracking-wide text-xs shrink-0"
+                data-testid="button-deploy-satellite"
+              >
+                <Satellite className="w-3.5 h-3.5 mr-1" />
+                {isDeployingSatellite ? "..." : "Launch"}
+              </Button>
+            </div>
+            {activeSatellites.length > 0 ? (
+              <div className="space-y-2">
+                {activeSatellites.map((sat, i) => (
+                  <SatelliteCard key={sat.id} satellite={sat} index={i} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-muted-foreground">
+                <Satellite className="w-6 h-6 mx-auto mb-1 opacity-30" />
+                <p className="text-[10px]">No satellites in orbit</p>
               </div>
             )}
           </div>

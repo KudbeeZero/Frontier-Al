@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, HelpCircle, Menu } from "lucide-react";
+import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical } from "lucide-react";
 import { SiTelegram, SiX, SiGithub, SiDiscord } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { WalletConnect } from "./WalletConnect";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { Link } from "wouter";
 
 interface TopBarProps {
   isConnected: boolean;
@@ -96,6 +97,20 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
           {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
         </Button>
 
+        <Link href="/testnet">
+          <a>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden sm:flex relative"
+              title="Testnet Guide"
+              data-testid="button-testnet-guide"
+            >
+              <FlaskConical className="w-5 h-5" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            </Button>
+          </a>
+        </Link>
         <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-help">
           <HelpCircle className="w-5 h-5" />
         </Button>
