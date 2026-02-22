@@ -157,6 +157,12 @@ export interface Player {
   drones: ReconDrone[];
   satellites: OrbitalSatellite[];
   welcomeBonusReceived: boolean;
+  /** Timestamp (ms) until which morale debuff is active — reduces attack power */
+  moraleDebuffUntil?: number;
+  /** Timestamp (ms) until which this player/AI cannot launch new attacks */
+  attackCooldownUntil?: number;
+  /** Running count of consecutive territory losses; resets on a successful defence */
+  consecutiveLosses?: number;
 }
 
 export interface Battle {

@@ -1,4 +1,4 @@
-import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -117,28 +117,61 @@ function EventItem({ event }: { event: GameEvent }) {
 function AIActivityFeed({ players, events }: { players: Player[]; events: GameEvent[] }) {
   const aiPlayers = players.filter((p) => p.isAI);
   const aiEvents = events.filter((e) => e.type === "ai_action").slice(0, 10);
+  const now = Date.now();
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2">
-        {aiPlayers.slice(0, 4).map((ai) => (
-          <div
-            key={ai.id}
-            className="p-3 border border-border rounded-md"
-            data-testid={`ai-player-${ai.id}`}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Bot className="w-4 h-4 text-muted-foreground" />
-              <span className="font-display text-sm uppercase tracking-wide truncate">{ai.name}</span>
+        {aiPlayers.slice(0, 4).map((ai) => {
+          const moraleDebuffed = ai.moraleDebuffUntil && now < ai.moraleDebuffUntil;
+          const inCooldown = ai.attackCooldownUntil && now < ai.attackCooldownUntil;
+          const consecutiveLosses = ai.consecutiveLosses ?? 0;
+          const cooldownSecs = inCooldown
+            ? Math.ceil((ai.attackCooldownUntil! - now) / 1000)
+            : 0;
+
+          return (
+            <div
+              key={ai.id}
+              className={cn(
+                "p-3 border rounded-md",
+                moraleDebuffed ? "border-destructive/40 bg-destructive/5" : "border-border"
+              )}
+              data-testid={`ai-player-${ai.id}`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Bot className={cn("w-4 h-4", moraleDebuffed ? "text-destructive" : "text-muted-foreground")} />
+                <span className="font-display text-sm uppercase tracking-wide truncate">{ai.name}</span>
+              </div>
+              <Badge variant="outline" className="text-xs capitalize">
+                {ai.aiBehavior || "adaptive"}
+              </Badge>
+              <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                <div>
+                  <span className="font-mono">{ai.ownedParcels.length}</span> territories
+                </div>
+                {consecutiveLosses > 0 && (
+                  <div className="flex items-center gap-1 text-destructive">
+                    <TrendingDown className="w-3 h-3" />
+                    <span>{consecutiveLosses} consecutive loss{consecutiveLosses !== 1 ? "es" : ""}</span>
+                  </div>
+                )}
+                {moraleDebuffed && (
+                  <div className="flex items-center gap-1 text-destructive">
+                    <ShieldOff className="w-3 h-3" />
+                    <span>Morale debuff (-25% ATK)</span>
+                  </div>
+                )}
+                {inCooldown && (
+                  <div className="flex items-center gap-1 text-yellow-500">
+                    <Clock className="w-3 h-3" />
+                    <span>Attack locked {cooldownSecs}s</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <Badge variant="outline" className="text-xs capitalize">
-              {ai.aiBehavior || "adaptive"}
-            </Badge>
-            <div className="mt-2 text-xs text-muted-foreground">
-              <span className="font-mono">{ai.ownedParcels.length}</span> territories
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {aiEvents.length > 0 && (

@@ -57,6 +57,12 @@ export const players = pgTable("players", {
   drones:               jsonb("drones").$type<object[]>().notNull().default([]),
   satellites:           jsonb("satellites").$type<object[]>().notNull().default([]),
   welcomeBonusReceived: boolean("welcome_bonus_received").notNull().default(false),
+  /** Timestamp (ms) until which morale debuff is active — reduces attack power. */
+  moraleDebuffUntil:    bigint("morale_debuff_until", { mode: "number" }).notNull().default(0),
+  /** Timestamp (ms) until which new attacks cannot be launched (cooldown). */
+  attackCooldownUntil:  bigint("attack_cooldown_until", { mode: "number" }).notNull().default(0),
+  /** Running count of consecutive territory losses; resets on a successful defence. */
+  consecutiveLosses:    integer("consecutive_losses").notNull().default(0),
 });
 
 // ─── parcels ──────────────────────────────────────────────────────────────────
