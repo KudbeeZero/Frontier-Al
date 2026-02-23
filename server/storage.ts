@@ -212,6 +212,7 @@ export class MemStorage implements IStorage {
       drones: [],
       satellites: [],
       welcomeBonusReceived: false,
+      testnetProgress: [],
     };
     this.players.set(humanPlayerId, humanPlayer);
 
@@ -256,6 +257,7 @@ export class MemStorage implements IStorage {
         drones: [],
         satellites: [],
         welcomeBonusReceived: true,
+        testnetProgress: [],
       };
       this.players.set(aiId, aiPlayer);
 
@@ -2225,7 +2227,7 @@ export class DbStorage implements IStorage {
       }, tx);
       await this.bumpLastTs(now, tx);
 
-      return rowToBattle({ ...battleValues, outcome: undefined, randFactor: undefined, commanderId: commanderId ?? null } as BattleRow);
+      return rowToBattle({ ...battleValues, outcome: null, randFactor: null, commanderId: commanderId ?? null } as BattleRow);
     });
   }
 
