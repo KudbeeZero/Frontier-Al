@@ -24,6 +24,69 @@ export async function registerRoutes(
     console.error("Blockchain init failed:", err);
   });
 
+  // ── NFT Metadata (ARC-3) ────────────────────────────────────────────────────
+  // Registered FIRST so it is never shadowed by express.static or the Vite /
+  // SPA catch-all routes added later in server/index.ts.
+  // Public endpoint consumed by Algorand NFT marketplaces and wallets.
+  // Returns immutable plot attributes only — no mutable game state.
+  // BASE_URL: set PUBLIC_BASE_URL env var in production; falls back to the
+  // request's own origin so the route works locally and on Replit without config.
+  app.get("/nft/metadata/:plotId", async (req, res) => {
+    // Reject non-integer plotId values early.
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId) || plotId < 1) {
+      return res.status(400).json({ error: "plotId must be a positive integer" });
+    }
+
+    // This endpoint requires a real DB (not MemStorage).
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+
+    try {
+      // Derive base URL from env var first, then fall back to the request origin.
+      const baseUrl =
+        process.env.PUBLIC_BASE_URL ||
+        `${req.protocol}://${req.get("host")}`;
+
+      // Select only the columns needed for immutable ARC-3 metadata.
+      const [parcel] = await db
+        .select({
+          plotId:            parcelsTable.plotId,
+          biome:             parcelsTable.biome,
+          lat:               parcelsTable.lat,
+          lng:               parcelsTable.lng,
+          richness:          parcelsTable.richness,
+          purchasePriceAlgo: parcelsTable.purchasePriceAlgo,
+        })
+        .from(parcelsTable)
+        .where(eq(parcelsTable.plotId, plotId));
+
+      if (!parcel) {
+        return res.status(404).json({ error: "Plot not found" });
+      }
+
+      // ARC-3 style metadata — keep lean; mutable game state is excluded.
+      res.json({
+        name:         `Frontier Plot #${parcel.plotId}`,
+        description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
+        external_url: `${baseUrl}/plot/${parcel.plotId}`,
+        properties: {
+          plotId:            parcel.plotId,
+          biome:             parcel.biome,
+          coordinates:       { lat: parcel.lat, lng: parcel.lng },
+          richness:          parcel.richness,
+          purchasePriceAlgo: parcel.purchasePriceAlgo,
+          version:           1,
+        },
+      });
+    } catch (error) {
+      console.error("NFT metadata error:", error);
+      res.status(500).json({ error: "Failed to fetch NFT metadata" });
+    }
+  });
+
   app.get("/api/blockchain/status", async (_req, res) => {
     try {
       const asaId = getFrontierAsaId();
@@ -108,67 +171,6 @@ export async function registerRoutes(
       res.json({ optedIn, asaId: getFrontierAsaId() });
     } catch (error) {
       res.json({ optedIn: false, asaId: getFrontierAsaId() });
-    }
-  });
-
-  // ── NFT Metadata (ARC-3) ────────────────────────────────────────────────────
-  // Public endpoint used by Algorand NFT marketplaces and wallets.
-  // Returns immutable plot attributes only — no mutable game state.
-  // BASE_URL: set PUBLIC_BASE_URL env var in production, or it falls back
-  // to the request's own origin (works in dev and on Replit).
-  app.get("/nft/metadata/:plotId", async (req, res) => {
-    // Reject non-integer plotId values early.
-    const plotId = parseInt(req.params.plotId, 10);
-    if (isNaN(plotId) || plotId < 1) {
-      return res.status(400).json({ error: "plotId must be a positive integer" });
-    }
-
-    // This endpoint requires a real DB (not MemStorage).
-    if (!db) {
-      return res.status(503).json({ error: "Database not available" });
-    }
-
-    try {
-      // Derive base URL from env var first, then fall back to the request origin.
-      const baseUrl =
-        process.env.PUBLIC_BASE_URL ||
-        `${req.protocol}://${req.get("host")}`;
-
-      // Select only the columns needed for immutable ARC-3 metadata.
-      const [parcel] = await db
-        .select({
-          plotId:           parcelsTable.plotId,
-          biome:            parcelsTable.biome,
-          lat:              parcelsTable.lat,
-          lng:              parcelsTable.lng,
-          richness:         parcelsTable.richness,
-          purchasePriceAlgo: parcelsTable.purchasePriceAlgo,
-        })
-        .from(parcelsTable)
-        .where(eq(parcelsTable.plotId, plotId));
-
-      if (!parcel) {
-        return res.status(404).json({ error: "Plot not found" });
-      }
-
-      // ARC-3 style metadata — keep lean; mutable game state is excluded.
-      res.json({
-        name:         `Frontier Plot #${parcel.plotId}`,
-        description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
-        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
-        external_url: `${baseUrl}/plot/${parcel.plotId}`,
-        properties: {
-          plotId:            parcel.plotId,
-          biome:             parcel.biome,
-          coordinates:       { lat: parcel.lat, lng: parcel.lng },
-          richness:          parcel.richness,
-          purchasePriceAlgo: parcel.purchasePriceAlgo,
-          version:           1,
-        },
-      });
-    } catch (error) {
-      console.error("NFT metadata error:", error);
-      res.status(500).json({ error: "Failed to fetch NFT metadata" });
     }
   });
 
