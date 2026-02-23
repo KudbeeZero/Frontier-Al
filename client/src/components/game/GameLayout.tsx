@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Coins, Shield, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
+import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 
 export function GameLayout() {
   const wallet = useWallet();
@@ -53,8 +54,21 @@ export function GameLayout() {
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
 
-  // Track which address we have already initialised so we don't fire twice.
   const initializedAddressRef = useRef<string | null>(null);
+  const ambienceStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (isConnected && !ambienceStartedRef.current) {
+      ambienceStartedRef.current = true;
+      startSpaceAmbience();
+    }
+    return () => {
+      if (ambienceStartedRef.current) {
+        stopSpaceAmbience();
+        ambienceStartedRef.current = false;
+      }
+    };
+  }, [isConnected]);
 
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [attackModalOpen, setAttackModalOpen] = useState(false);
