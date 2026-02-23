@@ -111,6 +111,8 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
+    // Log to chain (batched, fire-and-forget)
+    queueMineAction(selectedParcel.plotId);
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
