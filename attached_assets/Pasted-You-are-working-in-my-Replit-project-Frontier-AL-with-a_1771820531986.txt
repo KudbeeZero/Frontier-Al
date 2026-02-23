@@ -1,0 +1,103 @@
+You are working in my Replit project (Frontier-AL) with a Postgres DB (DATABASE_URL env var) and a table `public.players`.
+Current bug when minting/claiming FRNTR: Postgres error
+`invalid input syntax for type integer: "9.78"`.
+
+Goal:
+- STOP storing token amounts as integers or floats that can be decimals.
+- Store FRNTR amounts as BIGINT in micro-units (1 FRNTR = 1_000_000 microFRNTR).
+- Update server endpoints so they convert decimals to micro before writing to DB.
+- Update reads so UI gets decimal display values without breaking existing logic.
+- Do NOT reset the entire DB; just migrate.
+
+Changes to implement:
+
+1) DATABASE MIGRATION (run via server migration or add a script; use DATABASE_URL)
+- Add these columns to `players`:
+  - frntr_balance_micro BIGINT NOT NULL DEFAULT 0
+  - frntr_ready_micro   BIGINT NOT NULL DEFAULT 0
+  - frntr_claimed_micro BIGINT NOT NULL DEFAULT 0
+- If there is an existing `frontier` column (integer) currently used for FRNTR balance, backfill:
+  - players.frntr_balance_micro = players.frontier * 1000000
+  - (only if frontier exists)
+- If there is an existing column that represents “ready to mint” or “accumulated” (search for frontier-related columns), backfill similarly if it’s integer-based.
+- Leave old columns in place for now to avoid breaking other code, but stop writing to them.
+
+SQL to run (psql context `heliumdb=#`):
+ALTER TABLE players
+  ADD COLUMN IF NOT EXISTS frntr_balance_micro BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE players
+  ADD COLUMN IF NOT EXISTS frntr_ready_micro BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE players
+  ADD COLUMN IF NOT EXISTS frntr_claimed_micro BIGINT NOT NULL DEFAULT 0;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='players' AND column_name='frontier'
+  ) THEN
+    UPDATE players
+    SET frntr_balance_micro = COALESCE(frntr_balance_micro, 0) + (COALESCE(frontier,0) * 1000000);
+  END IF;
+END $$;
+
+2) SERVER-SIDE CONVERSION (CRITICAL)
+Find the endpoint that handles mint/claim (anything like /api/mint, /api/claim, /api/frontier/claim).
+Where it currently calculates a decimal amount (e.g. 9.78) and attempts to UPDATE/INSERT into an integer column, change it to:
+- Convert to micro units (BIGINT) BEFORE DB write
+- Store in frntr_*_micro columns
+- Use integer arithmetic only
+
+Add a utility in server code (TypeScript/Node):
+const FRNTR_DECIMALS = 6;
+export function toMicroFRNTR(x: string | number) {
+  const n = typeof x === 'string' ? Number(x) : x;
+  if (!Number.isFinite(n)) throw new Error('Invalid FRNTR amount');
+  return Math.round(n * 10 ** FRNTR_DECIMALS);
+}
+export function fromMicroFRNTR(n: number | string | bigint) {
+  const bn = typeof n === 'bigint' ? n : BigInt(n);
+  return Number(bn) / 10 ** FRNTR_DECIMALS;
+}
+
+Then in claim/mint logic:
+- amountMicro = toMicroFRNTR(amountDecimal)
+- Update:
+  frntr_balance_micro = frntr_balance_micro + amountMicro
+  frntr_ready_micro = GREATEST(frntr_ready_micro - amountMicro, 0)
+  frntr_claimed_micro = frntr_claimed_micro + amountMicro
+
+If your DB client returns bigint as string, handle it safely and avoid JS float overflow for huge values (these will be small for now; OK to Number() but keep code future-proof).
+
+3) API RESPONSE SHAPE
+Wherever the client expects:
+- “accumulated”, “ready to mint”, “balance”
+Return decimal display versions derived from micro:
+- frntrBalance = fromMicroFRNTR(frntr_balance_micro)
+- frntrReady = fromMicroFRNTR(frntr_ready_micro)
+- frntrClaimed = fromMicroFRNTR(frntr_claimed_micro)
+
+Do NOT return micro values to the UI unless you add new fields for them.
+Keep existing UI fields working.
+
+4) CLIENT SIDE SAFETY
+In the client, if it sends an amount to claim, send it as a string with decimals (e.g. "9.78") OR send nothing and let server compute.
+But NEVER let the client directly decide micro arithmetic; server is source of truth.
+
+5) TESTS / VERIFICATION
+Add a quick server script or route to verify:
+- Insert a test player if needed
+- Set frntr_ready_micro to 9780000
+- Call claim/mint endpoint
+- Confirm DB updates and UI no longer throws:
+  `invalid input syntax for type integer`
+
+6) COMMIT
+Make one commit with message:
+"Fix FRNTR claim: store amounts as BIGINT micro-units; migrate players columns"
+
+Deliverables:
+- The migration file or script added + how it’s triggered on deploy
+- The updated claim/mint endpoint code
+- Any updated types/interfaces used by client
+- Confirmation that minting no longer errors.
