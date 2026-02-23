@@ -49,11 +49,9 @@ export function useBlockchainActions() {
     });
   }, []);
 
-  // Reset to undefined whenever the connected address changes so the previous
-  // wallet's opt-in state is never shown for a different wallet.
   useEffect(() => {
     setIsOptedIn(undefined);
-  }, [address]);
+  }, [address, frontierAsaId]);
 
   // Once we have both address and ASA id, read the per-wallet+ASA cache first
   // (so opted-in users never see the banner flash), then verify on-chain in
@@ -61,7 +59,8 @@ export function useBlockchainActions() {
   useEffect(() => {
     if (!address || !frontierAsaId) return;
 
-    const cacheKey = `frontier_optin_${address}_${frontierAsaId}`;
+    const network = "testnet";
+    const cacheKey = `frontier_optin_${network}_${address}_${frontierAsaId}`;
     if (localStorage.getItem(cacheKey) === "true") {
       setIsOptedIn(true);
     }
@@ -70,7 +69,7 @@ export function useBlockchainActions() {
       .accountInformation(address)
       .do()
       .then((accountInfo) => {
-        const result = hasOptedIn(accountInfo as Record<string, unknown>, frontierAsaId);
+        const result = hasOptedIn(accountInfo as unknown as Record<string, unknown>, frontierAsaId);
         setIsOptedIn(result);
         if (result) {
           localStorage.setItem(cacheKey, "true");
@@ -352,7 +351,7 @@ export function useBlockchainActions() {
         setLastTxId(txId);
         // waitForConfirmation inside optInToASA already confirmed the tx —
         // optimistically mark as opted-in immediately so the banner disappears.
-        const cacheKey = `frontier_optin_${address}_${frontierAsaId}`;
+        const cacheKey = `frontier_optin_testnet_${address}_${frontierAsaId}`;
         setIsOptedIn(true);
         localStorage.setItem(cacheKey, "true");
         // Refetch game state so the HUD and any balance displays update.

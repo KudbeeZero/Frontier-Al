@@ -11,8 +11,11 @@ import {
   type WalletType,
 } from "@/lib/algorand";
 
+type WalletStatus = "restoring" | "connected" | "disconnected";
+
 interface WalletState {
   isConnected: boolean;
+  walletStatus: WalletStatus;
   address: string | null;
   displayAddress: string | null;
   balance: number;
@@ -34,8 +37,11 @@ interface WalletContextValue extends WalletState {
 const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const hasSavedWallet = !!(localStorage.getItem("frontier_wallet_type"));
+
   const [state, setState] = useState<WalletState>({
     isConnected: false,
+    walletStatus: hasSavedWallet ? "restoring" : "disconnected",
     address: null,
     displayAddress: null,
     balance: 0,
@@ -61,6 +67,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       isConnected: false,
+      walletStatus: "disconnected" as WalletStatus,
       address: null,
       displayAddress: null,
       balance: 0,
@@ -80,9 +87,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setActiveWalletType(walletType);
     localStorage.setItem("frontier_wallet_type", walletType);
     localStorage.setItem("frontier_wallet_address", address);
+    localStorage.setItem("frontier_onboarded_v1", "1");
     setState((prev) => ({
       ...prev,
       isConnected: true,
+      walletStatus: "connected" as WalletStatus,
       address,
       displayAddress: formatAddress(address),
       balance,
@@ -110,6 +119,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setState((prev) => ({
             ...prev,
             isConnected: true,
+            walletStatus: "connected" as WalletStatus,
             address: addr,
             displayAddress: formatAddress(addr),
             balance: 0,
@@ -124,6 +134,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           console.warn("LUTE reconnection failed, clearing saved state:", err);
           localStorage.removeItem("frontier_wallet_type");
           localStorage.removeItem("frontier_wallet_address");
+          setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
         })
         .finally(() => {
           isReconnecting.current = false;
@@ -145,6 +156,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setState((prev) => ({
               ...prev,
               isConnected: true,
+              walletStatus: "connected" as WalletStatus,
               address,
               displayAddress: formatAddress(address),
               balance: 0,
@@ -157,18 +169,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           } else {
             localStorage.removeItem("frontier_wallet_type");
             localStorage.removeItem("frontier_wallet_address");
+            setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
           }
         })
         .catch((error) => {
           console.error("Pera session reconnection failed:", error);
           localStorage.removeItem("frontier_wallet_type");
           localStorage.removeItem("frontier_wallet_address");
+          setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
         })
         .finally(() => {
           isReconnecting.current = false;
         });
     } else {
       isReconnecting.current = false;
+      setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
     }
   }, [handleDisconnect, updateBalance]);
 

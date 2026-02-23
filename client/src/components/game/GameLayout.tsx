@@ -30,7 +30,8 @@ import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 
 export function GameLayout() {
   const wallet = useWallet();
-  const { isConnected, balance } = wallet;
+  const { isConnected, balance, walletStatus } = wallet;
+  const isOnboarded = !!localStorage.getItem("frontier_onboarded_v1");
   const {
     signPurchaseAction,
     signClaimFrontierAction,
@@ -100,7 +101,7 @@ export function GameLayout() {
   const deploySatelliteMutation = useDeploySatellite();
 
   useEffect(() => {
-    const seen = localStorage.getItem("frontier_onboarding_done");
+    const seen = localStorage.getItem("frontier_onboarding_done") || localStorage.getItem("frontier_onboarded_v1");
     if (!seen) setShowOnboarding(true);
   }, []);
 
@@ -130,6 +131,7 @@ export function GameLayout() {
 
   const handleOnboardingComplete = () => {
     localStorage.setItem("frontier_onboarding_done", "true");
+    localStorage.setItem("frontier_onboarded_v1", "1");
     setShowOnboarding(false);
   };
 
@@ -393,7 +395,18 @@ export function GameLayout() {
     );
   }
 
-  if (!isConnected) {
+  if (walletStatus === "restoring") {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background" data-testid="wallet-restoring">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="font-display text-lg uppercase tracking-wide text-muted-foreground">Reconnecting Wallet...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConnected && !isOnboarded) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background" data-testid="wallet-gate">
         <div className="text-center p-8 max-w-md space-y-6">

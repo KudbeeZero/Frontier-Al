@@ -1,0 +1,36 @@
+Goal: Fix onboarding + ASA opt-in UX so users do NOT repeatedly see (1) the connect-wallet intro screen and (2) the FRONTIER ASA opt-in banner after they have already completed them once.
+
+Constraints:
+- Do NOT scan the entire repo. Only inspect these files first:
+  - client/src/contexts/WalletContext.tsx (or wherever wallet connect logic lives)
+  - client/src/hooks/useBlockchainActions.ts
+  - client/src/components/game/GameLayout.tsx
+  - client/src/lib/algorand.ts
+  - server/routes.ts and server/algorand.ts (only if needed for ASA id/status)
+
+Part 1: Onboarding / wallet intro persistence
+- Add a localStorage flag like `frontier_onboarded_v1 = "1"` when the user successfully connects a wallet the first time.
+- On app load, if onboarded flag is set, DO NOT show the intro screen even if the wallet is temporarily disconnected; instead show the normal app shell with a “Connect Wallet” button/state.
+- Implement wallet session restore on page load:
+  - If using PeraWalletConnect, call its reconnect/restore method on mount (e.g. reconnectSession()) and set the connected address if restored.
+  - Ensure the wallet context does not reset to “not connected” during initial restore attempt; use a tri-state like `walletStatus: "restoring" | "connected" | "disconnected"`.
+
+Part 2: FRONTIER ASA opt-in banner should never repeat for already opted-in users
+- Ensure the client always checks opt-in against the correct asset id for FRONTIER.
+- Add a server endpoint (or use existing) `/api/blockchain/status` that returns `{ frontierAsaId, network }` and use that in the client so prod/dev always share the same ASA id.
+- Cache opt-in per (network + address + asaId): key `frontier_optin_<network>_<address>_<asaId>=1`
+- In useBlockchainActions:
+  - isOptedIn should be tri-state: undefined while checking, true/false after.
+  - On address or asaId change, set undefined and re-check.
+  - Read cache key first; if present set true instantly; then verify on-chain in background; if verification returns false, clear cache and set false.
+- In GameLayout:
+  - Only show opt-in banner when `isOptedIn === false` (never when undefined).
+  - Do NOT block claim/actions while isOptedIn is undefined (checking).
+  - After successful opt-in, set isOptedIn true immediately, write cache, and refetch balances.
+
+Verification:
+- Add temporary console logs (remove after) that print:
+  - network, address, frontierAsaId, isOptedIn state transitions
+  - the exact localStorage keys being read/written
+- Run `npm run check` and `npm run build` (if build fails due to missing tsx, note it but still ensure type correctness).
+- Provide a concise summary of exact files changed.
