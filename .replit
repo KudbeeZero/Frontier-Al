@@ -4,23 +4,15 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["nano"]
-
-[[ports]]
-localPort = 4242
-externalPort = 3000
-
-[[ports]]
-localPort = 5000
-externalPort = 80
+packages = ["nano", "emacsclient-commands"]
 
 [env]
 PORT = "5000"
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "dist/index.cjs"]
 build = ["npm", "run", "build"]
+run = ["node", "dist/index.cjs"]
 publicDir = "dist/public"
 
 [workflows]
@@ -44,20 +36,6 @@ task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
 
-[rules]
-
-[rules.formatter]
-
-[rules.formatter.fileExtensions]
-
-[rules.formatter.fileExtensions.".tsx"]
-id = "module:web/languageServer:typescript-language-server"
-
-[userenv]
-
-[userenv.shared]
-ALGORAND_ADMIN_ADDRESS = "ZK55X7SGIGMLGORVNJHHPTYZMZOGSQNVROBHX7N27X6ZEQRHAZ2UPKOXQU"
-ALGORAND_ADMIN_MNEMONIC = "any virus dynamic mind figure glide shove peanut village grab wisdom film luggage shoulder fetch license tunnel daring lounge rubber eagle source inch able world"
-
-[agent]
-expertMode = true
+[[ports]]
+localPort = 5000
+externalPort = 80

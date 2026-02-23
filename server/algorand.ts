@@ -57,7 +57,7 @@ export async function getAdminBalance(): Promise<{ algo: number; frontierAsa: nu
     let frontierBalance = 0;
     if (frontierAsaId) {
       const assets = accountInfo.assets || [];
-      const asaInfo = assets.find((a: any) => (a.assetIndex ?? a["asset-id"]) === frontierAsaId);
+      const asaInfo = assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === frontierAsaId);
       if (asaInfo) {
         frontierBalance = Number(asaInfo.amount) / Math.pow(10, FRONTIER_ASA_DECIMALS);
       }
@@ -157,7 +157,7 @@ export async function isAddressOptedInToFrontier(address: string, assetId?: numb
     const accountInfo = await algodClient.accountInformation(address).do();
     const assets = (accountInfo as any).assets || (accountInfo as any)["assets"] || [];
     return assets.some((a: any) => {
-      const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
+      const id = a.assetId ?? a["asset-id"] ?? a.assetIndex;
       return Number(id) === targetAsaId;
     });
   } catch (err) {

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
 import { z } from "zod";
-import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA, mintPlotNftToAddress } from "./algorand";
+import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA, mintPlotNftToAddress, algodClient, indexerClient } from "./algorand";
 import { db } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable } from "./db-schema";
 import { eq } from "drizzle-orm";
@@ -43,61 +43,49 @@ export async function registerRoutes(
 
   app.get("/api/economics", async (_req, res) => {
     try {
-      const gameState = await storage.getGameState();
       const asaId = getFrontierAsaId();
-      const adminAddress = getAdminAddress();
+      const adminAddr = getAdminAddress();
+      const ASA_DECIMALS = 6;
+      const divisor = Math.pow(10, ASA_DECIMALS);
 
-      // Sum burned tokens across all players
-      const totalBurned = gameState.players.reduce(
-        (sum, p) => sum + (p.totalFrontierBurned || 0),
-        0
+      if (!asaId || !adminAddr) {
+        return res.status(503).json({ error: "Blockchain not initialized yet" });
+      }
+
+      const [assetLookup, adminAccountInfo] = await Promise.all([
+        indexerClient.lookupAssetByID(asaId).do() as Promise<any>,
+        algodClient.accountInformation(adminAddr).do() as Promise<any>,
+      ]);
+
+      const assetParams = assetLookup?.asset?.params ?? assetLookup?.params ?? assetLookup;
+      const rawTotal: number = Number(assetParams.total ?? assetParams["total"] ?? 0);
+      const totalSupply = rawTotal / divisor;
+
+      const assets: any[] =
+        (adminAccountInfo as any).assets ??
+        (adminAccountInfo as any)["created-assets"] ??
+        [];
+      const adminAsset = assets.find(
+        (a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === asaId
       );
+      const rawAdminBalance: number = Number(adminAsset?.amount ?? 0);
+      const treasury = rawAdminBalance / divisor;
 
-      // Total earned by all players (includes unclaimed still held in-game)
-      const totalEarned = gameState.players.reduce(
-        (sum, p) => sum + (p.totalFrontierEarned || 0),
-        0
-      );
-
-      // Tokens held in-game by players right now
-      const totalHeld = gameState.players.reduce(
-        (sum, p) => sum + (p.frontier || 0),
-        0
-      );
-
-      // Tokens locked in accumulation (pending claim)
-      const totalPendingClaim = gameState.parcels.reduce(
-        (sum, p) => sum + (p.frontierAccumulated || 0),
-        0
-      );
-
-      // FRONTIER generated per day across all plots
-      const totalFrontierPerDay = gameState.parcels.reduce(
-        (sum, p) => sum + (p.frontierPerDay || 0),
-        0
-      );
-
-      const humanPlayerCount = gameState.players.filter(p => !p.isAI).length;
+      const circulating = Math.round((totalSupply - treasury) * 100) / 100;
 
       res.json({
         asaId,
-        adminAddress,
-        totalSupply: gameState.frontierTotalSupply,
-        circulating: Math.round(gameState.frontierCirculating * 100) / 100,
-        totalBurned: Math.round(totalBurned * 100) / 100,
-        totalEarned: Math.round(totalEarned * 100) / 100,
-        totalHeld: Math.round(totalHeld * 100) / 100,
-        totalPendingClaim: Math.round(totalPendingClaim * 100) / 100,
-        totalFrontierPerDay: Math.round(totalFrontierPerDay * 100) / 100,
-        totalPlots: gameState.totalPlots,
-        claimedPlots: gameState.claimedPlots,
-        humanPlayerCount,
+        adminAddress: adminAddr,
+        totalSupply,
+        treasury: Math.round(treasury * 100) / 100,
+        circulating,
         network: "Algorand TestNet",
         unitName: "FRNTR",
         assetName: "FRONTIER",
-        decimals: 6,
+        decimals: ASA_DECIMALS,
       });
     } catch (error) {
+      console.error("Economics fetch error:", error);
       res.status(500).json({ error: "Failed to fetch economics data" });
     }
   });

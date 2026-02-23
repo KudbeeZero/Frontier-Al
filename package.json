@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "tsx": "^4.21.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@perawallet/connect": "^1.4.2",
@@ -91,7 +92,7 @@
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",
-    "@types/node": "20.19.27",
+    "@types/node": "^20.19.27",
     "@types/passport": "^1.0.16",
     "@types/passport-local": "^1.0.38",
     "@types/react": "^18.3.11",
@@ -99,15 +100,14 @@
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
+    "checkly": "latest",
     "drizzle-kit": "^0.31.8",
     "esbuild": "^0.25.0",
+    "jiti": "^2",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.5",
     "typescript": "5.6.3",
-    "vite": "^7.3.0",
-    "checkly": "latest",
-    "jiti": "^2"
+    "vite": "^7.3.1"
   },
   "overrides": {
     "drizzle-kit": {
