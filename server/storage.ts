@@ -60,7 +60,7 @@ import type { FacilityType, DefenseImprovementType } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
-import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable } from "./db-schema";
+import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable } from "./db-schema";
 import type { DB } from "./db";
 
 const MICRO = 1_000_000;
@@ -1441,6 +1441,17 @@ export class DbStorage implements IStorage {
     // ── Schema migrations (safe to run on every startup) ─────────────────────
     // Add columns introduced after the initial DB release so that existing
     // deployments self-heal without requiring a manual `drizzle-kit push`.
+
+    // NFT tracking table — created here so no separate migration step is needed.
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS plot_nfts (
+        plot_id           INT PRIMARY KEY,
+        asset_id          BIGINT,
+        minted_to_address TEXT,
+        minted_at         BIGINT
+      )
+    `);
+
     await this.db.execute(
       sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_crystal_mined REAL NOT NULL DEFAULT 0`
     );
