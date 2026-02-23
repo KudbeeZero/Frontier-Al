@@ -11,6 +11,7 @@ import { LeaderboardPanel } from "./LeaderboardPanel";
 import { CommanderPanel } from "./CommanderPanel";
 import { EconomicsPanel } from "./EconomicsPanel";
 import { OnboardingFlow } from "./OnboardingFlow";
+import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { WalletConnect } from "./WalletConnect";
@@ -59,6 +60,8 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showGamerTag, setShowGamerTag] = useState(false);
+  const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // Tick every second for live FRNTR accumulation display in ResourceHUD.
@@ -97,12 +100,13 @@ export function GameLayout() {
       .then((r) => r.json())
       .then((data) => {
         if (data.welcomeBonus) {
+          setNewPlayerId(data.id);
+          setShowGamerTag(true);
           toast({
             title: "Welcome Commander!",
             description: "You've received 500 FRONTIER tokens as a welcome bonus. Use them to build facilities and grow your empire!",
           });
         }
-        // Refresh game state so this player's row is visible immediately.
         queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
       })
       .catch((err) => console.error("Failed to initialise player for address:", err));
@@ -346,6 +350,25 @@ export function GameLayout() {
 
   if (showOnboarding) {
     return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+  }
+
+  if (showGamerTag && newPlayerId) {
+    return (
+      <GamerTagModal
+        playerId={newPlayerId}
+        walletAddress={wallet.address || ""}
+        onComplete={(name) => {
+          setShowGamerTag(false);
+          setNewPlayerId(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+          toast({ title: `Welcome, ${name}!`, description: "Your commander tag has been set." });
+        }}
+        onSkip={() => {
+          setShowGamerTag(false);
+          setNewPlayerId(null);
+        }}
+      />
+    );
   }
 
   if (!isConnected) {

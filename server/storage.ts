@@ -112,6 +112,7 @@ export interface IStorage {
   executeSpecialAttack(action: SpecialAttackAction): Promise<{ damage: number; effect: string }>;
   deployDrone(action: DeployDroneAction): Promise<ReconDrone>;
   deploySatellite(action: DeploySatelliteAction): Promise<OrbitalSatellite>;
+  updatePlayerName(playerId: string, name: string): Promise<void>;
   /** Grant the 500 FRONTIER welcome bonus (idempotent). */
   grantWelcomeBonus(playerId: string): Promise<void>;
   /**
@@ -451,6 +452,14 @@ export class MemStorage implements IStorage {
     if (!player) throw new Error("Player not found");
     if (player.isAI) throw new Error("Cannot update AI player address");
     player.address = address;
+  }
+
+  async updatePlayerName(playerId: string, name: string): Promise<void> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player) throw new Error("Player not found");
+    if (player.isAI) throw new Error("Cannot rename AI player");
+    player.name = name;
   }
 
   async getOrCreatePlayerByAddress(address: string): Promise<Player> {
@@ -1815,6 +1824,16 @@ export class DbStorage implements IStorage {
       if (!row) throw new Error("Player not found");
       if (row.isAi) throw new Error("Cannot update AI player address");
       await tx.update(playersTable).set({ address }).where(eq(playersTable.id, playerId));
+    });
+  }
+
+  async updatePlayerName(playerId: string, name: string): Promise<void> {
+    await this.initialize();
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
+      if (!row) throw new Error("Player not found");
+      if (row.isAi) throw new Error("Cannot rename AI player");
+      await tx.update(playersTable).set({ name }).where(eq(playersTable.id, playerId));
     });
   }
 

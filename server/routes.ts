@@ -225,6 +225,33 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/actions/set-name", async (req, res) => {
+    try {
+      const { playerId, name, address } = req.body;
+      if (!playerId || !name || !address) {
+        return res.status(400).json({ error: "playerId, name, and address are required" });
+      }
+      const player = await storage.getPlayer(playerId);
+      if (!player) {
+        return res.status(404).json({ error: "Player not found" });
+      }
+      if (player.address.toLowerCase() !== address.trim().toLowerCase()) {
+        return res.status(403).json({ error: "Address does not match player" });
+      }
+      const trimmed = name.trim();
+      if (trimmed.length < 2 || trimmed.length > 20) {
+        return res.status(400).json({ error: "Name must be 2-20 characters" });
+      }
+      if (!/^[a-zA-Z0-9_\-. ]+$/.test(trimmed)) {
+        return res.status(400).json({ error: "Name can only contain letters, numbers, spaces, dashes, dots, and underscores" });
+      }
+      await storage.updatePlayerName(playerId, trimmed);
+      res.json({ success: true, name: trimmed });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Failed to set name" });
+    }
+  });
+
   app.get("/api/game/leaderboard", async (req, res) => {
     try {
       const leaderboard = await storage.getLeaderboard();

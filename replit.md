@@ -172,6 +172,8 @@ See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 - FRONTIER burn tracking (totalFrontierBurned on player)
 
 ## Recent Changes (V1.2 -> V1.3)
+- **Gamertag / Commander Name**: New players see a "Choose Your Tag" modal on first wallet connection. Names are 2-20 chars, validated server-side with wallet address verification. Players can skip to use wallet address.
+- **Orbital Satellites**: 3 animated surveillance satellites orbit the globe with cyan trails, rotating scan beams, pulsing glow, depth fading (behind globe), and blinking status LEDs.
 - **Multiple Commander Avatars**: Players can now mint multiple commanders (Sentinel, Phantom, Reaper) and switch between them. Each has unique random stat rolls.
 - **Floating Plot Info Popup**: When selecting a plot on the map, a floating info popup appears near it showing plot name, sector, biome, richness, defense, yield, FRONTIER/hr, owner status.
 - **Plot Names & Sectors**: Each plot now has a deterministic name based on biome (e.g., "Ironwood-3421") and belongs to a named sector (Arctic Command, Nordic Sector, Atlantic Zone, Central Theater, Southern Front, Pacific Rim).
