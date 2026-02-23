@@ -230,7 +230,7 @@ export const FRONTIER_ASSETS = {
   iron: { name: "FRONTIER-IRON", unitName: "IRON", decimals: 0 },
   fuel: { name: "FRONTIER-FUEL", unitName: "FUEL", decimals: 0 },
   crystal: { name: "FRONTIER-CRYSTAL", unitName: "CRYSTAL", decimals: 0 },
-  frontier: { name: "FRONTIER", unitName: "FRNTR", decimals: 2 },
+  frontier: { name: "FRONTIER", unitName: "FRNTR", decimals: 6 },
 } as const;
 
 export type FrontierResourceType = keyof typeof FRONTIER_ASSETS;
@@ -271,7 +271,7 @@ export async function optInToASA(
 
 export async function isOptedInToASA(address: string, assetId: number): Promise<boolean> {
   try {
-    const res = await fetch(`/api/blockchain/opt-in-check/${address}`);
+    const res = await fetch(`/api/blockchain/opt-in-check/${address}?assetId=${assetId}`);
     const data = await res.json();
     return data.optedIn === true;
   } catch {
@@ -280,7 +280,7 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
       const assets = accountInfo.assets || accountInfo["assets"] || [];
       return assets.some((a: any) => {
         const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
-        return id === assetId;
+        return Number(id) === assetId;
       });
     } catch {
       return false;

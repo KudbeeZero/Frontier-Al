@@ -104,7 +104,8 @@ export async function registerRoutes(
 
   app.get("/api/blockchain/opt-in-check/:address", async (req, res) => {
     try {
-      const optedIn = await isAddressOptedInToFrontier(req.params.address);
+      const queryAsaId = req.query.assetId ? Number(req.query.assetId) : undefined;
+      const optedIn = await isAddressOptedInToFrontier(req.params.address, queryAsaId);
       res.json({ optedIn, asaId: getFrontierAsaId() });
     } catch (error) {
       res.json({ optedIn: false, asaId: getFrontierAsaId() });
