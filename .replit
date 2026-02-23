@@ -19,7 +19,7 @@ PORT = "5000"
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "./dist/index.cjs"]
+run = ["node", "dist/index.cjs"]
 build = ["npm", "run", "build"]
 publicDir = "dist/public"
 
@@ -43,15 +43,6 @@ mode = "sequential"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[workflows.workflow]]
-name = "Update dependencies"
-mode = "sequential"
-author = 55102651
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "Npm update "
 
 [rules]
 
