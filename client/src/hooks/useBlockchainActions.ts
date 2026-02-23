@@ -31,7 +31,7 @@ type ActionType =
   | "switch_commander";
 
 export function useBlockchainActions() {
-  const { isConnected, address } = useWallet();
+  const { isConnected, isReady, address } = useWallet();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
   const [lastTxId, setLastTxId] = useState<string | null>(null);
@@ -70,10 +70,8 @@ export function useBlockchainActions() {
     }
   }, [address]);
 
-  // Register the batch-sign callback so the module-level queue knows how to
-  // flush: sign one 0-ALGO transaction whose note encodes all pending actions.
   useEffect(() => {
-    if (!address || !isConnected) return;
+    if (!address || !isReady) return;
     registerBatchSignCallback(address, async (actions: BatchedAction[]) => {
       try {
         const txId = await createBatchedGameActionTransaction(address, actions);
@@ -90,83 +88,79 @@ export function useBlockchainActions() {
         return null;
       }
     });
-  }, [address, isConnected, toast]);
-
-  // -------------------------------------------------------------------------
-  // Queue-based action loggers — fire-and-forget, batch into 1 KB transactions
-  // -------------------------------------------------------------------------
+  }, [address, isReady, toast]);
 
   const queueMineAction = useCallback(
     (plotId: number, minerals?: { iron: number; fuel: number; crystal: number }) => {
-      if (isConnected && address) {
+      if (isReady && address) {
         const mineralData = minerals
           ? { fe: minerals.iron, fu: minerals.fuel, cr: minerals.crystal }
           : undefined;
         enqueueGameAction("mine", plotId, undefined, mineralData);
       }
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueUpgradeAction = useCallback(
     (plotId: number, upgradeType: string) => {
-      if (isConnected && address) enqueueGameAction("upgrade", plotId, { upgradeType });
+      if (isReady && address) enqueueGameAction("upgrade", plotId, { upgradeType });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueAttackAction = useCallback(
     (plotId: number, troops: number, iron: number, fuel: number) => {
-      if (isConnected && address)
+      if (isReady && address)
         enqueueGameAction("attack", plotId, { troops, iron, fuel });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueBuildAction = useCallback(
     (plotId: number, improvementType: string) => {
-      if (isConnected && address) enqueueGameAction("build", plotId, { improvementType });
+      if (isReady && address) enqueueGameAction("build", plotId, { improvementType });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueMintAvatarAction = useCallback(
     (tier: string) => {
-      if (isConnected && address) enqueueGameAction("mint_avatar", 0, { tier });
+      if (isReady && address) enqueueGameAction("mint_avatar", 0, { tier });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueSpecialAttackAction = useCallback(
     (targetPlotId: number, attackType: string) => {
-      if (isConnected && address)
+      if (isReady && address)
         enqueueGameAction("special_attack", targetPlotId, { attackType });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueSwitchCommanderAction = useCallback(
     (commanderIndex: number) => {
-      if (isConnected && address)
+      if (isReady && address)
         enqueueGameAction("switch_commander", 0, { commanderIndex });
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueDeployDroneAction = useCallback(
     (targetPlotId?: number) => {
-      if (isConnected && address)
+      if (isReady && address)
         enqueueGameAction("deploy_drone", targetPlotId ?? 0);
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const queueDeploySatelliteAction = useCallback(
     () => {
-      if (isConnected && address)
+      if (isReady && address)
         enqueueGameAction("deploy_satellite", 0);
     },
-    [isConnected, address]
+    [isReady, address]
   );
 
   const signGameAction = useCallback(
@@ -175,10 +169,10 @@ export function useBlockchainActions() {
       plotId: number,
       metadata?: Record<string, unknown>
     ): Promise<string | null> => {
-      if (!isConnected || !address) {
+      if (!isReady || !address) {
         toast({
-          title: "Wallet Not Connected",
-          description: "Connect your wallet to record actions on-chain.",
+          title: "Wallet Not Ready",
+          description: "Connect your wallet and wait for initialization to record actions on-chain.",
           variant: "destructive",
         });
         return null;
@@ -219,7 +213,7 @@ export function useBlockchainActions() {
         setIsPending(false);
       }
     },
-    [isConnected, address, toast]
+    [isReady, address, toast]
   );
 
   const signMineAction = useCallback(
@@ -241,9 +235,9 @@ export function useBlockchainActions() {
 
   const signPurchaseAction = useCallback(
     async (plotId: number, algoAmount: number): Promise<string | null | "cancelled"> => {
-      if (!isConnected || !address) {
+      if (!isReady || !address) {
         toast({
-          title: "Wallet Not Connected",
+          title: "Wallet Not Ready",
           description: "Connect your wallet to purchase land.",
           variant: "destructive",
         });
@@ -252,14 +246,12 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
-        // Use state value first, fall back to module cache, then try a fresh fetch
         let targetAddress = treasuryAddress || getCachedTreasuryAddress();
         if (!targetAddress) {
           const fresh = await fetchBlockchainStatus();
           targetAddress = fresh.adminAddress || "";
         }
         if (!targetAddress) {
-          // Blockchain not ready — return null (non-blocking: caller may still do in-game purchase)
           toast({ title: "On-Chain Payment Skipped", description: "Blockchain not initialized yet — land claimed in-game only.", variant: "default" });
           setIsPending(false);
           return null;
@@ -282,21 +274,20 @@ export function useBlockchainActions() {
           toast({ title: "Transaction Cancelled", description: "Purchase cancelled." });
           return "cancelled";
         }
-        // Blockchain / network error — non-blocking, in-game purchase will still proceed
         toast({ title: "On-Chain Payment Failed", description: `${err?.message || "Network error"} — land claimed in-game only.`, variant: "default" });
         return null;
       } finally {
         setIsPending(false);
       }
     },
-    [isConnected, address, toast, treasuryAddress]
+    [isReady, address, toast, treasuryAddress]
   );
 
   const signClaimFrontierAction = useCallback(
     async (frontierAmount: number): Promise<string | null> => {
-      if (!isConnected || !address) {
+      if (!isReady || !address) {
         toast({
-          title: "Wallet Not Connected",
+          title: "Wallet Not Ready",
           description: "Connect your wallet to claim FRONTIER tokens.",
           variant: "destructive",
         });
@@ -324,13 +315,13 @@ export function useBlockchainActions() {
         setIsPending(false);
       }
     },
-    [isConnected, address, toast]
+    [isReady, address, toast]
   );
 
   const signOptInToFrontier = useCallback(
     async (): Promise<string | null> => {
-      if (!isConnected || !address) {
-        toast({ title: "Wallet Not Connected", description: "Connect wallet first.", variant: "destructive" });
+      if (!isReady || !address) {
+        toast({ title: "Wallet Not Ready", description: "Connect wallet first.", variant: "destructive" });
         return null;
       }
       if (!frontierAsaId) {
@@ -363,20 +354,18 @@ export function useBlockchainActions() {
         setIsPending(false);
       }
     },
-    [isConnected, address, frontierAsaId, isOptedIn, toast]
+    [isReady, address, frontierAsaId, isOptedIn, toast]
   );
 
   return {
     isPending,
     lastTxId,
-    // Legacy individual-sign actions (kept for compatibility)
     signMineAction,
     signUpgradeAction,
     signAttackAction,
     signPurchaseAction,
     signClaimFrontierAction,
     signOptInToFrontier,
-    // Batch queue actions — fire-and-forget, flushed in 1 KB atomic groups
     queueMineAction,
     queueUpgradeAction,
     queueAttackAction,

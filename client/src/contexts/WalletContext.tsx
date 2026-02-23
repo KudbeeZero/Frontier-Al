@@ -5,7 +5,9 @@ import {
   getAccountBalance,
   formatAddress,
   setActiveWalletType,
+  getActiveWalletType,
   ALGORAND_TESTNET,
+  fetchBlockchainStatus,
   type WalletType,
 } from "@/lib/algorand";
 
@@ -17,9 +19,12 @@ interface WalletState {
   isConnecting: boolean;
   error: string | null;
   walletType: WalletType | null;
+  signerReady: boolean;
+  blockchainReady: boolean;
 }
 
 interface WalletContextValue extends WalletState {
+  isReady: boolean;
   connectPera: () => Promise<void>;
   connectLute: () => Promise<void>;
   disconnect: () => void;
@@ -37,15 +42,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     isConnecting: false,
     error: null,
     walletType: null,
+    signerReady: false,
+    blockchainReady: false,
   });
-  
+
   const isReconnecting = useRef(false);
+
+  useEffect(() => {
+    fetchBlockchainStatus().then((status) => {
+      setState((prev) => ({ ...prev, blockchainReady: status.ready || !!status.adminAddress }));
+    });
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     setActiveWalletType(null);
     localStorage.removeItem("frontier_wallet_type");
     localStorage.removeItem("frontier_wallet_address");
-    setState({
+    setState((prev) => ({
+      ...prev,
       isConnected: false,
       address: null,
       displayAddress: null,
@@ -53,7 +67,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnecting: false,
       error: null,
       walletType: null,
-    });
+      signerReady: false,
+    }));
   }, []);
 
   const updateBalance = useCallback(async (address: string) => {
@@ -65,7 +80,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setActiveWalletType(walletType);
     localStorage.setItem("frontier_wallet_type", walletType);
     localStorage.setItem("frontier_wallet_address", address);
-    setState({
+    setState((prev) => ({
+      ...prev,
       isConnected: true,
       address,
       displayAddress: formatAddress(address),
@@ -73,7 +89,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       isConnecting: false,
       error: null,
       walletType,
-    });
+      signerReady: true,
+    }));
   }, []);
 
   useEffect(() => {
@@ -84,58 +101,84 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const savedAddress = localStorage.getItem("frontier_wallet_address");
 
     if (savedType === "lute" && savedAddress) {
-      setActiveWalletType("lute");
-      setState({
-        isConnected: true,
-        address: savedAddress,
-        displayAddress: formatAddress(savedAddress),
-        balance: 0,
-        isConnecting: false,
-        error: null,
-        walletType: "lute",
-      });
-      updateBalance(savedAddress);
-      isReconnecting.current = false;
-      return;
-    }
-
-    peraWallet
-      .reconnectSession()
-      .then((accounts) => {
-        peraWallet.connector?.on("disconnect", handleDisconnect);
-        
-        if (accounts.length > 0) {
-          const address = accounts[0];
-          setActiveWalletType("pera");
-          localStorage.setItem("frontier_wallet_type", "pera");
-          localStorage.setItem("frontier_wallet_address", address);
-          setState({
+      luteWallet
+        .connect(ALGORAND_TESTNET.genesisID)
+        .then((accounts) => {
+          const addr = accounts.length > 0 ? accounts[0] : savedAddress;
+          setActiveWalletType("lute");
+          localStorage.setItem("frontier_wallet_address", addr);
+          setState((prev) => ({
+            ...prev,
             isConnected: true,
-            address,
-            displayAddress: formatAddress(address),
+            address: addr,
+            displayAddress: formatAddress(addr),
             balance: 0,
             isConnecting: false,
             error: null,
-            walletType: "pera",
-          });
-          updateBalance(address);
-        }
-      })
-      .catch((error) => {
-        console.error("Session reconnection failed:", error);
-      })
-      .finally(() => {
-        isReconnecting.current = false;
-      });
+            walletType: "lute",
+            signerReady: true,
+          }));
+          updateBalance(addr);
+        })
+        .catch((err) => {
+          console.warn("LUTE reconnection failed, clearing saved state:", err);
+          localStorage.removeItem("frontier_wallet_type");
+          localStorage.removeItem("frontier_wallet_address");
+        })
+        .finally(() => {
+          isReconnecting.current = false;
+        });
+      return;
+    }
+
+    if (savedType === "pera") {
+      peraWallet
+        .reconnectSession()
+        .then((accounts) => {
+          peraWallet.connector?.on("disconnect", handleDisconnect);
+
+          if (accounts.length > 0) {
+            const address = accounts[0];
+            setActiveWalletType("pera");
+            localStorage.setItem("frontier_wallet_type", "pera");
+            localStorage.setItem("frontier_wallet_address", address);
+            setState((prev) => ({
+              ...prev,
+              isConnected: true,
+              address,
+              displayAddress: formatAddress(address),
+              balance: 0,
+              isConnecting: false,
+              error: null,
+              walletType: "pera",
+              signerReady: true,
+            }));
+            updateBalance(address);
+          } else {
+            localStorage.removeItem("frontier_wallet_type");
+            localStorage.removeItem("frontier_wallet_address");
+          }
+        })
+        .catch((error) => {
+          console.error("Pera session reconnection failed:", error);
+          localStorage.removeItem("frontier_wallet_type");
+          localStorage.removeItem("frontier_wallet_address");
+        })
+        .finally(() => {
+          isReconnecting.current = false;
+        });
+    } else {
+      isReconnecting.current = false;
+    }
   }, [handleDisconnect, updateBalance]);
 
   const connectPera = useCallback(async () => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
-    
+
     try {
       const accounts = await peraWallet.connect();
       peraWallet.connector?.on("disconnect", handleDisconnect);
-      
+
       if (accounts.length > 0) {
         const address = accounts[0];
         const balance = await getAccountBalance(address);
@@ -158,10 +201,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const connectLute = useCallback(async () => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
-    
+
     try {
       const accounts = await luteWallet.connect(ALGORAND_TESTNET.genesisID);
-      
+
       if (accounts.length > 0) {
         const address = accounts[0];
         const balance = await getAccountBalance(address);
@@ -191,9 +234,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [state.address, updateBalance]);
 
+  const isReady = state.isConnected && state.signerReady && !!state.address && !!getActiveWalletType();
+
   return (
     <WalletContext.Provider value={{
       ...state,
+      isReady,
       connectPera,
       connectLute,
       disconnect,

@@ -1,0 +1,53 @@
+I already built the shared game world. Do NOT redesign my architecture.
+
+I need you to FIX my Algorand wallet connection so TestNet transactions work reliably per wallet, while keeping ONE global world that everyone shares.
+
+Non-negotiables:
+- There is ONE shared map with 21,000 plots. Do NOT duplicate or regenerate plots per wallet.
+- AI agents/NPC factions are GLOBAL too (everyone competes against the same AI agents with the same positions/state). Do NOT instantiate AI per wallet.
+- Wallet-specific state is ONLY for the player/account: test tx history, owned plot IDs (references), balances/xp/flags, etc.
+- Plot ownership must be UNIQUE per wallet:
+  - Each plot can have only ONE ownerWallet at a time (or null if unowned).
+  - When a wallet purchases/mints a plot, set plot.ownerWallet = that wallet address.
+  - That plot must appear owned for everyone globally, and only the owning wallet can perform owner-only actions on it.
+  - A wallet’s “ownedPlotIds[]” is just a reference list to globally-owned plots, not a separate copy of plots.
+
+What’s broken:
+- Wallet connect sometimes shows connected, but I get errors like “block chain is not initialized” / “not linked to blockchain” / tx calls fail.
+- The issue is likely that algod client and/or signer is not being initialized/stored correctly after connect.
+
+Your tasks:
+1) Trace the wallet connect flow end-to-end in my codebase:
+   - where connect is triggered
+   - where algod/indexer clients are created
+   - where signer + walletAddress are stored
+   - why UI can appear connected while blockchain clients are not initialized
+
+2) Enforce a single source of truth (WalletProvider/context/store) that exposes:
+   - walletAddress
+   - activeAccount
+   - signer
+   - algodClient (TestNet)
+   - indexerClient (TestNet optional)
+   - isReady = connected && signer && algodClient
+
+3) Guard every blockchain call:
+   - if !isReady, block the action and show “Connect wallet”
+   - never attempt tx signing/sending unless isReady is true
+
+4) Ensure plot purchase/mint enforces unique ownership:
+   - Before sending a buy/mint tx, verify plot is unowned (ownerWallet is null OR on-chain shows unowned).
+   - After tx confirmation, update the global plot ownerWallet to the connected wallet address.
+   - Never allow two wallets to claim the same plot.
+   - Never trust frontend ownership alone—validate against chain/indexer when possible.
+
+5) Provide deliverables:
+   - Identify the exact file(s) and code path causing the “block chain not initialized” bug
+   - Provide a minimal TypeScript/React patch that fixes connect + initializes/stores algodClient + signer + address correctly
+   - Confirm explicitly that wallet connect does NOT recreate the 21,000 plots or global AI agents
+   - Confirm explicitly that plot ownership is globally unique and tied to wallet address
+
+Output format:
+- List the files you changed
+- Show the before/after or diff-style code edits
+- Include how to run/test it locally (and note whether each command runs in bash or inside a psql prompt if applicable)
