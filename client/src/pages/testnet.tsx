@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -22,10 +22,13 @@ import {
   ClipboardList,
   Terminal,
   ArrowLeft,
+  Loader2,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { useWallet } from "@/hooks/useWallet";
 
 type Priority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 type Category = "gameplay" | "blockchain" | "ui" | "performance" | "economy" | "other";
@@ -38,6 +41,20 @@ interface Mission {
   objective: string;
   whatToWatch: string[];
   icon: React.ElementType;
+  autoDetectKey?: string;
+}
+
+interface PlayerStats {
+  territories: number;
+  totalIronMined: number;
+  totalFuelMined: number;
+  totalCrystalMined: number;
+  totalFrontierEarned: number;
+  attacksWon: number;
+  attacksLost: number;
+  hasCommander: boolean;
+  hasDrones: boolean;
+  welcomeBonusReceived: boolean;
 }
 
 const PRIORITY_CONFIG: Record<Priority, { color: string; bg: string; border: string }> = {
@@ -59,6 +76,7 @@ const MISSIONS: Mission[] = [
       "Does the connection persist after a full page refresh?",
     ],
     icon: Wifi,
+    autoDetectKey: "wallet-connect",
   },
   {
     id: "asa-optin",
@@ -83,6 +101,7 @@ const MISSIONS: Mission[] = [
       "Does the tile update to show your ownership immediately after confirmation?",
     ],
     icon: Package,
+    autoDetectKey: "purchase-land",
   },
   {
     id: "mine-resources",
@@ -95,6 +114,7 @@ const MISSIONS: Mission[] = [
       "Does the Resource HUD update in real-time after mining?",
     ],
     icon: Pickaxe,
+    autoDetectKey: "mine-resources",
   },
   {
     id: "build-improvement",
@@ -119,6 +139,7 @@ const MISSIONS: Mission[] = [
       "Is the claimed amount reflected in your Algorand wallet?",
     ],
     icon: Star,
+    autoDetectKey: "claim-frontier",
   },
   {
     id: "pve-combat",
@@ -131,6 +152,7 @@ const MISSIONS: Mission[] = [
       "Are battle outcomes logged in the War Room event feed?",
     ],
     icon: Swords,
+    autoDetectKey: "pve-combat",
   },
   {
     id: "upgrade-defenses",
@@ -179,23 +201,30 @@ const MISSIONS: Mission[] = [
       "Can you deploy a recon drone with the Commander afterward?",
     ],
     icon: Trophy,
+    autoDetectKey: "commander-mint",
   },
 ];
 
-const STORAGE_KEY = "testnet_completed_missions";
+function autoDetectCompletions(stats: PlayerStats, isConnected: boolean): Set<string> {
+  const auto = new Set<string>();
+  if (isConnected) auto.add("wallet-connect");
+  if (stats.territories > 0) auto.add("purchase-land");
+  if (stats.totalIronMined > 0 || stats.totalFuelMined > 0) auto.add("mine-resources");
+  if (stats.totalFrontierEarned > 0) auto.add("claim-frontier");
+  if (stats.attacksWon > 0 || stats.attacksLost > 0) auto.add("pve-combat");
+  if (stats.hasCommander) auto.add("commander-mint");
+  return auto;
+}
 
 export default function TestnetPage() {
-  const [completed, setCompleted] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
+  const { isConnected, address } = useWallet();
+  const [manualCompleted, setManualCompleted] = useState<Set<string>>(new Set());
+  const [autoCompleted, setAutoCompleted] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [stats, setStats] = useState<PlayerStats | null>(null);
 
   const [category, setCategory]     = useState<Category>("gameplay");
   const [severity, setSeverity]     = useState<Severity>("medium");
@@ -203,17 +232,64 @@ export default function TestnetPage() {
   const [steps, setSteps]           = useState("");
   const [expected, setExpected]     = useState("");
   const [actual, setActual]         = useState("");
-  const [walletAddr, setWalletAddr] = useState("");
+
+  const fetchProgress = useCallback(async () => {
+    if (!address) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/testnet/progress/${encodeURIComponent(address)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setManualCompleted(new Set(data.completedMissions || []));
+        if (data.stats) {
+          setStats(data.stats);
+          setAutoCompleted(autoDetectCompletions(data.stats, isConnected));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch testnet progress:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [address, isConnected]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
-  }, [completed]);
+    if (isConnected && address) {
+      fetchProgress();
+    } else {
+      setManualCompleted(new Set());
+      setAutoCompleted(new Set());
+      setStats(null);
+    }
+  }, [isConnected, address, fetchProgress]);
+
+  const completed = new Set(Array.from(manualCompleted).concat(Array.from(autoCompleted)));
+
+  const saveProgress = useCallback(async (newManual: Set<string>) => {
+    if (!address) return;
+    setSyncing(true);
+    try {
+      await fetch("/api/testnet/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, completedMissions: Array.from(newManual) }),
+      });
+    } catch (e) {
+      console.error("Failed to save testnet progress:", e);
+    } finally {
+      setSyncing(false);
+    }
+  }, [address]);
 
   const toggleMission = (id: string) => {
-    setCompleted((prev) => {
+    if (autoCompleted.has(id)) return;
+    if (!isConnected) return;
+
+    setManualCompleted((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      saveProgress(next);
       return next;
     });
   };
@@ -231,7 +307,7 @@ export default function TestnetPage() {
 
 **Category:** ${category.toUpperCase()}
 **Severity:** ${severity.toUpperCase()}
-**Date:** ${new Date().toISOString().split("T")[0]}${walletAddr ? `\n**Wallet:** ${walletAddr}` : ""}
+**Date:** ${new Date().toISOString().split("T")[0]}${address ? `\n**Wallet:** ${address}` : ""}
 
 ### Description
 ${description || "(no description provided)"}
@@ -256,7 +332,6 @@ ${completedList}`;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
-      {/* Subtle grid background */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.025]"
         style={{
@@ -268,7 +343,6 @@ ${completedList}`;
         }}
       />
 
-      {/* Scanline overlay */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.012]"
         style={{
@@ -283,7 +357,6 @@ ${completedList}`;
       />
 
       <div className="relative max-w-4xl mx-auto px-4 py-8">
-        {/* Back link */}
         <div className="mb-6">
           <Link href="/">
             <a className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors font-display uppercase tracking-wider">
@@ -293,17 +366,16 @@ ${completedList}`;
           </Link>
         </div>
 
-        {/* ═══════════════════════════════════════
-            HERO HEADER
-        ═══════════════════════════════════════ */}
         <div className="mb-10">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-xs font-display uppercase tracking-widest text-green-400">TESTNET ACTIVE</span>
+              <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+              <span className={cn("text-xs font-display uppercase tracking-widest", isConnected ? "text-green-400" : "text-red-400")}>
+                {isConnected ? "WALLET CONNECTED" : "WALLET NOT CONNECTED"}
+              </span>
             </div>
             <div className="h-px flex-1 bg-border" />
-            <span className="text-xs font-mono text-muted-foreground">FRONTIER v1.2 // PHASE 1</span>
+            <span className="text-xs font-mono text-muted-foreground">FRONTIER v1.3 // PHASE 1</span>
           </div>
 
           <h1 className="font-display text-5xl sm:text-6xl font-bold uppercase tracking-widest leading-none mb-3">
@@ -313,13 +385,36 @@ ${completedList}`;
 
           <p className="text-muted-foreground max-w-2xl mt-4 leading-relaxed">
             You are a designated Frontier Testnet Operative. Work through the mission checklist below,
-            document anomalies, and file bug reports. Your intelligence directly shapes the final product.
+            document anomalies, and file bug reports. Your progress is saved to your wallet automatically.
           </p>
+
+          {!isConnected && (
+            <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-md flex items-center gap-3">
+              <Lock className="w-5 h-5 text-amber-400 shrink-0" />
+              <p className="text-sm text-amber-400">
+                Connect your wallet in the game to save and track your personal testing progress.
+              </p>
+            </div>
+          )}
+
+          {isConnected && address && (
+            <div className="mt-4 p-3 bg-primary/5 border border-primary/20 rounded-md">
+              <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-1">
+                Tracking Progress For
+              </div>
+              <div className="font-mono text-sm text-primary truncate">
+                {address}
+              </div>
+              {syncing && (
+                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ═══════════════════════════════════════
-            PROGRESS TRACKER
-        ═══════════════════════════════════════ */}
         <div className="bg-card border border-border rounded-md p-5 mb-8">
           <div className="flex items-end justify-between mb-3">
             <div>
@@ -345,7 +440,6 @@ ${completedList}`;
             </div>
           </div>
 
-          {/* Progress bar */}
           <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div
               className={cn(
@@ -356,7 +450,6 @@ ${completedList}`;
             />
           </div>
 
-          {/* Milestone pips */}
           <div className="flex justify-between mt-1 px-0.5">
             {[0, 25, 50, 75, 100].map((pct) => (
               <span
@@ -376,11 +469,29 @@ ${completedList}`;
               ALL MISSIONS COMPLETE — OUTSTANDING OPERATIVE
             </div>
           )}
+
+          {stats && isConnected && (
+            <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="text-center">
+                <div className="text-lg font-bold text-primary">{stats.territories}</div>
+                <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground">Territories</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-primary">{stats.totalIronMined}</div>
+                <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground">Iron Mined</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-primary">{stats.attacksWon + stats.attacksLost}</div>
+                <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground">Battles</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-primary">{stats.totalFrontierEarned.toFixed(1)}</div>
+                <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground">FRNTR Earned</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* ═══════════════════════════════════════
-            MISSION CHECKLIST
-        ═══════════════════════════════════════ */}
         <section className="mb-12">
           <div className="flex items-center gap-3 mb-3">
             <ClipboardList className="w-5 h-5 text-primary" />
@@ -388,139 +499,163 @@ ${completedList}`;
             <div className="h-px flex-1 bg-border" />
           </div>
           <p className="text-sm text-muted-foreground mb-6">
-            Work through each mission in the game and check it off when done. Click a mission to expand
-            the detail and see exactly what to watch for. Your progress is saved automatically.
+            {isConnected
+              ? "Work through each mission in the game and check it off when done. Some missions auto-complete based on your activity. Your progress syncs to your wallet."
+              : "Connect your wallet to track your personal mission progress. Checkmarks are saved per wallet."}
           </p>
 
-          <div className="space-y-2">
-            {MISSIONS.map((mission) => {
-              const pCfg       = PRIORITY_CONFIG[mission.priority];
-              const isComplete = completed.has(mission.id);
-              const isOpen     = expanded === mission.id;
-              const Icon       = mission.icon;
+          {loading ? (
+            <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="font-display uppercase tracking-wider text-sm">Loading your progress...</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {MISSIONS.map((mission) => {
+                const pCfg       = PRIORITY_CONFIG[mission.priority];
+                const isComplete = completed.has(mission.id);
+                const isAuto     = autoCompleted.has(mission.id);
+                const isOpen     = expanded === mission.id;
+                const Icon       = mission.icon;
 
-              return (
-                <div
-                  key={mission.id}
-                  className={cn(
-                    "border rounded-md transition-all duration-200",
-                    isComplete
-                      ? "border-green-500/30 bg-green-500/5"
-                      : `${pCfg.border} ${pCfg.bg}`,
-                  )}
-                >
-                  {/* Mission row */}
+                return (
                   <div
-                    className="flex items-center gap-3 p-3 sm:p-4 cursor-pointer select-none"
-                    onClick={() => setExpanded(isOpen ? null : mission.id)}
+                    key={mission.id}
+                    className={cn(
+                      "border rounded-md transition-all duration-200",
+                      isComplete
+                        ? "border-green-500/30 bg-green-500/5"
+                        : `${pCfg.border} ${pCfg.bg}`,
+                    )}
                   >
-                    {/* Checkbox */}
-                    <button
-                      className="shrink-0 transition-transform active:scale-90"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleMission(mission.id);
-                      }}
-                      aria-label={isComplete ? "Mark incomplete" : "Mark complete"}
-                    >
-                      {isComplete ? (
-                        <CheckCircle2 className="w-5 h-5 text-green-400" />
-                      ) : (
-                        <Circle className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
-                      )}
-                    </button>
-
-                    {/* Category icon */}
                     <div
-                      className={cn(
-                        "shrink-0 w-8 h-8 rounded flex items-center justify-center border",
-                        isComplete ? "bg-green-500/10 border-green-500/30" : `${pCfg.bg} ${pCfg.border}`,
-                      )}
+                      className="flex items-center gap-3 p-3 sm:p-4 cursor-pointer select-none"
+                      onClick={() => setExpanded(isOpen ? null : mission.id)}
                     >
-                      <Icon className={cn("w-4 h-4", isComplete ? "text-green-400" : pCfg.color)} />
-                    </div>
-
-                    {/* Title */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={cn(
-                            "font-display font-bold uppercase tracking-wider text-sm",
-                            isComplete && "line-through text-muted-foreground",
-                          )}
-                        >
-                          {mission.title}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[10px] font-display uppercase tracking-wider px-1.5 py-0.5 rounded border",
-                            pCfg.color,
-                            pCfg.bg,
-                            pCfg.border,
-                          )}
-                        >
-                          {mission.priority}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">
-                        {mission.objective}
-                      </p>
-                    </div>
-
-                    <ChevronDown
-                      className={cn(
-                        "w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200",
-                        isOpen && "rotate-180",
-                      )}
-                    />
-                  </div>
-
-                  {/* Expanded detail */}
-                  {isOpen && (
-                    <div className="px-4 pb-4 pt-3 border-t border-border/40 space-y-4">
-                      <div>
-                        <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-1">
-                          Objective
-                        </div>
-                        <p className="text-sm leading-relaxed">{mission.objective}</p>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
-                          What to Watch For & Report
-                        </div>
-                        <ul className="space-y-2">
-                          {mission.whatToWatch.map((item, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm">
-                              <Radio className="w-3 h-3 mt-1 shrink-0 text-primary" />
-                              <span className="text-muted-foreground">{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
                       <button
-                        onClick={() => toggleMission(mission.id)}
                         className={cn(
-                          "text-xs font-display uppercase tracking-wider px-3 py-2 rounded border transition-all",
-                          isComplete
-                            ? "text-green-400 border-green-500/30 bg-green-500/10 hover:bg-green-500/20"
-                            : "text-primary border-primary/30 bg-primary/10 hover:bg-primary/20",
+                          "shrink-0 transition-transform active:scale-90",
+                          !isConnected && "opacity-50 cursor-not-allowed",
+                          isAuto && "cursor-default",
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMission(mission.id);
+                        }}
+                        aria-label={isComplete ? "Mark incomplete" : "Mark complete"}
+                        disabled={!isConnected || isAuto}
+                      >
+                        {isComplete ? (
+                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                        ) : (
+                          <Circle className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
+                        )}
+                      </button>
+
+                      <div
+                        className={cn(
+                          "shrink-0 w-8 h-8 rounded flex items-center justify-center border",
+                          isComplete ? "bg-green-500/10 border-green-500/30" : `${pCfg.bg} ${pCfg.border}`,
                         )}
                       >
-                        {isComplete ? "✓ Marked Complete — Click to Undo" : "Mark as Complete"}
-                      </button>
+                        <Icon className={cn("w-4 h-4", isComplete ? "text-green-400" : pCfg.color)} />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={cn(
+                              "font-display font-bold uppercase tracking-wider text-sm",
+                              isComplete && "line-through text-muted-foreground",
+                            )}
+                          >
+                            {mission.title}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[10px] font-display uppercase tracking-wider px-1.5 py-0.5 rounded border",
+                              pCfg.color,
+                              pCfg.bg,
+                              pCfg.border,
+                            )}
+                          >
+                            {mission.priority}
+                          </span>
+                          {isAuto && (
+                            <span className="text-[10px] font-display uppercase tracking-wider px-1.5 py-0.5 rounded border text-green-400 bg-green-500/10 border-green-500/30">
+                              AUTO
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">
+                          {mission.objective}
+                        </p>
+                      </div>
+
+                      <ChevronDown
+                        className={cn(
+                          "w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200",
+                          isOpen && "rotate-180",
+                        )}
+                      />
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+
+                    {isOpen && (
+                      <div className="px-4 pb-4 pt-3 border-t border-border/40 space-y-4">
+                        <div>
+                          <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-1">
+                            Objective
+                          </div>
+                          <p className="text-sm leading-relaxed">{mission.objective}</p>
+                        </div>
+
+                        <div>
+                          <div className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
+                            What to Watch For & Report
+                          </div>
+                          <ul className="space-y-2">
+                            {mission.whatToWatch.map((item, i) => (
+                              <li key={i} className="flex items-start gap-2 text-sm">
+                                <Radio className="w-3 h-3 mt-1 shrink-0 text-primary" />
+                                <span className="text-muted-foreground">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {isAuto ? (
+                          <div className="text-xs font-display uppercase tracking-wider px-3 py-2 rounded border text-green-400 border-green-500/30 bg-green-500/10">
+                            Auto-detected from your game activity
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => toggleMission(mission.id)}
+                            disabled={!isConnected}
+                            className={cn(
+                              "text-xs font-display uppercase tracking-wider px-3 py-2 rounded border transition-all",
+                              !isConnected
+                                ? "text-muted-foreground border-border bg-muted/20 cursor-not-allowed"
+                                : isComplete
+                                ? "text-green-400 border-green-500/30 bg-green-500/10 hover:bg-green-500/20"
+                                : "text-primary border-primary/30 bg-primary/10 hover:bg-primary/20",
+                            )}
+                          >
+                            {!isConnected
+                              ? "Connect Wallet to Track"
+                              : isComplete
+                              ? "Marked Complete — Click to Undo"
+                              : "Mark as Complete"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
-        {/* ═══════════════════════════════════════
-            BUG REPORT FORM
-        ═══════════════════════════════════════ */}
         <section className="mb-12">
           <div className="flex items-center gap-3 mb-3">
             <Bug className="w-5 h-5 text-destructive" />
@@ -531,10 +666,10 @@ ${completedList}`;
             Found an issue? Fill out the fields below and click{" "}
             <span className="text-foreground font-medium">Copy Report</span> to get a formatted
             markdown report ready to paste into Discord or GitHub Issues.
+            {isConnected && " Your wallet address is auto-included."}
           </p>
 
           <div className="bg-card border border-border rounded-md p-5 sm:p-6 space-y-5">
-            {/* Category + Severity */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
@@ -591,22 +726,17 @@ ${completedList}`;
               </div>
             </div>
 
-            {/* Wallet address */}
-            <div>
-              <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
-                Your Wallet Address{" "}
-                <span className="text-muted-foreground/50 normal-case tracking-normal">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={walletAddr}
-                onChange={(e) => setWalletAddr(e.target.value)}
-                placeholder="ALGO wallet address..."
-                className="w-full bg-muted/20 border border-border rounded px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
-              />
-            </div>
+            {isConnected && address && (
+              <div>
+                <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
+                  Your Wallet Address
+                </label>
+                <div className="w-full bg-muted/20 border border-border rounded px-3 py-2 text-sm font-mono text-primary truncate">
+                  {address}
+                </div>
+              </div>
+            )}
 
-            {/* Description */}
             <div>
               <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
                 Bug Description
@@ -620,7 +750,6 @@ ${completedList}`;
               />
             </div>
 
-            {/* Steps */}
             <div>
               <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
                 Steps to Reproduce
@@ -634,7 +763,6 @@ ${completedList}`;
               />
             </div>
 
-            {/* Expected vs Actual */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
@@ -662,7 +790,6 @@ ${completedList}`;
               </div>
             </div>
 
-            {/* Copy button */}
             <div className="space-y-2">
               <Button
                 onClick={handleCopyReport}
@@ -688,9 +815,6 @@ ${completedList}`;
           </div>
         </section>
 
-        {/* ═══════════════════════════════════════
-            REPORTING CHANNELS
-        ═══════════════════════════════════════ */}
         <section className="mb-12">
           <div className="flex items-center gap-3 mb-3">
             <Terminal className="w-5 h-5 text-primary" />
@@ -733,9 +857,6 @@ ${completedList}`;
           </div>
         </section>
 
-        {/* ═══════════════════════════════════════
-            FIELD TIPS
-        ═══════════════════════════════════════ */}
         <section className="mb-12">
           <div className="flex items-center gap-3 mb-3">
             <AlertTriangle className="w-5 h-5 text-amber-400" />
@@ -750,11 +871,11 @@ ${completedList}`;
               },
               {
                 title: "SCREEN RECORD BUGS",
-                body: "A 15-second screen recording of the bug is 10× more useful than text alone. Attach it when filing on GitHub.",
+                body: "A 15-second screen recording of the bug is 10x more useful than text alone. Attach it when filing on GitHub.",
               },
               {
                 title: "NOTE YOUR BROWSER",
-                body: "Include browser name and version (Chrome 121, Safari 17, Firefox 123…) and whether you're on desktop or mobile.",
+                body: "Include browser name and version (Chrome 121, Safari 17, Firefox 123...) and whether you're on desktop or mobile.",
               },
               {
                 title: "ONE BUG PER REPORT",
@@ -771,7 +892,6 @@ ${completedList}`;
           </div>
         </section>
 
-        {/* Footer */}
         <div className="border-t border-border pt-6 flex items-center justify-between">
           <span className="text-xs font-mono text-muted-foreground">
             FRONTIER TESTNET OPS // PHASE 1 // {new Date().getFullYear()}

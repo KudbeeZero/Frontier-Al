@@ -252,6 +252,51 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/testnet/progress/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      if (!address || typeof address !== "string") {
+        return res.status(400).json({ error: "Address is required" });
+      }
+      const player = await storage.getOrCreatePlayerByAddress(address);
+      res.json({
+        playerId: player.id,
+        completedMissions: player.testnetProgress || [],
+        stats: {
+          territories: player.ownedParcels.length,
+          totalIronMined: player.totalIronMined,
+          totalFuelMined: player.totalFuelMined,
+          totalCrystalMined: player.totalCrystalMined,
+          totalFrontierEarned: player.totalFrontierEarned,
+          attacksWon: player.attacksWon,
+          attacksLost: player.attacksLost,
+          hasCommander: player.commanders.length > 0,
+          hasDrones: player.drones.length > 0,
+          welcomeBonusReceived: player.welcomeBonusReceived,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch testnet progress" });
+    }
+  });
+
+  app.post("/api/testnet/progress", async (req, res) => {
+    try {
+      const { address, completedMissions } = req.body;
+      if (!address || typeof address !== "string") {
+        return res.status(400).json({ error: "Address is required" });
+      }
+      if (!Array.isArray(completedMissions)) {
+        return res.status(400).json({ error: "completedMissions must be an array" });
+      }
+      const player = await storage.getOrCreatePlayerByAddress(address);
+      await storage.updateTestnetProgress(player.id, completedMissions);
+      res.json({ success: true, completedMissions });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Failed to update progress" });
+    }
+  });
+
   app.get("/api/game/leaderboard", async (req, res) => {
     try {
       const leaderboard = await storage.getLeaderboard();

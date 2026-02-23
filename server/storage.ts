@@ -113,6 +113,7 @@ export interface IStorage {
   deployDrone(action: DeployDroneAction): Promise<ReconDrone>;
   deploySatellite(action: DeploySatelliteAction): Promise<OrbitalSatellite>;
   updatePlayerName(playerId: string, name: string): Promise<void>;
+  updateTestnetProgress(playerId: string, completedMissions: string[]): Promise<void>;
   /** Grant the 500 FRONTIER welcome bonus (idempotent). */
   grantWelcomeBonus(playerId: string): Promise<void>;
   /**
@@ -462,6 +463,13 @@ export class MemStorage implements IStorage {
     player.name = name;
   }
 
+  async updateTestnetProgress(playerId: string, completedMissions: string[]): Promise<void> {
+    await this.initialize();
+    const player = this.players.get(playerId);
+    if (!player) throw new Error("Player not found");
+    player.testnetProgress = completedMissions;
+  }
+
   async getOrCreatePlayerByAddress(address: string): Promise<Player> {
     await this.initialize();
     const trimmed = address.trim();
@@ -496,6 +504,7 @@ export class MemStorage implements IStorage {
       drones: [],
       satellites: [],
       welcomeBonusReceived: false,
+      testnetProgress: [],
     };
     this.players.set(id, newPlayer);
     return newPlayer;
@@ -1335,6 +1344,7 @@ function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     moraleDebuffUntil:    row.moraleDebuffUntil ?? 0,
     attackCooldownUntil:  row.attackCooldownUntil ?? 0,
     consecutiveLosses:    row.consecutiveLosses ?? 0,
+    testnetProgress:      (row.testnetProgress ?? []) as string[],
   };
 }
 
@@ -1835,6 +1845,14 @@ export class DbStorage implements IStorage {
       if (row.isAi) throw new Error("Cannot rename AI player");
       await tx.update(playersTable).set({ name }).where(eq(playersTable.id, playerId));
     });
+  }
+
+  async updateTestnetProgress(playerId: string, completedMissions: string[]): Promise<void> {
+    await this.initialize();
+    await this.db
+      .update(playersTable)
+      .set({ testnetProgress: completedMissions })
+      .where(eq(playersTable.id, playerId));
   }
 
   async grantWelcomeBonus(playerId: string): Promise<void> {

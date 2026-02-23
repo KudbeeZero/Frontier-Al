@@ -66,6 +66,7 @@ export const players = pgTable("players", {
   attackCooldownUntil:  bigint("attack_cooldown_until", { mode: "number" }).notNull().default(0),
   /** Running count of consecutive territory losses; resets on a successful defence. */
   consecutiveLosses:    integer("consecutive_losses").notNull().default(0),
+  testnetProgress:      jsonb("testnet_progress").$type<string[]>().notNull().default([]),
 });
 
 // ─── parcels ──────────────────────────────────────────────────────────────────

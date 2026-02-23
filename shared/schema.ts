@@ -163,6 +163,7 @@ export interface Player {
   attackCooldownUntil?: number;
   /** Running count of consecutive territory losses; resets on a successful defence */
   consecutiveLosses?: number;
+  testnetProgress: string[];
 }
 
 export interface Battle {
