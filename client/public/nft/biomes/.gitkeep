@@ -1,0 +1,6 @@
+# Place one PNG per biome here (8 files):
+# forest.png  desert.png  mountain.png  plains.png
+# water.png   tundra.png  volcanic.png  swamp.png
+#
+# These are served at /nft/biomes/<biome>.png and referenced by
+# the ARC-3 metadata endpoint GET /nft/metadata/:plotId

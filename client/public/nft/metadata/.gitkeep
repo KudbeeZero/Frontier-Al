@@ -1,0 +1,2 @@
+# Reserved for static/cached metadata JSON files (optional).
+# The canonical metadata endpoint is GET /nft/metadata/:plotId (server-side).

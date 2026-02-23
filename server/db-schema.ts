@@ -18,6 +18,18 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 
+// ─── plot_nfts ─────────────────────────────────────────────────────────────
+// Tracks on-chain Algorand ASA (NFT) minting state per plot.
+// asset_id is NULL until the plot NFT is minted; minted_to_address is the
+// Algorand wallet that holds the NFT.  This table is append-light: one row
+// per plot, upserted at purchase time and updated when minting succeeds.
+export const plotNfts = pgTable("plot_nfts", {
+  plotId:          integer("plot_id").primaryKey(),
+  assetId:         bigint("asset_id", { mode: "number" }),          // NULL until minted on-chain
+  mintedToAddress: text("minted_to_address"),                        // Algorand wallet address
+  mintedAt:        bigint("minted_at", { mode: "number" }),          // Unix ms timestamp of mint
+});
+
 // ─── game_meta ────────────────────────────────────────────────────────────────
 // Singleton row (id=1) that records whether the world has been seeded and
 // stores the current turn counter / last-update timestamp.
