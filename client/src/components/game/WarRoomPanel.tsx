@@ -1,5 +1,6 @@
-import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff } from "lucide-react";
+import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -11,10 +12,11 @@ interface WarRoomPanelProps {
   battles: Battle[];
   events: GameEvent[];
   players: Player[];
+  onWatchBattle?: (battleId: string) => void;
   className?: string;
 }
 
-function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) {
+function BattleCard({ battle, players, onWatch }: { battle: Battle; players: Player[]; onWatch?: (id: string) => void }) {
   const attacker = players.find((p) => p.id === battle.attackerId);
   const defender = players.find((p) => p.id === battle.defenderId);
   const now = Date.now();
@@ -22,11 +24,11 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
   const totalDuration = battle.resolveTs - battle.startTs;
   const progress = Math.min(100, (elapsed / totalDuration) * 100);
   const remaining = Math.max(0, battle.resolveTs - now);
-  
+
   const formatTime = (ms: number) => {
-    const hours = Math.floor(ms / 3600000);
-    const minutes = Math.floor((ms % 3600000) / 60000);
-    return `${hours}h ${minutes}m`;
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${minutes}m ${seconds}s`;
   };
 
   return (
@@ -76,12 +78,24 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
 
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">
-          Power: <span className="font-mono text-foreground">{battle.attackerPower}</span> vs <span className="font-mono text-foreground">{battle.defenderPower}</span>
+          Power: <span className="font-mono text-foreground">{Math.round(battle.attackerPower)}</span> vs <span className="font-mono text-foreground">{Math.round(battle.defenderPower)}</span>
         </span>
         <span className="text-muted-foreground">
           Target: <span className="font-mono text-foreground">{battle.targetParcelId.slice(0, 8)}</span>
         </span>
       </div>
+
+      {onWatch && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-7 text-[10px] font-display uppercase tracking-wide gap-1.5"
+          onClick={() => onWatch(battle.id)}
+        >
+          <Eye className="w-3 h-3" />
+          Watch Battle
+        </Button>
+      )}
     </div>
   );
 }
@@ -186,7 +200,7 @@ function AIActivityFeed({ players, events }: { players: Player[]; events: GameEv
   );
 }
 
-export function WarRoomPanel({ battles, events, players, className }: WarRoomPanelProps) {
+export function WarRoomPanel({ battles, events, players, onWatchBattle, className }: WarRoomPanelProps) {
   const activeBattles = battles.filter((b) => b.status === "pending");
   const recentBattles = battles.filter((b) => b.status === "resolved").slice(0, 5);
   const recentEvents = events.slice(0, 15);
@@ -241,13 +255,13 @@ export function WarRoomPanel({ battles, events, players, className }: WarRoomPan
               ) : (
                 <>
                   {activeBattles.map((battle) => (
-                    <BattleCard key={battle.id} battle={battle} players={players} />
+                    <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} />
                   ))}
                   {recentBattles.length > 0 && (
                     <>
                       <p className="text-xs text-muted-foreground uppercase font-display tracking-wide pt-2">Recent</p>
                       {recentBattles.map((battle) => (
-                        <BattleCard key={battle.id} battle={battle} players={players} />
+                        <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} />
                       ))}
                     </>
                   )}
