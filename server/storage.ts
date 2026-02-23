@@ -96,6 +96,8 @@ export interface IStorage {
   getPlayer(id: string): Promise<Player | undefined>;
   getBattle(id: string): Promise<Battle | undefined>;
   getLeaderboard(): Promise<LeaderboardEntry[]>;
+  /** Find an existing player by wallet address (case-insensitive), or create a fresh one. */
+  getOrCreatePlayerByAddress(address: string): Promise<Player>;
 
   mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number }>;
   upgradeBase(action: UpgradeAction): Promise<LandParcel>;
@@ -449,6 +451,45 @@ export class MemStorage implements IStorage {
     if (!player) throw new Error("Player not found");
     if (player.isAI) throw new Error("Cannot update AI player address");
     player.address = address;
+  }
+
+  async getOrCreatePlayerByAddress(address: string): Promise<Player> {
+    await this.initialize();
+    const trimmed = address.trim();
+    const lower = trimmed.toLowerCase();
+    for (const player of this.players.values()) {
+      if (player.address.toLowerCase() === lower) return player;
+    }
+    const id = randomUUID();
+    const displayName = `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
+    const newPlayer: Player = {
+      id,
+      address: trimmed,
+      name: displayName,
+      iron: 200,
+      fuel: 150,
+      crystal: 50,
+      frontier: 0,
+      ownedParcels: [],
+      isAI: false,
+      totalIronMined: 0,
+      totalFuelMined: 0,
+      totalCrystalMined: 0,
+      totalFrontierEarned: 0,
+      totalFrontierBurned: 0,
+      attacksWon: 0,
+      attacksLost: 0,
+      territoriesCaptured: 0,
+      commander: null,
+      commanders: [],
+      activeCommanderIndex: 0,
+      specialAttacks: [],
+      drones: [],
+      satellites: [],
+      welcomeBonusReceived: false,
+    };
+    this.players.set(id, newPlayer);
+    return newPlayer;
   }
 
   async grantWelcomeBonus(playerId: string): Promise<void> {
@@ -1542,44 +1583,48 @@ export class DbStorage implements IStorage {
   }
   /* ✅ INSERT NEW METHOD HERE */
 
-async getOrCreatePlayerByAddress(address: string): Promise<Player> {
-  await this.initialize();
+  async getOrCreatePlayerByAddress(address: string): Promise<Player> {
+    await this.initialize();
 
-  const normalized = address.trim().toLowerCase();
+    const trimmed = address.trim();
+    const normalized = trimmed.toLowerCase();
 
-  const [existing] = await this.db
-    .select()
-    .from(playersTable)
-    .where(eq(playersTable.address, normalized));
+    // Case-insensitive lookup so uppercase Algorand addresses match existing rows.
+    const [existing] = await this.db
+      .select()
+      .from(playersTable)
+      .where(sql`lower(${playersTable.address}) = ${normalized}`);
 
-  if (existing) {
-    const ownedRows = await this.db
-      .select({ id: parcelsTable.id })
-      .from(parcelsTable)
-      .where(eq(parcelsTable.ownerId, existing.id));
+    if (existing) {
+      const ownedRows = await this.db
+        .select({ id: parcelsTable.id })
+        .from(parcelsTable)
+        .where(eq(parcelsTable.ownerId, existing.id));
 
-    return rowToPlayer(existing, ownedRows.map(r => r.id));
+      return rowToPlayer(existing, ownedRows.map(r => r.id));
+    }
+
+    const id = randomUUID();
+    // Preserve original address case (Algorand addresses are uppercase base32).
+    const displayName = `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
+
+    await this.db.insert(playersTable).values({
+      id,
+      address: trimmed,
+      name: displayName,
+      iron: 200,
+      fuel: 150,
+      crystal: 50,
+      frontier: 0,
+    });
+
+    const [created] = await this.db
+      .select()
+      .from(playersTable)
+      .where(eq(playersTable.id, id));
+
+    return rowToPlayer(created, []);
   }
-
-  const id = randomUUID();
-
-  await this.db.insert(playersTable).values({
-    id,
-    address: normalized,
-    name: `${normalized.slice(0, 6)}...${normalized.slice(-4)}`,
-    iron: 200,
-    fuel: 150,
-    crystal: 50,
-    frontier: 0,
-  });
-
-  const [created] = await this.db
-    .select()
-    .from(playersTable)
-    .where(eq(playersTable.id, id));
-
-  return rowToPlayer(created, []);
-}
 
   // ── IStorage – read ────────────────────────────────────────────────────────
 

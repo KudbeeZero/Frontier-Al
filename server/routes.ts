@@ -177,6 +177,54 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * Wallet-based player lookup / auto-creation.
+   * Called by the client immediately after a wallet connects.
+   * Returns the existing player for that address, or creates a fresh one.
+   * Also grants the 500 FRONTIER welcome bonus on first login.
+   */
+  app.get("/api/game/player-by-address/:address", async (req, res) => {
+    try {
+      const { address } = req.params;
+      if (!address || typeof address !== "string") {
+        return res.status(400).json({ error: "Address is required" });
+      }
+
+      const player = await storage.getOrCreatePlayerByAddress(address);
+
+      let welcomeBonus = false;
+      if (!player.welcomeBonusReceived) {
+        await storage.grantWelcomeBonus(player.id);
+        welcomeBonus = true;
+
+        // Fire-and-forget ASA transfer
+        const asaId = getFrontierAsaId();
+        if (asaId && !address.startsWith("AI_")) {
+          isAddressOptedInToFrontier(address)
+            .then((optedIn) => {
+              if (optedIn) {
+                batchedTransferFrontierASA(address, 500)
+                  .then((txId) =>
+                    console.log(`Welcome bonus: 500 FRONTIER → ${address}, TX: ${txId}`)
+                  )
+                  .catch((err) =>
+                    console.error("Welcome bonus ASA transfer failed:", err)
+                  );
+              }
+            })
+            .catch((err) => console.error("Opt-in check failed:", err));
+        }
+      }
+
+      // Return fresh player data (welcomeBonusReceived is now true)
+      const fresh = await storage.getPlayer(player.id);
+      res.json({ ...fresh, welcomeBonus });
+    } catch (error) {
+      console.error("player-by-address error:", error);
+      res.status(500).json({ error: "Failed to get or create player" });
+    }
+  });
+
   app.get("/api/game/leaderboard", async (req, res) => {
     try {
       const leaderboard = await storage.getLeaderboard();
