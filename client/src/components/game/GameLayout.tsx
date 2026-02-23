@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
@@ -18,6 +18,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Coins, Shield, Globe } from "lucide-react";
@@ -46,8 +47,13 @@ export function GameLayout() {
     treasuryAddress,
   } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
-  const player = useCurrentPlayer();
+  // Find the player that belongs to the currently connected wallet address.
+  // useCurrentPlayer now accepts an address so each wallet sees its own data.
+  const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
+
+  // Track which address we have already initialised so we don't fire twice.
+  const initializedAddressRef = useRef<string | null>(null);
 
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [attackModalOpen, setAttackModalOpen] = useState(false);
@@ -79,27 +85,28 @@ export function GameLayout() {
     if (!seen) setShowOnboarding(true);
   }, []);
 
+  // When a wallet connects (or changes), look up / create the player for that
+  // specific address so each wallet always starts with isolated, fresh data.
   useEffect(() => {
-    if (player && wallet.address && wallet.isConnected) {
-      if (player.address !== wallet.address) {
-        fetch("/api/actions/connect-wallet", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId: player.id, address: wallet.address }),
-        })
-          .then(r => r.json())
-          .then(data => {
-            if (data.welcomeBonus) {
-              toast({
-                title: "Welcome Commander!",
-                description: "You've received 500 FRONTIER tokens as a welcome bonus. Use them to build facilities and grow your empire!",
-              });
-            }
-          })
-          .catch((err) => console.error("Failed to sync wallet address:", err));
-      }
-    }
-  }, [player?.id, wallet.address, wallet.isConnected]);
+    if (!wallet.address || !wallet.isConnected) return;
+    if (initializedAddressRef.current === wallet.address) return;
+
+    initializedAddressRef.current = wallet.address;
+
+    fetch(`/api/game/player-by-address/${encodeURIComponent(wallet.address)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.welcomeBonus) {
+          toast({
+            title: "Welcome Commander!",
+            description: "You've received 500 FRONTIER tokens as a welcome bonus. Use them to build facilities and grow your empire!",
+          });
+        }
+        // Refresh game state so this player's row is visible immediately.
+        queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+      })
+      .catch((err) => console.error("Failed to initialise player for address:", err));
+  }, [wallet.address, wallet.isConnected]);
 
   const handleOnboardingComplete = () => {
     localStorage.setItem("frontier_onboarding_done", "true");

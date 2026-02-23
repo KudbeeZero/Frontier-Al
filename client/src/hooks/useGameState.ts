@@ -21,10 +21,14 @@ export function usePlayer(playerId: string | null) {
   return gameState.players.find((p) => p.id === playerId) || null;
 }
 
-export function useCurrentPlayer() {
+export function useCurrentPlayer(walletAddress?: string | null) {
   const { data: gameState } = useGameState();
   if (!gameState) return null;
-  return gameState.players.find((p) => !p.isAI) || null;
+  if (walletAddress) {
+    const lower = walletAddress.toLowerCase();
+    return gameState.players.find((p) => p.address.toLowerCase() === lower) ?? null;
+  }
+  return gameState.players.find((p) => !p.isAI) ?? null;
 }
 
 export function useMine() {
