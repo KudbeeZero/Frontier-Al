@@ -63,6 +63,10 @@ import { db } from "./db";
 import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable } from "./db-schema";
 import type { DB } from "./db";
 
+const MICRO = 1_000_000;
+function toMicroFRNTR(frntr: number): number { return Math.round(frntr * MICRO); }
+function fromMicroFRNTR(micro: number): number { return Math.floor(micro / MICRO * 100) / 100; }
+
 const AI_NAMES = ["NEXUS-7", "KRONOS", "VANGUARD", "SPECTRE"];
 const AI_BEHAVIORS: Player["aiBehavior"][] = ["expansionist", "defensive", "raider", "economic"];
 const BIOMES: BiomeType[] = ["forest", "desert", "mountain", "plains", "water", "tundra", "volcanic", "swamp"];
@@ -1259,7 +1263,7 @@ function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     iron:                 row.iron,
     fuel:                 row.fuel,
     crystal:              row.crystal,
-    frontier:             row.frontier,
+    frontier:             fromMicroFRNTR(row.frntrBalanceMicro),
     ownedParcels:         ownedParcelIds,
     isAI:                 row.isAi,
     aiBehavior:           (row.aiBehavior ?? undefined) as Player["aiBehavior"],
@@ -1601,7 +1605,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
     }
 
     const claimedPlots = allParcels.filter((p) => p.ownerId !== null).length;
-    const frontierCirculating = allPlayers.reduce((sum, p) => sum + p.frontier, 0);
+    const frontierCirculating = allPlayers.reduce((sum, p) => sum + fromMicroFRNTR(p.frntrBalanceMicro), 0);
 
     return {
       parcels:            allParcels.map(rowToParcel),
@@ -1779,7 +1783,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
       const now = Date.now();
       await tx.update(playersTable)
         .set({
-          frontier:             row.frontier            + WELCOME_BONUS_FRONTIER,
+          frntrBalanceMicro:    row.frntrBalanceMicro    + toMicroFRNTR(WELCOME_BONUS_FRONTIER),
           totalFrontierEarned:  row.totalFrontierEarned + WELCOME_BONUS_FRONTIER,
           welcomeBonusReceived: true,
         })
@@ -1818,11 +1822,13 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
           .where(eq(parcelsTable.id, row.id));
       }
 
-      const rounded = Math.floor(total * 100) / 100;
-      if (rounded > 0) {
+      const microTotal = toMicroFRNTR(total);
+      const rounded = fromMicroFRNTR(microTotal);
+      if (microTotal > 0) {
         await tx.update(playersTable)
           .set({
-            frontier:            playerRow.frontier            + rounded,
+            frntrBalanceMicro:   playerRow.frntrBalanceMicro   + microTotal,
+            frntrClaimedMicro:   playerRow.frntrClaimedMicro   + microTotal,
             totalFrontierEarned: playerRow.totalFrontierEarned + rounded,
           })
           .where(eq(playersTable.id, playerId));
@@ -1846,9 +1852,10 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
     await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
       if (!row) return;
+      const microAmount = toMicroFRNTR(amount);
       await tx.update(playersTable)
         .set({
-          frontier:            row.frontier            - amount,
+          frntrBalanceMicro:   row.frntrBalanceMicro   - microAmount,
           totalFrontierEarned: row.totalFrontierEarned - amount,
         })
         .where(eq(playersTable.id, playerId));
@@ -1932,9 +1939,11 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
           if (!hasPrereq) throw new Error(`Requires ${FACILITY_INFO[info.prerequisite!].name} first`);
         }
         const cost = info.costFrontier[level - 1];
-        if (player.frontier < cost) throw new Error(`Insufficient FRONTIER (need ${cost})`);
+        const microBalance = playerRow.frntrBalanceMicro;
+        const microCost = toMicroFRNTR(cost);
+        if (microBalance < microCost) throw new Error(`Insufficient FRONTIER (need ${cost})`);
         playerUpdates = {
-          frontier:            playerRow.frontier            - cost,
+          frntrBalanceMicro:   microBalance - microCost,
           totalFrontierBurned: playerRow.totalFrontierBurned + cost,
         };
       } else {
@@ -2100,8 +2109,9 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
 
       const info = COMMANDER_INFO[action.tier];
       if (!info) throw new Error("Invalid commander tier");
-      if (row.frontier < info.mintCostFrontier)
-        throw new Error(`Insufficient FRONTIER. Need ${info.mintCostFrontier}, have ${row.frontier.toFixed(2)}`);
+      const microCost = toMicroFRNTR(info.mintCostFrontier);
+      if (row.frntrBalanceMicro < microCost)
+        throw new Error(`Insufficient FRONTIER. Need ${info.mintCostFrontier}, have ${fromMicroFRNTR(row.frntrBalanceMicro).toFixed(2)}`);
 
       const commanders = (row.commanders ?? []) as CommanderAvatar[];
       const bonusRoll  = Math.random() * 0.3;
@@ -2122,7 +2132,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
       const now = Date.now();
       await tx.update(playersTable)
         .set({
-          frontier:             row.frontier            - info.mintCostFrontier,
+          frntrBalanceMicro:    row.frntrBalanceMicro   - microCost,
           totalFrontierBurned:  row.totalFrontierBurned + info.mintCostFrontier,
           commanders:           newCommanders,
           activeCommanderIndex: newActiveIndex,
@@ -2161,8 +2171,9 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
       if (!attackInfo) throw new Error("Invalid attack type");
       if (!attackInfo.requiredTier.includes(player.commander.tier))
         throw new Error(`${attackInfo.name} requires a ${attackInfo.requiredTier.join(" or ")} Commander`);
-      if (player.frontier < attackInfo.costFrontier)
-        throw new Error(`Insufficient FRONTIER. Need ${attackInfo.costFrontier}, have ${player.frontier.toFixed(2)}`);
+      const microCostSA = toMicroFRNTR(attackInfo.costFrontier);
+      if (playerRow.frntrBalanceMicro < microCostSA)
+        throw new Error(`Insufficient FRONTIER. Need ${attackInfo.costFrontier}, have ${fromMicroFRNTR(playerRow.frntrBalanceMicro).toFixed(2)}`);
 
       const existing = player.specialAttacks.find((sa) => sa.type === action.attackType);
       if (existing) {
@@ -2233,7 +2244,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
           : []),
         tx.update(playersTable)
           .set({
-            frontier:            playerRow.frontier            - attackInfo.costFrontier,
+            frntrBalanceMicro:   playerRow.frntrBalanceMicro   - microCostSA,
             totalFrontierBurned: playerRow.totalFrontierBurned + attackInfo.costFrontier,
             commanders:          newCommanders,
             specialAttacks:      newSpecialAttacks,
@@ -2262,8 +2273,9 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
 
       const drones = (row.drones ?? []) as ReconDrone[];
       if (drones.length >= MAX_DRONES) throw new Error(`Maximum ${MAX_DRONES} drones allowed`);
-      if (row.frontier < DRONE_MINT_COST_FRONTIER)
-        throw new Error(`Insufficient FRONTIER. Need ${DRONE_MINT_COST_FRONTIER}, have ${row.frontier.toFixed(2)}`);
+      const microDroneCost = toMicroFRNTR(DRONE_MINT_COST_FRONTIER);
+      if (row.frntrBalanceMicro < microDroneCost)
+        throw new Error(`Insufficient FRONTIER. Need ${DRONE_MINT_COST_FRONTIER}, have ${fromMicroFRNTR(row.frntrBalanceMicro).toFixed(2)}`);
 
       // Pick a random enemy target if none specified
       let targetId = action.targetParcelId ?? null;
@@ -2291,7 +2303,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
       const now = Date.now();
       await tx.update(playersTable)
         .set({
-          frontier:            row.frontier            - DRONE_MINT_COST_FRONTIER,
+          frntrBalanceMicro:   row.frntrBalanceMicro   - microDroneCost,
           totalFrontierBurned: row.totalFrontierBurned + DRONE_MINT_COST_FRONTIER,
           drones:              [...drones, drone],
         })
@@ -2323,8 +2335,9 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
       const activeSatellites = satellites.filter(s => s.status === "active");
       if (activeSatellites.length >= MAX_SATELLITES)
         throw new Error(`Maximum ${MAX_SATELLITES} active satellites allowed`);
-      if (row.frontier < SATELLITE_DEPLOY_COST_FRONTIER)
-        throw new Error(`Insufficient FRONTIER. Need ${SATELLITE_DEPLOY_COST_FRONTIER}, have ${row.frontier.toFixed(2)}`);
+      const microSatCost = toMicroFRNTR(SATELLITE_DEPLOY_COST_FRONTIER);
+      if (row.frntrBalanceMicro < microSatCost)
+        throw new Error(`Insufficient FRONTIER. Need ${SATELLITE_DEPLOY_COST_FRONTIER}, have ${fromMicroFRNTR(row.frntrBalanceMicro).toFixed(2)}`);
 
       const satellite: OrbitalSatellite = {
         id:          randomUUID(),
@@ -2335,7 +2348,7 @@ async getOrCreatePlayerByAddress(address: string): Promise<Player> {
 
       await tx.update(playersTable)
         .set({
-          frontier:            row.frontier            - SATELLITE_DEPLOY_COST_FRONTIER,
+          frntrBalanceMicro:   row.frntrBalanceMicro   - microSatCost,
           totalFrontierBurned: row.totalFrontierBurned + SATELLITE_DEPLOY_COST_FRONTIER,
           satellites:          [...satellites, satellite],
         })
