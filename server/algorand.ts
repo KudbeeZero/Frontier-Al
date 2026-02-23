@@ -1,4 +1,6 @@
 import algosdk from "algosdk";
+import { db } from "./db";
+import { plotNfts } from "./db-schema";
 
 const ALGOD_URL = "https://testnet-api.algonode.cloud";
 const INDEXER_URL = "https://testnet-idx.algonode.cloud";
@@ -360,4 +362,53 @@ export async function initializeBlockchain(): Promise<{ asaId: number | null; ad
     console.error("Blockchain initialization failed:", error);
     return { asaId: null, adminAddress: process.env.ALGORAND_ADMIN_ADDRESS || "", adminAlgo: 0 };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Plot NFT minting (stub — no real Algorand SDK call yet)
+// ---------------------------------------------------------------------------
+
+let _mintCounter = 0;
+
+/**
+ * Mint a plot NFT to the given Algorand address.
+ *
+ * This is a stub implementation: it generates a fake asset ID and writes the
+ * result to the `plot_nfts` table.  Real on-chain minting via the Algorand SDK
+ * will replace the fake-ID generation once the integration is ready.
+ *
+ * @param plotId  - The integer plot identifier (primary key in `plot_nfts`).
+ * @param address - The Algorand wallet address that will own the NFT.
+ * @returns       `{ assetId }` — the (fake) Algorand ASA asset ID.
+ */
+export async function mintPlotNftToAddress(
+  plotId: number,
+  address: string
+): Promise<{ assetId: number }> {
+  // Generate a unique fake asset ID without calling the Algorand SDK.
+  const assetId = Date.now() + (++_mintCounter);
+  const mintedAt = Date.now();
+
+  await db
+    .insert(plotNfts)
+    .values({
+      plotId,
+      assetId,
+      mintedToAddress: address,
+      mintedAt,
+    })
+    .onConflictDoUpdate({
+      target: plotNfts.plotId,
+      set: {
+        assetId,
+        mintedToAddress: address,
+        mintedAt,
+      },
+    });
+
+  console.log(
+    `[mintPlotNftToAddress] plotId=${plotId} address=${address} fakeAssetId=${assetId}`
+  );
+
+  return { assetId };
 }
