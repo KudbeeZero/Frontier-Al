@@ -1,0 +1,32 @@
+                                           Table "public.players"
+         Column         |          Type          | Collation | Nullable |              Default               
+------------------------+------------------------+-----------+----------+------------------------------------
+ id                     | character varying(36)  |           | not null | 
+ address                | character varying(100) |           | not null | 'PLAYER_WALLET'::character varying
+ name                   | character varying(100) |           | not null | 
+ iron                   | real                   |           | not null | 0
+ fuel                   | real                   |           | not null | 0
+ crystal                | real                   |           | not null | 0
+ frontier               | real                   |           | not null | 0
+ is_ai                  | boolean                |           | not null | false
+ ai_behavior            | character varying(20)  |           |          | 
+ total_iron_mined       | real                   |           | not null | 0
+ total_fuel_mined       | real                   |           | not null | 0
+ total_frontier_earned  | real                   |           | not null | 0
+ total_frontier_burned  | real                   |           | not null | 0
+ attacks_won            | integer                |           | not null | 0
+ attacks_lost           | integer                |           | not null | 0
+ territories_captured   | integer                |           | not null | 0
+ commanders             | jsonb                  |           | not null | '[]'::jsonb
+ active_commander_index | integer                |           | not null | 0
+ special_attacks        | jsonb                  |           | not null | '[]'::jsonb
+ drones                 | jsonb                  |           | not null | '[]'::jsonb
+ welcome_bonus_received | boolean                |           | not null | false
+ total_crystal_mined    | real                   |           | not null | 0
+ satellites             | jsonb                  |           | not null | '[]'::jsonb
+ morale_debuff_until    | bigint                 |           | not null | 0
+ attack_cooldown_until  | bigint                 |           | not null | 0
+ consecutive_losses     | integer                |           | not null | 0
+Indexes:
+    "players_pkey" PRIMARY KEY, btree (id)
+
