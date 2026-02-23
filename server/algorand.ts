@@ -149,15 +149,16 @@ export async function transferFrontierASA(
   return txId;
 }
 
-export async function isAddressOptedInToFrontier(address: string): Promise<boolean> {
-  if (!frontierAsaId) return false;
+export async function isAddressOptedInToFrontier(address: string, assetId?: number): Promise<boolean> {
+  const targetAsaId = assetId ?? frontierAsaId;
+  if (!targetAsaId) return false;
 
   try {
     const accountInfo = await algodClient.accountInformation(address).do();
     const assets = (accountInfo as any).assets || (accountInfo as any)["assets"] || [];
     return assets.some((a: any) => {
       const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
-      return Number(id) === frontierAsaId;
+      return Number(id) === targetAsaId;
     });
   } catch (err) {
     console.error("Opt-in check failed for", address, err);

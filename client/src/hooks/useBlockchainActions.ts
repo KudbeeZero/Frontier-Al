@@ -16,6 +16,7 @@ import {
   type BatchedAction,
 } from "@/lib/algorand";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 
 type ActionType =
   | "mine"
@@ -37,10 +38,8 @@ export function useBlockchainActions() {
   const [isPending, setIsPending] = useState(false);
   const [lastTxId, setLastTxId] = useState<string | null>(null);
   const [frontierAsaId, setFrontierAsaId] = useState<number | null>(null);
-  const [isOptedIn, setIsOptedIn] = useState(() => {
-    const cached = localStorage.getItem("frontier_opted_in");
-    return cached === "true";
-  });
+  // tri-state: undefined = checking, true = opted in, false = not opted in
+  const [isOptedIn, setIsOptedIn] = useState<boolean | undefined>(undefined);
   const [treasuryAddress, setTreasuryAddress] = useState<string>("");
 
   useEffect(() => {
@@ -50,8 +49,23 @@ export function useBlockchainActions() {
     });
   }, []);
 
+  // Reset to undefined whenever the connected address changes so the previous
+  // wallet's opt-in state is never shown for a different wallet.
+  useEffect(() => {
+    setIsOptedIn(undefined);
+  }, [address]);
+
+  // Once we have both address and ASA id, read the per-wallet+ASA cache first
+  // (so opted-in users never see the banner flash), then verify on-chain in
+  // the background to keep the cache accurate.
   useEffect(() => {
     if (!address || !frontierAsaId) return;
+
+    const cacheKey = `frontier_optin_${address}_${frontierAsaId}`;
+    if (localStorage.getItem(cacheKey) === "true") {
+      setIsOptedIn(true);
+    }
+
     algodClient
       .accountInformation(address)
       .do()
@@ -59,25 +73,15 @@ export function useBlockchainActions() {
         const result = hasOptedIn(accountInfo as Record<string, unknown>, frontierAsaId);
         setIsOptedIn(result);
         if (result) {
-          localStorage.setItem("frontier_opted_in", "true");
-          localStorage.setItem("frontier_opted_in_address", address);
+          localStorage.setItem(cacheKey, "true");
         } else {
-          localStorage.removeItem("frontier_opted_in");
+          localStorage.removeItem(cacheKey);
         }
       })
       .catch(() => {
         // Keep existing cached state if algod is temporarily unreachable
       });
   }, [address, frontierAsaId]);
-
-  useEffect(() => {
-    const cachedAddress = localStorage.getItem("frontier_opted_in_address");
-    if (address && cachedAddress && cachedAddress !== address) {
-      localStorage.removeItem("frontier_opted_in");
-      localStorage.removeItem("frontier_opted_in_address");
-      setIsOptedIn(false);
-    }
-  }, [address]);
 
   useEffect(() => {
     if (!address || !isReady) return;
@@ -337,7 +341,7 @@ export function useBlockchainActions() {
         toast({ title: "Not Ready", description: "FRONTIER token not created yet.", variant: "destructive" });
         return null;
       }
-      if (isOptedIn) {
+      if (isOptedIn === true) {
         toast({ title: "Already Opted In", description: "You're already opted into FRONTIER." });
         return null;
       }
@@ -346,14 +350,13 @@ export function useBlockchainActions() {
       try {
         const txId = await optInToASA(address, frontierAsaId);
         setLastTxId(txId);
-        // Verify opt-in on-chain before updating UI — no page reload required
-        const updatedInfo = await algodClient.accountInformation(address).do();
-        const confirmed = hasOptedIn(updatedInfo as Record<string, unknown>, frontierAsaId);
-        setIsOptedIn(confirmed);
-        if (confirmed) {
-          localStorage.setItem("frontier_opted_in", "true");
-          localStorage.setItem("frontier_opted_in_address", address);
-        }
+        // waitForConfirmation inside optInToASA already confirmed the tx —
+        // optimistically mark as opted-in immediately so the banner disappears.
+        const cacheKey = `frontier_optin_${address}_${frontierAsaId}`;
+        setIsOptedIn(true);
+        localStorage.setItem(cacheKey, "true");
+        // Refetch game state so the HUD and any balance displays update.
+        queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
         toast({ title: "Opt-In Confirmed", description: `Opted into FRONTIER ASA. TX: ${txId.slice(0, 8)}...` });
         return txId;
       } catch (error: unknown) {

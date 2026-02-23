@@ -237,7 +237,7 @@ export function GameLayout() {
 
   const handleClaimFrontier = async () => {
     if (!player || !gameState) return;
-    if (!isOptedInToFrontier) {
+    if (isOptedInToFrontier === false) {
       toast({ title: "Opt-In Required", description: "Opt into FRONTIER ASA before claiming tokens.", variant: "destructive" });
       return;
     }
@@ -468,7 +468,7 @@ export function GameLayout() {
         <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
       </div>
 
-      {isConnected && frontierAsaId && !isOptedInToFrontier && (
+      {isConnected && frontierAsaId && isOptedInToFrontier === false && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">
           <Button
             onClick={signOptInToFrontier}
@@ -482,7 +482,7 @@ export function GameLayout() {
       )}
 
       {player && (
-        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && !isOptedInToFrontier ? "top-28" : "top-16")}>
+        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
           <ResourceHUD
             iron={player.iron}
             fuel={player.fuel}
