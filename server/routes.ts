@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
 import { z } from "zod";
-import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA } from "./algorand";
+import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA, mintPlotNftToAddress } from "./algorand";
 import { db } from "./db";
-import { parcels as parcelsTable } from "./db-schema";
+import { parcels as parcelsTable, plotNfts as plotNftsTable } from "./db-schema";
 import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
@@ -129,10 +129,14 @@ export async function registerRoutes(
     }
 
     try {
-      // Derive base URL from env var first, then fall back to the request origin.
+      // Derive base URL: env var (production) → request origin (dev/fallback).
+      // Never use localhost in production image/external_url fields.
+      const reqHost = req.get("host") || "";
       const baseUrl =
         process.env.PUBLIC_BASE_URL ||
-        `${req.protocol}://${req.get("host")}`;
+        (reqHost.includes("localhost") || reqHost.includes("127.0.0.1")
+          ? "https://frontier-al--kudbeex.replit.app"
+          : `${req.protocol}://${reqHost}`);
 
       // Select only the columns needed for immutable ARC-3 metadata.
       const [parcel] = await db
@@ -155,7 +159,7 @@ export async function registerRoutes(
       res.json({
         name:         `Frontier Plot #${parcel.plotId}`,
         description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
-        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.svg`,
         external_url: `${baseUrl}/plot/${parcel.plotId}`,
         properties: {
           plotId:            parcel.plotId,
@@ -169,6 +173,42 @@ export async function registerRoutes(
     } catch (error) {
       console.error("NFT metadata error:", error);
       res.status(500).json({ error: "Failed to fetch NFT metadata" });
+    }
+  });
+
+  // ── Plot NFT on-chain record lookup ────────────────────────────────────────
+  // Returns the plot_nfts row for a given plotId.
+  // Useful for checking if a plot has been minted and retrieving its assetId.
+  app.get("/api/nft/plot/:plotId", async (req, res) => {
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId) || plotId < 1) {
+      return res.status(400).json({ error: "plotId must be a positive integer" });
+    }
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+    try {
+      const [row] = await db
+        .select()
+        .from(plotNftsTable)
+        .where(eq(plotNftsTable.plotId, plotId));
+
+      if (!row) {
+        return res.status(404).json({ error: "No NFT record for this plot" });
+      }
+
+      res.json({
+        plotId: row.plotId,
+        assetId: row.assetId ? Number(row.assetId) : null,
+        mintedToAddress: row.mintedToAddress,
+        mintedAt: row.mintedAt ? Number(row.mintedAt) : null,
+        explorerUrl: row.assetId
+          ? `https://testnet.algoexplorer.io/asset/${row.assetId}`
+          : null,
+      });
+    } catch (error) {
+      console.error("NFT plot lookup error:", error);
+      res.status(500).json({ error: "Failed to fetch NFT record" });
     }
   });
 
@@ -418,7 +458,49 @@ export async function registerRoutes(
     try {
       const action = purchaseActionSchema.parse(req.body);
       const parcel = await storage.purchaseLand(action);
-      res.json({ success: true, parcel });
+
+      // Mint a Plot NFT (Algorand ASA) for human players only.
+      // AI purchases do not receive NFTs. Fire-and-forget so the HTTP
+      // response is immediate; minting happens in the background.
+      let nftAssetId: number | null = null;
+      const player = await storage.getPlayer(action.playerId);
+      const buyerAddress = player?.address;
+      const isHumanBuyer =
+        buyerAddress &&
+        !buyerAddress.startsWith("AI_") &&
+        buyerAddress !== "PLAYER_WALLET" &&
+        buyerAddress.length === 58;
+
+      if (isHumanBuyer && db) {
+        // Check if already minted (idempotency guard)
+        const [existingNft] = await db
+          .select()
+          .from(plotNftsTable)
+          .where(eq(plotNftsTable.plotId, parcel.plotId));
+
+        if (existingNft?.assetId) {
+          nftAssetId = Number(existingNft.assetId);
+          console.log(
+            `[purchase] plotId=${parcel.plotId} NFT already exists, assetId=${nftAssetId}`
+          );
+        } else {
+          // Fire-and-forget: mint in background, don't block response
+          mintPlotNftToAddress(parcel.plotId, buyerAddress)
+            .then(({ assetId }) => {
+              console.log(
+                `[purchase] plotId=${parcel.plotId} NFT minted, assetId=${assetId}`
+              );
+            })
+            .catch((err) => {
+              console.error(
+                `[purchase] NFT minting failed for plotId=${parcel.plotId}:`,
+                err instanceof Error ? err.message : err
+              );
+            });
+        }
+      }
+
+      res.json({ success: true, parcel, nftAssetId });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Purchase failed" });

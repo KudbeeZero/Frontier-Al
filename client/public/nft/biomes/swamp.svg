@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2a3a18"/>
+      <stop offset="100%" stop-color="#151e0a"/>
+    </radialGradient>
+    <radialGradient id="water" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2a4028"/>
+      <stop offset="100%" stop-color="#182818"/>
+    </radialGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)"/>
+  <!-- Murky water -->
+  <ellipse cx="200" cy="310" rx="200" ry="60" fill="url(#water)"/>
+  <!-- Water ripples -->
+  <ellipse cx="140" cy="305" rx="50" ry="10" fill="none" stroke="#3a5530" stroke-width="2" opacity="0.6"/>
+  <ellipse cx="280" cy="320" rx="45" ry="8" fill="none" stroke="#3a5530" stroke-width="2" opacity="0.5"/>
+  <!-- Mangrove/dead trees -->
+  <rect x="90" y="160" width="12" height="140" fill="#3a2810"/>
+  <rect x="75" y="200" width="45" height="8" fill="#3a2810"/>
+  <rect x="70" y="190" width="12" height="60" fill="#3a2810"/>
+  <rect x="100" y="175" width="35" height="8" fill="#3a2810"/>
+  <rect x="295" y="170" width="12" height="130" fill="#3a2810"/>
+  <rect x="280" y="210" width="40" height="8" fill="#3a2810"/>
+  <rect x="320" y="195" width="12" height="55" fill="#3a2810"/>
+  <!-- Moss/vegetation -->
+  <ellipse cx="102" cy="162" rx="22" ry="12" fill="#3a5520" opacity="0.9"/>
+  <ellipse cx="302" cy="172" rx="20" ry="11" fill="#3a5520" opacity="0.9"/>
+  <!-- Fog wisps -->
+  <ellipse cx="200" cy="280" rx="80" ry="15" fill="#a0c080" opacity="0.12"/>
+  <ellipse cx="120" cy="270" rx="55" ry="12" fill="#90b070" opacity="0.10"/>
+  <!-- Lily pads -->
+  <ellipse cx="160" cy="320" rx="20" ry="8" fill="#3a6025" opacity="0.8"/>
+  <ellipse cx="250" cy="330" rx="18" ry="7" fill="#3a6025" opacity="0.8"/>
+  <!-- Label -->
+  <text x="200" y="385" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#80c060" text-anchor="middle">SWAMP</text>
+  <!-- Border -->
+  <rect x="2" y="2" width="396" height="396" fill="none" stroke="#3a5520" stroke-width="4"/>
+</svg>
