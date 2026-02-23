@@ -3,6 +3,7 @@ import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
 import { AttackModal } from "./AttackModal";
+import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
 import { LandSheet } from "./LandSheet";
 import { InventoryPanel } from "./InventoryPanel";
@@ -72,6 +73,7 @@ export function GameLayout() {
 
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [attackModalOpen, setAttackModalOpen] = useState(false);
+  const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showGamerTag, setShowGamerTag] = useState(false);
@@ -170,16 +172,18 @@ export function GameLayout() {
 
   const handleAttackClick = () => setAttackModalOpen(true);
 
-  const handleAttackConfirm = async (troops: number, iron: number, fuel: number) => {
+  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, commanderId?: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
     // Log to chain (batched, fire-and-forget)
     queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
     attackMutation.mutate(
-      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel } },
+      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, commanderId },
       {
-        onSuccess: () => {
+        onSuccess: (data: any) => {
+          const battleId = data?.id as string | undefined;
           toast({ title: "Attack Deployed", description: "Battle will resolve in 10 minutes." });
           setAttackModalOpen(false);
+          if (battleId) setWatchingBattleId(battleId);
         },
         onError: (error) => toast({ title: "Attack Failed", description: error.message, variant: "destructive" }),
       }
@@ -525,6 +529,7 @@ export function GameLayout() {
             battles={gameState.battles}
             events={gameState.events}
             players={gameState.players}
+            onWatchBattle={setWatchingBattleId}
             className="h-full border-0 rounded-none"
           />
         ) : null}
@@ -548,6 +553,7 @@ export function GameLayout() {
               battles={gameState.battles}
               events={gameState.events}
               players={gameState.players}
+              onWatchBattle={setWatchingBattleId}
             />
           )}
           {activeTab === "commander" && gameState && (
@@ -602,6 +608,13 @@ export function GameLayout() {
         attacker={player}
         onAttack={handleAttackConfirm}
         isAttacking={attackMutation.isPending}
+      />
+
+      <BattleWatchModal
+        open={!!watchingBattleId}
+        onOpenChange={(o) => { if (!o) setWatchingBattleId(null); }}
+        battle={watchingBattleId ? (gameState?.battles.find((b) => b.id === watchingBattleId) ?? null) : null}
+        players={gameState?.players ?? []}
       />
     </div>
   );

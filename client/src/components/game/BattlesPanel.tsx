@@ -1,5 +1,6 @@
-import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -9,10 +10,19 @@ interface BattlesPanelProps {
   battles: Battle[];
   events: GameEvent[];
   players: Player[];
+  onWatchBattle?: (battleId: string) => void;
   className?: string;
 }
 
-function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) {
+function BattleCard({
+  battle,
+  players,
+  onWatch,
+}: {
+  battle: Battle;
+  players: Player[];
+  onWatch?: (id: string) => void;
+}) {
   const attacker = players.find((p) => p.id === battle.attackerId);
   const defender = players.find((p) => p.id === battle.defenderId);
   const now = Date.now();
@@ -37,14 +47,22 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Swords className={cn(
-            "w-4 h-4",
-            battle.status === "pending" ? "text-destructive animate-pulse" : "text-muted-foreground"
-          )} />
+          <Swords
+            className={cn(
+              "w-4 h-4",
+              battle.status === "pending" ? "text-destructive animate-pulse" : "text-muted-foreground"
+            )}
+          />
           <span className="font-display text-xs uppercase tracking-wide">#{battle.id.slice(0, 6)}</span>
         </div>
         <Badge
-          variant={battle.status === "pending" ? "destructive" : battle.outcome === "attacker_wins" ? "default" : "secondary"}
+          variant={
+            battle.status === "pending"
+              ? "destructive"
+              : battle.outcome === "attacker_wins"
+              ? "default"
+              : "secondary"
+          }
           className="text-[10px]"
         >
           {battle.status === "pending" ? "LIVE" : battle.outcome === "attacker_wins" ? "WON" : "LOST"}
@@ -66,7 +84,9 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
       {battle.status === "pending" && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> Resolves in</span>
+            <span className="flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5" /> Resolves in
+            </span>
             <span className="font-mono">{formatTime(remaining)}</span>
           </div>
           <Progress value={progress} className="h-1" />
@@ -74,9 +94,25 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
       )}
 
       <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>ATK <span className="font-mono text-foreground">{Math.round(battle.attackerPower)}</span></span>
-        <span>DEF <span className="font-mono text-foreground">{Math.round(battle.defenderPower)}</span></span>
+        <span>
+          ATK <span className="font-mono text-foreground">{Math.round(battle.attackerPower)}</span>
+        </span>
+        <span>
+          DEF <span className="font-mono text-foreground">{Math.round(battle.defenderPower)}</span>
+        </span>
       </div>
+
+      {onWatch && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-7 text-[10px] font-display uppercase tracking-wide gap-1.5"
+          onClick={() => onWatch(battle.id)}
+        >
+          <Eye className="w-3 h-3" />
+          Watch Battle
+        </Button>
+      )}
     </div>
   );
 }
@@ -84,14 +120,22 @@ function BattleCard({ battle, players }: { battle: Battle; players: Player[] }) 
 function EventItem({ event }: { event: GameEvent }) {
   const icon = (() => {
     switch (event.type) {
-      case "mine": return <div className="w-2 h-2 rounded-full bg-iron" />;
-      case "upgrade": return <div className="w-2 h-2 rounded-full bg-fuel" />;
-      case "build": return <div className="w-2 h-2 rounded-full bg-primary" />;
-      case "purchase": return <div className="w-2 h-2 rounded-full bg-primary" />;
-      case "attack": return <div className="w-2 h-2 rounded-full bg-destructive" />;
-      case "battle_resolved": return <CheckCircle2 className="w-3 h-3 text-primary" />;
-      case "ai_action": return <Bot className="w-3 h-3 text-muted-foreground" />;
-      default: return <div className="w-2 h-2 rounded-full bg-muted" />;
+      case "mine":
+        return <div className="w-2 h-2 rounded-full bg-iron" />;
+      case "upgrade":
+        return <div className="w-2 h-2 rounded-full bg-fuel" />;
+      case "build":
+        return <div className="w-2 h-2 rounded-full bg-primary" />;
+      case "purchase":
+        return <div className="w-2 h-2 rounded-full bg-primary" />;
+      case "attack":
+        return <div className="w-2 h-2 rounded-full bg-destructive" />;
+      case "battle_resolved":
+        return <CheckCircle2 className="w-3 h-3 text-primary" />;
+      case "ai_action":
+        return <Bot className="w-3 h-3 text-muted-foreground" />;
+      default:
+        return <div className="w-2 h-2 rounded-full bg-muted" />;
     }
   })();
 
@@ -101,7 +145,10 @@ function EventItem({ event }: { event: GameEvent }) {
   };
 
   return (
-    <div className="flex items-start gap-2.5 py-1.5 border-b border-border/20 last:border-0" data-testid={`event-${event.id}`}>
+    <div
+      className="flex items-start gap-2.5 py-1.5 border-b border-border/20 last:border-0"
+      data-testid={`event-${event.id}`}
+    >
       <div className="mt-1.5 shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-foreground leading-tight">{event.description}</p>
@@ -111,10 +158,12 @@ function EventItem({ event }: { event: GameEvent }) {
   );
 }
 
-export function BattlesPanel({ battles, events, players, className }: BattlesPanelProps) {
+export function BattlesPanel({ battles, events, players, onWatchBattle, className }: BattlesPanelProps) {
   const activeBattles = battles.filter((b) => b.status === "pending");
   const recentBattles = battles.filter((b) => b.status === "resolved").slice(0, 10);
-  const battleEvents = events.filter(e => ["attack", "battle_resolved"].includes(e.type)).slice(0, 20);
+  const battleEvents = events
+    .filter((e) => ["attack", "battle_resolved"].includes(e.type))
+    .slice(0, 20);
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="battles-panel">
@@ -135,21 +184,31 @@ export function BattlesPanel({ battles, events, players, className }: BattlesPan
               <h3 className="text-[10px] font-display uppercase tracking-wide text-destructive flex items-center gap-1.5">
                 <AlertTriangle className="w-3 h-3" /> Active Battles
               </h3>
-              {activeBattles.map((b) => <BattleCard key={b.id} battle={b} players={players} />)}
+              {activeBattles.map((b) => (
+                <BattleCard key={b.id} battle={b} players={players} onWatch={onWatchBattle} />
+              ))}
             </div>
           )}
 
           {recentBattles.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Recent Battles</h3>
-              {recentBattles.map((b) => <BattleCard key={b.id} battle={b} players={players} />)}
+              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">
+                Recent Battles
+              </h3>
+              {recentBattles.map((b) => (
+                <BattleCard key={b.id} battle={b} players={players} onWatch={onWatchBattle} />
+              ))}
             </div>
           )}
 
           {battleEvents.length > 0 && (
             <div className="space-y-1">
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Battle Log</h3>
-              {battleEvents.map((e) => <EventItem key={e.id} event={e} />)}
+              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">
+                Battle Log
+              </h3>
+              {battleEvents.map((e) => (
+                <EventItem key={e.id} event={e} />
+              ))}
             </div>
           )}
 

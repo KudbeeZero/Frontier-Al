@@ -180,6 +180,8 @@ export interface Battle {
   status: "pending" | "resolved";
   outcome?: "attacker_wins" | "defender_wins";
   randFactor?: number;
+  /** ID of the commander deployed in this attack */
+  commanderId?: string;
 }
 
 export interface GameEvent {
@@ -239,6 +241,7 @@ export const attackActionSchema = z.object({
     iron: z.number().min(0),
     fuel: z.number().min(0),
   }),
+  commanderId: z.string().optional(),
 });
 
 export const buildActionSchema = z.object({
@@ -297,6 +300,8 @@ export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = {
 
 export type CommanderTier = "sentinel" | "phantom" | "reaper";
 
+export const COMMANDER_LOCK_MS = 12 * 60 * 60 * 1000; // 12 hours per deployment
+
 export interface CommanderAvatar {
   id: string;
   tier: CommanderTier;
@@ -306,6 +311,8 @@ export interface CommanderAvatar {
   specialAbility: string;
   mintedAt: number;
   totalKills: number;
+  /** Timestamp (ms) until which this commander is locked after being deployed in an attack */
+  lockedUntil?: number;
 }
 
 export const COMMANDER_INFO: Record<CommanderTier, {

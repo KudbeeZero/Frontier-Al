@@ -55,6 +55,7 @@ import {
   ATTACK_COOLDOWN_PER_LOSS_MS,
   PILLAGE_RATE,
   CASCADE_DEFENSE_PENALTY,
+  COMMANDER_LOCK_MS,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
@@ -744,9 +745,24 @@ export class MemStorage implements IStorage {
     attacker.iron -= totalIron;
     attacker.fuel -= totalFuel;
 
-    const rawAttackerPower = action.troopsCommitted * 10 + totalIron * 0.5 + totalFuel * 0.8;
-    // Apply morale debuff: reduces attack power when attacker has recently lost territory
+    // Resolve commander: validate availability and apply attack bonus
     const now = Date.now();
+    let commanderBonus = 0;
+    let commanderId: string | undefined;
+    if (action.commanderId) {
+      const cmdIdx = attacker.commanders.findIndex((c) => c.id === action.commanderId);
+      if (cmdIdx === -1) throw new Error("Commander not found");
+      const cmd = attacker.commanders[cmdIdx];
+      if (cmd.lockedUntil && now < cmd.lockedUntil) throw new Error("Commander is currently deployed and unavailable");
+      commanderBonus = cmd.attackBonus;
+      commanderId = cmd.id;
+      // Lock commander for 12 hours
+      attacker.commanders[cmdIdx] = { ...cmd, lockedUntil: now + COMMANDER_LOCK_MS };
+      cmd.totalKills; // no-op, just referencing for type safety
+    }
+
+    const rawAttackerPower = action.troopsCommitted * 10 + totalIron * 0.5 + totalFuel * 0.8 + commanderBonus;
+    // Apply morale debuff: reduces attack power when attacker has recently lost territory
     const moraleActive = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
     const attackerPower = moraleActive
       ? rawAttackerPower * (1 - MORALE_ATTACK_PENALTY)
@@ -772,6 +788,7 @@ export class MemStorage implements IStorage {
       startTs: now,
       resolveTs: now + BATTLE_DURATION_MS,
       status: "pending",
+      commanderId,
     };
 
     this.battles.set(battleId, battle);
@@ -1363,6 +1380,7 @@ function rowToBattle(row: BattleRow): Battle {
     status:           row.status as "pending" | "resolved",
     outcome:          (row.outcome ?? undefined) as Battle["outcome"],
     randFactor:       row.randFactor ?? undefined,
+    commanderId:      (row as any).commanderId ?? undefined,
   };
 }
 
@@ -2142,8 +2160,23 @@ export class DbStorage implements IStorage {
       const { iron, fuel } = action.resourcesBurned;
       if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
 
-      const now            = Date.now();
-      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8;
+      const now = Date.now();
+
+      // Resolve commander: validate availability and apply attack bonus
+      let commanderBonus = 0;
+      let commanderId: string | undefined;
+      const commanders = (attackerRow.commanders ?? []) as CommanderAvatar[];
+      if (action.commanderId) {
+        const cmdIdx = commanders.findIndex((c) => c.id === action.commanderId);
+        if (cmdIdx === -1) throw new Error("Commander not found");
+        const cmd = commanders[cmdIdx];
+        if (cmd.lockedUntil && now < cmd.lockedUntil) throw new Error("Commander is currently deployed and unavailable");
+        commanderBonus = cmd.attackBonus;
+        commanderId = cmd.id;
+        commanders[cmdIdx] = { ...cmd, lockedUntil: now + COMMANDER_LOCK_MS };
+      }
+
+      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + commanderBonus;
       // Apply morale debuff: attacker power is reduced when they recently lost territory
       const moraleActive   = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
       const attackerPower  = moraleActive
@@ -2170,14 +2203,16 @@ export class DbStorage implements IStorage {
         startTs:          now,
         resolveTs:        now + BATTLE_DURATION_MS,
         status:           "pending" as const,
+        commanderId:      commanderId ?? null,
       };
+
+      const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel };
+      if (commanderId) playerUpdates.commanders = commanders;
 
       await Promise.all([
         tx.insert(battlesTable).values(battleValues),
         tx.update(parcelsTable).set({ activeBattleId: battleId }).where(eq(parcelsTable.id, target.id)),
-        tx.update(playersTable)
-          .set({ iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel })
-          .where(eq(playersTable.id, attacker.id)),
+        tx.update(playersTable).set(playerUpdates).where(eq(playersTable.id, attacker.id)),
       ]);
 
       await this.addEvent({
@@ -2190,7 +2225,7 @@ export class DbStorage implements IStorage {
       }, tx);
       await this.bumpLastTs(now, tx);
 
-      return rowToBattle({ ...battleValues, outcome: undefined, randFactor: undefined } as BattleRow);
+      return rowToBattle({ ...battleValues, outcome: undefined, randFactor: undefined, commanderId: commanderId ?? null } as BattleRow);
     });
   }
 
