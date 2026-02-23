@@ -412,18 +412,6 @@ export const DRONE_MINT_COST_FRONTIER = 20;
 export const DRONE_SCOUT_DURATION_MS = 15 * 60 * 1000;
 export const MAX_DRONES = 5;
 
-// ── Battle-loss penalty constants ────────────────────────────────────────────
-/** How long (ms) a morale debuff lasts after losing territory (scales with consecutive losses). */
-export const MORALE_DEBUFF_BASE_MS = 5 * 60 * 1000; // 5 minutes base
-/** Attack power multiplier reduction while morale-debuffed (0.25 = 25% weaker). */
-export const MORALE_ATTACK_PENALTY = 0.25;
-/** Base attack cooldown (ms) per consecutive loss. Stacks additively. */
-export const ATTACK_COOLDOWN_PER_LOSS_MS = 2 * 60 * 1000; // 2 minutes per loss
-/** Fraction of stored resources stolen by the attacker on a successful conquest. */
-export const PILLAGE_RATE = 0.3;
-/** Defense-level reduction applied to parcels adjacent to a freshly-captured territory. */
-export const CASCADE_DEFENSE_PENALTY = 1;
-
 export interface OrbitalSatellite {
   id: string;
   deployedAt: number;

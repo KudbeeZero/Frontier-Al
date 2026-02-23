@@ -111,8 +111,6 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueMineAction(selectedParcel.plotId);
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -178,10 +176,8 @@ export function GameLayout() {
   const handlePurchase = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
     if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
-      const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
-      // "cancelled" = user explicitly rejected in wallet — abort entirely
-      if (result === "cancelled") return;
-      // null = blockchain/network error — toast already shown, still proceed in-game
+      const txId = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
+      if (!txId) return;
     }
     purchaseMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },

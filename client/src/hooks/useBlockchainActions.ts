@@ -240,7 +240,7 @@ export function useBlockchainActions() {
   );
 
   const signPurchaseAction = useCallback(
-    async (plotId: number, algoAmount: number): Promise<string | null | "cancelled"> => {
+    async (plotId: number, algoAmount: number): Promise<string | null> => {
       if (!isConnected || !address) {
         toast({
           title: "Wallet Not Connected",
@@ -259,8 +259,7 @@ export function useBlockchainActions() {
           targetAddress = fresh.adminAddress || "";
         }
         if (!targetAddress) {
-          // Blockchain not ready — return null (non-blocking: caller may still do in-game purchase)
-          toast({ title: "On-Chain Payment Skipped", description: "Blockchain not initialized yet — land claimed in-game only.", variant: "default" });
+          toast({ title: "Not Ready", description: "Blockchain not initialized yet. Try again.", variant: "destructive" });
           setIsPending(false);
           return null;
         }
@@ -280,10 +279,9 @@ export function useBlockchainActions() {
         const err = error as { message?: string };
         if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
           toast({ title: "Transaction Cancelled", description: "Purchase cancelled." });
-          return "cancelled";
+        } else {
+          toast({ title: "Purchase Failed", description: err?.message || "Failed", variant: "destructive" });
         }
-        // Blockchain / network error — non-blocking, in-game purchase will still proceed
-        toast({ title: "On-Chain Payment Failed", description: `${err?.message || "Network error"} — land claimed in-game only.`, variant: "default" });
         return null;
       } finally {
         setIsPending(false);
