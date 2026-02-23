@@ -103,6 +103,22 @@ export function FlatMap({
   const shootingStarsRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; length: number }[]>([]);
   const nextShootingStarRef = useRef(Math.random() * 200 + 100);
 
+  const satelliteImgRef = useRef<HTMLImageElement | null>(null);
+  const satelliteImgLoaded = useRef(false);
+
+  interface OrbitalSat {
+    angle: number;
+    speed: number;
+    inclination: number;
+    inclinationPhase: number;
+    orbitRadius: number;
+    size: number;
+    trailPositions: { x: number; y: number; alpha: number }[];
+    scanAngle: number;
+  }
+
+  const orbitalSatsRef = useRef<OrbitalSat[]>([]);
+
   if (starsRef.current.length === 0) {
     for (let i = 0; i < 120; i++) {
       starsRef.current.push({
@@ -115,12 +131,26 @@ export function FlatMap({
     }
   }
 
+  if (orbitalSatsRef.current.length === 0) {
+    orbitalSatsRef.current = [
+      { angle: 0, speed: 0.006, inclination: 0.35, inclinationPhase: 0, orbitRadius: 1.22, size: 28, trailPositions: [], scanAngle: 0 },
+      { angle: Math.PI * 0.7, speed: 0.004, inclination: 0.5, inclinationPhase: Math.PI / 3, orbitRadius: 1.30, size: 22, trailPositions: [], scanAngle: 0 },
+      { angle: Math.PI * 1.4, speed: 0.005, inclination: 0.2, inclinationPhase: Math.PI * 0.8, orbitRadius: 1.18, size: 25, trailPositions: [], scanAngle: 0 },
+    ];
+  }
+
   useEffect(() => {
     const img = new Image();
     img.src = "/images/map-background.jpg";
     img.onload = () => {
       mapImageRef.current = img;
       mapImageLoaded.current = true;
+    };
+    const satImg = new Image();
+    satImg.src = "/images/satellite.png";
+    satImg.onload = () => {
+      satelliteImgRef.current = satImg;
+      satelliteImgLoaded.current = true;
     };
   }, []);
 
@@ -466,6 +496,81 @@ export function FlatMap({
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.stroke();
+
+      // ── Orbital satellites ─────────────────────────────────────────────────
+      const sats = orbitalSatsRef.current;
+      for (const sat of sats) {
+        sat.angle += sat.speed;
+        sat.scanAngle += 0.03;
+
+        const orbitR = R * sat.orbitRadius;
+        const tiltY = Math.sin(sat.angle + sat.inclinationPhase) * sat.inclination;
+        const sx = cx + Math.cos(sat.angle) * orbitR;
+        const sy = cy + Math.sin(sat.angle) * orbitR * 0.35 + tiltY * orbitR * 0.4;
+
+        const isBehind = Math.sin(sat.angle) > 0.15 && Math.abs(Math.cos(sat.angle)) < 0.85;
+        const depthAlpha = isBehind ? 0.25 : 0.95;
+
+        sat.trailPositions.unshift({ x: sx, y: sy, alpha: depthAlpha });
+        if (sat.trailPositions.length > 18) sat.trailPositions.pop();
+
+        if (sat.trailPositions.length > 1) {
+          for (let ti = 1; ti < sat.trailPositions.length; ti++) {
+            const t0 = sat.trailPositions[ti - 1];
+            const t1 = sat.trailPositions[ti];
+            const fade = 1 - ti / sat.trailPositions.length;
+            ctx.strokeStyle = `rgba(0, 180, 255, ${fade * 0.35 * Math.min(t0.alpha, t1.alpha)})`;
+            ctx.lineWidth = 2 * fade;
+            ctx.beginPath();
+            ctx.moveTo(t0.x, t0.y);
+            ctx.lineTo(t1.x, t1.y);
+            ctx.stroke();
+          }
+        }
+
+        if (!isBehind) {
+          const scanLen = sat.size * 3;
+          const scanDir = sat.scanAngle;
+          const scanEndX = sx + Math.cos(scanDir) * scanLen;
+          const scanEndY = sy + Math.sin(scanDir) * scanLen;
+          const scanGrad = ctx.createLinearGradient(sx, sy, scanEndX, scanEndY);
+          scanGrad.addColorStop(0, "rgba(0, 255, 200, 0.25)");
+          scanGrad.addColorStop(1, "rgba(0, 255, 200, 0)");
+          ctx.strokeStyle = scanGrad;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(scanEndX, scanEndY);
+          ctx.stroke();
+
+          ctx.fillStyle = `rgba(0, 200, 255, ${0.15 + Math.sin(pulseRef.current * 4) * 0.1})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, sat.size * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (satelliteImgLoaded.current && satelliteImgRef.current) {
+          ctx.globalAlpha = depthAlpha;
+          const drawSize = isBehind ? sat.size * 0.6 : sat.size;
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(sat.angle + Math.PI * 0.25);
+          ctx.drawImage(satelliteImgRef.current, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+          ctx.restore();
+          ctx.globalAlpha = 1.0;
+        } else {
+          ctx.fillStyle = `rgba(180, 200, 220, ${depthAlpha})`;
+          ctx.fillRect(sx - 3, sy - 1, 6, 2);
+          ctx.fillRect(sx - 1, sy - 4, 2, 8);
+        }
+
+        if (!isBehind) {
+          ctx.fillStyle = `rgba(255, 80, 80, ${0.6 + Math.sin(pulseRef.current * 6) * 0.4})`;
+          ctx.beginPath();
+          ctx.arc(sx + sat.size * 0.2, sy - sat.size * 0.2, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       animFrameRef.current = requestAnimationFrame(render);
     };
