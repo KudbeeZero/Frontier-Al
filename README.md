@@ -164,6 +164,51 @@ Server binds to port 5000. The frontend and backend are served from the same por
 
 ---
 
+---
+
+## Plot NFTs — Verification Commands
+
+Each purchased plot is minted as an Algorand ASA (total=1, decimals=0) on TestNet.
+
+### Check NFT metadata (ARC-3 JSON)
+```bash
+curl https://frontier-al--kudbeex.replit.app/nft/metadata/1
+```
+Returns JSON with `name`, `description`, `image` (biome SVG), `external_url`, and `properties`.
+
+### Query the on-chain NFT record for a plot
+```bash
+curl https://frontier-al--kudbeex.replit.app/api/nft/plot/1
+```
+Returns `{ plotId, assetId, mintedToAddress, mintedAt, explorerUrl }`.
+
+### Query plot_nfts table directly (requires DB access)
+```sql
+SELECT plot_id, asset_id, minted_to_address, minted_at
+FROM plot_nfts
+WHERE plot_id = 1;
+```
+
+### View the asset in Algorand TestNet explorer
+Once you have the `assetId` from the API:
+```
+https://testnet.algoexplorer.io/asset/<assetId>
+```
+
+### Check the asset in a wallet
+1. Open Pera Wallet or LUTE Wallet connected to **Algorand TestNet**
+2. Opt in to the asset using the `assetId` returned by `/api/nft/plot/:plotId`
+3. The Plot NFT will appear in your wallet assets list
+
+### Note on opt-in
+Algorand requires receivers to opt in to any ASA before they can hold it.
+Since the Plot NFT ASA is created at purchase time, the buyer must opt in
+after learning the `assetId`. The admin wallet holds the NFT until the buyer
+opts in. A future `/api/actions/claim-plot-nft` endpoint can automate the
+transfer once the buyer has opted in.
+
+---
+
 ## License
 
 This is proprietary software. All rights reserved. See [LICENSE](LICENSE) for details.

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#70b0f0"/>
+      <stop offset="100%" stop-color="#a8d0f8"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#80c040"/>
+      <stop offset="100%" stop-color="#508020"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#sky)"/>
+  <!-- Rolling hills -->
+  <ellipse cx="0" cy="280" rx="200" ry="60" fill="#90cc50"/>
+  <ellipse cx="400" cy="290" rx="200" ry="55" fill="#85c048"/>
+  <!-- Main ground -->
+  <rect x="0" y="260" width="400" height="140" fill="url(#grass)"/>
+  <!-- Grass blades -->
+  <line x1="60" y1="260" x2="55" y2="230" stroke="#60a030" stroke-width="3"/>
+  <line x1="90" y1="255" x2="95" y2="225" stroke="#60a030" stroke-width="3"/>
+  <line x1="150" y1="260" x2="145" y2="228" stroke="#60a030" stroke-width="3"/>
+  <line x1="250" y1="258" x2="255" y2="226" stroke="#60a030" stroke-width="3"/>
+  <line x1="310" y1="262" x2="305" y2="230" stroke="#60a030" stroke-width="3"/>
+  <line x1="360" y1="255" x2="365" y2="223" stroke="#60a030" stroke-width="3"/>
+  <!-- Clouds -->
+  <ellipse cx="100" cy="100" rx="55" ry="25" fill="white" opacity="0.85"/>
+  <ellipse cx="130" cy="92" rx="40" ry="22" fill="white" opacity="0.85"/>
+  <ellipse cx="290" cy="120" rx="50" ry="22" fill="white" opacity="0.85"/>
+  <ellipse cx="315" cy="112" rx="35" ry="20" fill="white" opacity="0.85"/>
+  <!-- Label -->
+  <text x="200" y="385" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#204010" text-anchor="middle">PLAINS</text>
+  <!-- Border -->
+  <rect x="2" y="2" width="396" height="396" fill="none" stroke="#80c040" stroke-width="4"/>
+</svg>

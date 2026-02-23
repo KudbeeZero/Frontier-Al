@@ -1,4 +1,5 @@
 import algosdk from "algosdk";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plotNfts } from "./db-schema";
 
@@ -365,49 +366,145 @@ export async function initializeBlockchain(): Promise<{ asaId: number | null; ad
 }
 
 // ---------------------------------------------------------------------------
-// Plot NFT minting (stub — no real Algorand SDK call yet)
+// Plot NFT minting — real Algorand ASA on TestNet
 // ---------------------------------------------------------------------------
 
-let _mintCounter = 0;
-
 /**
- * Mint a plot NFT to the given Algorand address.
+ * Mint a Frontier Plot NFT (Algorand ASA) for the given plot and transfer it
+ * to the buyer's wallet address.
  *
- * This is a stub implementation: it generates a fake asset ID and writes the
- * result to the `plot_nfts` table.  Real on-chain minting via the Algorand SDK
- * will replace the fake-ID generation once the integration is ready.
+ * ASA parameters (TestNet):
+ *   assetName  = `Frontier Plot #<plotId>`
+ *   unitName   = `PLOT`
+ *   total      = 1  (true NFT — indivisible)
+ *   decimals   = 0
+ *   manager    = admin (allows metadata URL updates in future)
+ *   reserve    = admin (displayed as "reserve" in explorers)
+ *   freeze     = admin (allows freeze on TestNet for recovery)
+ *   clawback   = admin (allows clawback on TestNet for recovery)
  *
- * @param plotId  - The integer plot identifier (primary key in `plot_nfts`).
- * @param address - The Algorand wallet address that will own the NFT.
- * @returns       `{ assetId }` — the (fake) Algorand ASA asset ID.
+ * NOTE: On mainnet, freeze and clawback should be set to "" (empty string)
+ * to give true ownership to buyers. Kept as admin on TestNet for safety.
+ *
+ * Transfer step: After creation the 1 unit lives in the admin wallet.
+ * We attempt to send it to `address`. If the buyer has not yet opted in to
+ * this specific ASA (which is always the case for a freshly-minted NFT),
+ * the transfer will fail gracefully — the assetId is still recorded and the
+ * admin holds the NFT until the buyer opts in.
+ *
+ * @param plotId  - Integer plot identifier (primary key in `plot_nfts`).
+ * @param address - Algorand wallet address that should receive the NFT.
+ * @returns       `{ assetId }` — the real on-chain Algorand ASA asset ID.
  */
 export async function mintPlotNftToAddress(
   plotId: number,
   address: string
 ): Promise<{ assetId: number }> {
-  // Generate a unique fake asset ID without calling the Algorand SDK.
-  const assetId = Date.now() + (++_mintCounter);
-  const mintedAt = Date.now();
+  // Safety: if this plot has already been minted, return the existing assetId.
+  const [existing] = await db
+    .select()
+    .from(plotNfts)
+    .where(eq(plotNfts.plotId, plotId));
 
+  if (existing?.assetId) {
+    console.log(
+      `[mintPlotNftToAddress] plotId=${plotId} already minted, assetId=${existing.assetId}`
+    );
+    return { assetId: Number(existing.assetId) };
+  }
+
+  const account = getAdminAccount();
+  const PUBLIC_BASE_URL =
+    process.env.PUBLIC_BASE_URL || "https://frontier-al--kudbeex.replit.app";
+
+  // ── Step 1: Create the NFT ASA ────────────────────────────────────────────
+  const createParams = await algodClient.getTransactionParams().do();
+
+  const createTxn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
+    sender: account.addr.toString(),
+    total: BigInt(1),
+    decimals: 0,
+    defaultFrozen: false,
+    unitName: "PLOT",
+    assetName: `Frontier Plot #${plotId}`,
+    assetURL: `${PUBLIC_BASE_URL}/nft/metadata/${plotId}`,
+    // All roles set to admin for TestNet recovery purposes.
+    // On mainnet, freeze and clawback should be empty strings.
+    manager: account.addr.toString(),
+    reserve: account.addr.toString(),
+    freeze: account.addr.toString(),
+    clawback: account.addr.toString(),
+    suggestedParams: createParams,
+    note: new TextEncoder().encode(`FRONTIER Plot NFT #${plotId} - TestNet`),
+  });
+
+  const signedCreate = createTxn.signTxn(account.sk);
+  const createResp = await algodClient.sendRawTransaction(signedCreate).do();
+  const createTxId = createResp.txid || createTxn.txID();
+
+  const confirmedCreate = await algosdk.waitForConfirmation(algodClient, createTxId, 4);
+  const assetId = Number(
+    (confirmedCreate as any).assetIndex ?? (confirmedCreate as any)["asset-index"]
+  );
+
+  if (!assetId || assetId === 0) {
+    throw new Error(
+      `Plot NFT ASA creation failed for plotId=${plotId}: no assetIndex in confirmed txn`
+    );
+  }
+
+  console.log(
+    `[mintPlotNftToAddress] plotId=${plotId} ASA created, assetId=${assetId}, TX: ${createTxId}`
+  );
+
+  // ── Step 2: Transfer the 1 unit to the buyer ──────────────────────────────
+  // The buyer must have opted in to this ASA before they can receive it.
+  // For freshly-minted NFTs the buyer cannot have opted in yet, so the
+  // transfer will typically fail on the first attempt. The assetId is still
+  // recorded — the buyer can opt in later and an admin transfer can follow.
+  let mintedToAddress = account.addr.toString(); // admin holds by default
+
+  try {
+    const transferParams = await algodClient.getTransactionParams().do();
+    const transferTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      sender: account.addr.toString(),
+      receiver: address,
+      amount: 1,
+      assetIndex: assetId,
+      suggestedParams: transferParams,
+      note: new TextEncoder().encode(`FRONTIER Plot #${plotId} NFT to buyer`),
+    });
+
+    const signedTransfer = transferTxn.signTxn(account.sk);
+    const transferResp = await algodClient.sendRawTransaction(signedTransfer).do();
+    const transferTxId = transferResp.txid || transferTxn.txID();
+    await algosdk.waitForConfirmation(algodClient, transferTxId, 4);
+
+    mintedToAddress = address;
+    console.log(
+      `[mintPlotNftToAddress] plotId=${plotId} NFT transferred to ${address}, TX: ${transferTxId}`
+    );
+  } catch (err) {
+    console.warn(
+      `[mintPlotNftToAddress] Transfer to ${address} failed — buyer likely not opted in to` +
+        ` assetId=${assetId}. NFT held by admin until buyer opts in.`,
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  // ── Step 3: Persist to plot_nfts (upsert on plotId) ──────────────────────
+  const mintedAt = Date.now();
   await db
     .insert(plotNfts)
-    .values({
-      plotId,
-      assetId,
-      mintedToAddress: address,
-      mintedAt,
-    })
+    .values({ plotId, assetId, mintedToAddress, mintedAt })
     .onConflictDoUpdate({
       target: plotNfts.plotId,
-      set: {
-        assetId,
-        mintedToAddress: address,
-        mintedAt,
-      },
+      set: { assetId, mintedToAddress, mintedAt },
     });
 
   console.log(
-    `[mintPlotNftToAddress] plotId=${plotId} address=${address} fakeAssetId=${assetId}`
+    `[mintPlotNftToAddress] plotId=${plotId} recorded in plot_nfts,` +
+      ` assetId=${assetId}, holder=${mintedToAddress}`
   );
 
   return { assetId };

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5080c0"/>
+      <stop offset="100%" stop-color="#8ab0e0"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#sky)"/>
+  <!-- Far mountains -->
+  <polygon points="0,280 80,140 160,280" fill="#607090"/>
+  <polygon points="240,280 340,100 400,280" fill="#506080"/>
+  <!-- Main mountain -->
+  <polygon points="50,320 200,60 350,320" fill="#708090"/>
+  <!-- Snow cap -->
+  <polygon points="165,120 200,60 235,120 220,130 200,115 180,130" fill="white"/>
+  <!-- Ground -->
+  <rect x="0" y="320" width="400" height="80" fill="#405060"/>
+  <!-- Label -->
+  <text x="200" y="385" font-family="Arial,sans-serif" font-size="24" font-weight="bold" fill="#c0d8f0" text-anchor="middle">MOUNTAIN</text>
+  <!-- Border -->
+  <rect x="2" y="2" width="396" height="396" fill="none" stroke="#708090" stroke-width="4"/>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="ocean" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1060c0"/>
+      <stop offset="100%" stop-color="#003080"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2070e0"/>
+      <stop offset="100%" stop-color="#60a0f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#sky)"/>
+  <!-- Ocean -->
+  <rect x="0" y="200" width="400" height="200" fill="url(#ocean)"/>
+  <!-- Waves -->
+  <path d="M0,210 Q50,195 100,210 Q150,225 200,210 Q250,195 300,210 Q350,225 400,210" fill="none" stroke="#4090e0" stroke-width="3"/>
+  <path d="M0,235 Q50,220 100,235 Q150,250 200,235 Q250,220 300,235 Q350,250 400,235" fill="none" stroke="#4090e0" stroke-width="3"/>
+  <path d="M0,260 Q50,245 100,260 Q150,275 200,260 Q250,245 300,260 Q350,275 400,260" fill="none" stroke="#3080d0" stroke-width="2"/>
+  <!-- Sunlight reflection -->
+  <ellipse cx="200" cy="300" rx="30" ry="8" fill="#80c0ff" opacity="0.4"/>
+  <!-- Clouds -->
+  <ellipse cx="120" cy="90" rx="60" ry="28" fill="white" opacity="0.90"/>
+  <ellipse cx="155" cy="80" rx="45" ry="25" fill="white" opacity="0.90"/>
+  <ellipse cx="300" cy="110" rx="55" ry="25" fill="white" opacity="0.90"/>
+  <!-- Label -->
+  <text x="200" y="385" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#a0d0ff" text-anchor="middle">WATER</text>
+  <!-- Border -->
+  <rect x="2" y="2" width="396" height="396" fill="none" stroke="#1060c0" stroke-width="4"/>
+</svg>

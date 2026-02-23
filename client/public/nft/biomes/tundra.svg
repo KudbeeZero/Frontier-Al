@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#90b8d8"/>
+      <stop offset="100%" stop-color="#c8dff0"/>
+    </linearGradient>
+    <linearGradient id="snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0f8ff"/>
+      <stop offset="100%" stop-color="#c8dff0"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#sky)"/>
+  <!-- Frozen ground -->
+  <rect x="0" y="260" width="400" height="140" fill="url(#snow)"/>
+  <!-- Snow mounds -->
+  <ellipse cx="80" cy="265" rx="100" ry="30" fill="#e8f4ff"/>
+  <ellipse cx="300" cy="270" rx="120" ry="28" fill="#ddeeff"/>
+  <!-- Ice cracks -->
+  <path d="M100,300 L140,320 L120,340" fill="none" stroke="#a0c8e0" stroke-width="2"/>
+  <path d="M260,310 L240,330 L270,345" fill="none" stroke="#a0c8e0" stroke-width="2"/>
+  <!-- Aurora borealis -->
+  <path d="M0,60 Q100,30 200,60 Q300,90 400,60" fill="none" stroke="#40e080" stroke-width="6" opacity="0.6"/>
+  <path d="M0,80 Q100,50 200,80 Q300,110 400,80" fill="none" stroke="#80e0c0" stroke-width="4" opacity="0.5"/>
+  <path d="M0,100 Q100,70 200,100 Q300,130 400,100" fill="none" stroke="#40c0e0" stroke-width="3" opacity="0.4"/>
+  <!-- Stars -->
+  <circle cx="50" cy="30" r="2" fill="white"/>
+  <circle cx="150" cy="20" r="2" fill="white"/>
+  <circle cx="250" cy="35" r="2" fill="white"/>
+  <circle cx="350" cy="15" r="2" fill="white"/>
+  <circle cx="320" cy="45" r="1.5" fill="white"/>
+  <!-- Label -->
+  <text x="200" y="385" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#204060" text-anchor="middle">TUNDRA</text>
+  <!-- Border -->
+  <rect x="2" y="2" width="396" height="396" fill="none" stroke="#90b8d8" stroke-width="4"/>
+</svg>
