@@ -288,6 +288,21 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
   }
 }
 
+/**
+ * Pure helper: checks whether an account is opted into a specific ASA by
+ * inspecting the accountInfo object returned from algodClient.accountInformation().do().
+ * Accepts both the legacy "asset-id" key and the newer "assetIndex" key.
+ */
+export function hasOptedIn(
+  accountInfo: Record<string, unknown>,
+  asaId: number
+): boolean {
+  const assets = (accountInfo.assets as Array<Record<string, unknown>>) ?? [];
+  return assets.some(
+    (a) => Number(a["asset-id"] ?? a["assetIndex"]) === asaId
+  );
+}
+
 let _cachedTreasuryAddress: string | null = null;
 let _cachedAsaId: number | null = null;
 

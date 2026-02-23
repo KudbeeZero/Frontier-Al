@@ -237,6 +237,10 @@ export function GameLayout() {
 
   const handleClaimFrontier = async () => {
     if (!player || !gameState) return;
+    if (!isOptedInToFrontier) {
+      toast({ title: "Opt-In Required", description: "Opt into FRONTIER ASA before claiming tokens.", variant: "destructive" });
+      return;
+    }
     claimFrontierMutation.mutate(player.id, {
       onSuccess: (data: any) => {
         const amount = data.claimed?.amount || 0;

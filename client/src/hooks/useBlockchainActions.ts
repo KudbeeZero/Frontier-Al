@@ -11,7 +11,8 @@ import {
   getCachedTreasuryAddress,
   getCachedAsaId,
   optInToASA,
-  isOptedInToASA,
+  algodClient,
+  hasOptedIn,
   type BatchedAction,
 } from "@/lib/algorand";
 import { useToast } from "@/hooks/use-toast";
@@ -50,15 +51,23 @@ export function useBlockchainActions() {
   }, []);
 
   useEffect(() => {
-    if (address && frontierAsaId) {
-      isOptedInToASA(address, frontierAsaId).then((result) => {
+    if (!address || !frontierAsaId) return;
+    algodClient
+      .accountInformation(address)
+      .do()
+      .then((accountInfo) => {
+        const result = hasOptedIn(accountInfo as Record<string, unknown>, frontierAsaId);
         setIsOptedIn(result);
         if (result) {
           localStorage.setItem("frontier_opted_in", "true");
           localStorage.setItem("frontier_opted_in_address", address);
+        } else {
+          localStorage.removeItem("frontier_opted_in");
         }
+      })
+      .catch(() => {
+        // Keep existing cached state if algod is temporarily unreachable
       });
-    }
   }, [address, frontierAsaId]);
 
   useEffect(() => {
@@ -337,9 +346,14 @@ export function useBlockchainActions() {
       try {
         const txId = await optInToASA(address, frontierAsaId);
         setLastTxId(txId);
-        setIsOptedIn(true);
-        localStorage.setItem("frontier_opted_in", "true");
-        localStorage.setItem("frontier_opted_in_address", address);
+        // Verify opt-in on-chain before updating UI — no page reload required
+        const updatedInfo = await algodClient.accountInformation(address).do();
+        const confirmed = hasOptedIn(updatedInfo as Record<string, unknown>, frontierAsaId);
+        setIsOptedIn(confirmed);
+        if (confirmed) {
+          localStorage.setItem("frontier_opted_in", "true");
+          localStorage.setItem("frontier_opted_in_address", address);
+        }
         toast({ title: "Opt-In Confirmed", description: `Opted into FRONTIER ASA. TX: ${txId.slice(0, 8)}...` });
         return txId;
       } catch (error: unknown) {
