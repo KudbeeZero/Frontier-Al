@@ -1536,6 +1536,46 @@ export class DbStorage implements IStorage {
     const perDay = calculateFrontierPerDay(parcel.improvements);
     return perDay * days;
   }
+  /* ✅ INSERT NEW METHOD HERE */
+
+async getOrCreatePlayerByAddress(address: string): Promise<Player> {
+  await this.initialize();
+
+  const normalized = address.trim().toLowerCase();
+
+  const [existing] = await this.db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.address, normalized));
+
+  if (existing) {
+    const ownedRows = await this.db
+      .select({ id: parcelsTable.id })
+      .from(parcelsTable)
+      .where(eq(parcelsTable.ownerId, existing.id));
+
+    return rowToPlayer(existing, ownedRows.map(r => r.id));
+  }
+
+  const id = randomUUID();
+
+  await this.db.insert(playersTable).values({
+    id,
+    address: normalized,
+    name: `${normalized.slice(0, 6)}...${normalized.slice(-4)}`,
+    iron: 200,
+    fuel: 150,
+    crystal: 50,
+    frontier: 0,
+  });
+
+  const [created] = await this.db
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.id, id));
+
+  return rowToPlayer(created, []);
+}
 
   // ── IStorage – read ────────────────────────────────────────────────────────
 
