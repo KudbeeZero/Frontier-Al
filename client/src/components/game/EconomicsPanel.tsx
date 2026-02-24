@@ -1,15 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp,
-  Flame,
   Coins,
-  Globe,
-  Users,
   BarChart3,
   ExternalLink,
   RefreshCw,
-  Zap,
   Lock,
+  CircleDollarSign,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,28 +19,22 @@ interface EconomicsData {
   adminAddress: string;
   totalSupply: number;
   circulating: number;
-  totalBurned: number;
-  totalEarned: number;
-  totalHeld: number;
-  totalPendingClaim: number;
-  totalFrontierPerDay: number;
-  totalPlots: number;
-  claimedPlots: number;
-  humanPlayerCount: number;
+  treasury: number;
   network: string;
   unitName: string;
   assetName: string;
   decimals: number;
 }
 
-function fmt(n: number, decimals = 2): string {
+function fmt(n: number | undefined | null, decimals = 2): string {
+  if (n == null || isNaN(n)) return "0";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
   return n.toFixed(decimals);
 }
 
-function pct(part: number, total: number): string {
-  if (!total) return "0.0%";
+function pct(part: number | undefined | null, total: number | undefined | null): string {
+  if (!part || !total) return "0.0%";
   return ((part / total) * 100).toFixed(1) + "%";
 }
 
@@ -122,13 +113,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
     ? `https://testnet.tinyman.org/#/swap?asset_in=0&asset_out=${data.asaId}`
     : null;
 
-  const treasury = data
-    ? Math.max(0, data.totalSupply - data.circulating - data.totalBurned)
-    : 0;
-
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="economics-panel">
-      {/* Header */}
       <div className="p-4 border-b border-border flex items-center gap-2 shrink-0">
         <BarChart3 className="w-5 h-5 text-primary" />
         <h2 className="font-display text-lg font-bold uppercase tracking-wide">Token Economics</h2>
@@ -160,7 +146,6 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
             </div>
           ) : (
             <>
-              {/* Token Identity */}
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Info</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
@@ -202,9 +187,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                 </div>
               </div>
 
-              {/* Supply Stats */}
               <div>
-                <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Supply</p>
+                <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">On-Chain Supply</p>
                 <div className="grid grid-cols-2 gap-2">
                   <StatCard
                     icon={Coins}
@@ -221,76 +205,30 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                     accent="green"
                   />
                   <StatCard
-                    icon={Flame}
-                    label="Total Burned"
-                    value={fmt(data.totalBurned)}
-                    sub={pct(data.totalBurned, data.totalSupply) + " destroyed"}
-                    accent="destructive"
-                  />
-                  <StatCard
                     icon={Lock}
                     label="Treasury"
-                    value={fmt(treasury)}
-                    sub="Held by admin reserve"
+                    value={fmt(data.treasury)}
+                    sub="Admin reserve balance"
                     accent="yellow"
+                  />
+                  <StatCard
+                    icon={CircleDollarSign}
+                    label="Distributed"
+                    value={fmt(data.circulating)}
+                    sub="Tokens sent to players"
+                    accent="primary"
                   />
                 </div>
               </div>
 
-              {/* Distribution Breakdown */}
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Distribution</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-3">
-                  <DistributionBar label="In Player Wallets" value={data.totalHeld} total={data.totalSupply} color="bg-primary" />
-                  <DistributionBar label="Pending Claim" value={data.totalPendingClaim} total={data.totalSupply} color="bg-blue-500" />
-                  <DistributionBar label="Burned (Spent)" value={data.totalBurned} total={data.totalSupply} color="bg-destructive" />
-                  <DistributionBar label="Treasury Reserve" value={treasury} total={data.totalSupply} color="bg-yellow-500" />
+                  <DistributionBar label="In Circulation" value={data.circulating} total={data.totalSupply} color="bg-emerald-500" />
+                  <DistributionBar label="Treasury Reserve" value={data.treasury} total={data.totalSupply} color="bg-yellow-500" />
                 </div>
               </div>
 
-              {/* Emission Stats */}
-              <div>
-                <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Emission</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <StatCard
-                    icon={Zap}
-                    label="Tokens / Day"
-                    value={fmt(data.totalFrontierPerDay)}
-                    sub="Current emission rate"
-                    accent="yellow"
-                  />
-                  <StatCard
-                    icon={Globe}
-                    label="Plots Owned"
-                    value={`${data.claimedPlots} / ${fmt(data.totalPlots, 0)}`}
-                    sub={pct(data.claimedPlots, data.totalPlots) + " of map claimed"}
-                    accent="primary"
-                  />
-                </div>
-              </div>
-
-              {/* Game Stats */}
-              <div>
-                <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Game Activity</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <StatCard
-                    icon={Users}
-                    label="Active Players"
-                    value={String(data.humanPlayerCount)}
-                    sub="Human commanders"
-                    accent="green"
-                  />
-                  <StatCard
-                    icon={TrendingUp}
-                    label="Total Earned"
-                    value={fmt(data.totalEarned)}
-                    sub="Lifetime FRONTIER mined"
-                    accent="primary"
-                  />
-                </div>
-              </div>
-
-              {/* Buy / DEX Section */}
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Where to Buy</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2.5">
@@ -353,7 +291,6 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                 </div>
               </div>
 
-              {/* How to Earn */}
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">How to Earn FRONTIER</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
@@ -374,7 +311,6 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                 </div>
               </div>
 
-              {/* Token Sink / Burn */}
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Sinks (Burns)</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
@@ -396,7 +332,7 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
               </div>
 
               <p className="text-[10px] text-muted-foreground/50 text-center pb-2">
-                Data refreshes every 30 seconds · Algorand TestNet
+                Live on-chain data · Refreshes every 30s · Algorand TestNet
               </p>
             </>
           )}
