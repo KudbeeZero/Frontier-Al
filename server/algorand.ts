@@ -3,9 +3,13 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plotNfts } from "./db-schema";
 
-// Override with ALGOD_URL / INDEXER_URL env vars to switch networks without code changes.
+// Override with ALGOD_URL / INDEXER_URL / ALGORAND_NETWORK env vars to switch
+// networks without code changes. ALGORAND_NETWORK is embedded into on-chain
+// notes so transactions can be attributed to the correct network by indexers.
 const ALGOD_URL = process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud";
 const INDEXER_URL = process.env.INDEXER_URL ?? "https://testnet-idx.algonode.cloud";
+/** "testnet" | "mainnet" — embedded into transaction notes for traceability */
+const ALGORAND_NETWORK = process.env.ALGORAND_NETWORK ?? "testnet";
 
 export const algodClient = new algosdk.Algodv2("", ALGOD_URL, "");
 export const indexerClient = new algosdk.Indexer("", INDEXER_URL, "");
@@ -90,7 +94,7 @@ export async function createFrontierASA(): Promise<number> {
     freeze: undefined,
     clawback: undefined,
     suggestedParams,
-    note: new TextEncoder().encode("FRONTIER Game Token - TestNet"),
+    note: new TextEncoder().encode(`FRONTIER Game Token - ${ALGORAND_NETWORK}`),
   });
 
   const signedTxn = txn.signTxn(account.sk);
@@ -128,7 +132,7 @@ export async function transferFrontierASA(
     amt: amount,
     to: toAddress,
     ts: Date.now(),
-    network: "testnet",
+    network: ALGORAND_NETWORK,
   });
 
   const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
@@ -225,7 +229,7 @@ class FrontierTransferBatcher {
   private estimatedBytes(): number {
     // ~200 bytes base overhead per txn + structured JSON note content length
     return this._pending.reduce((sum, item) => {
-      const note = `FRNTR:{"game":"FRONTIER","v":1,"type":"batch_claim","amt":${item.amount},"to":"${item.toAddress}","batchIdx":0,"batchSize":1,"ts":${Date.now()},"network":"testnet"}`;
+      const note = `FRNTR:{"game":"FRONTIER","v":1,"type":"batch_claim","amt":${item.amount},"to":"${item.toAddress}","batchIdx":0,"batchSize":1,"ts":${Date.now()},"network":"${ALGORAND_NETWORK}"}`;
       return sum + 200 + note.length;
     }, 0);
   }
@@ -292,7 +296,7 @@ async function sendAtomicFrontierTransfers(
       batchIdx: index,
       batchSize: transfers.length,
       ts: batchTs,
-      network: "testnet",
+      network: ALGORAND_NETWORK,
     });
     return algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
       sender: account.addr.toString(),
@@ -416,15 +420,18 @@ export async function mintPlotNftToAddress(
   }
 
   const account = getAdminAccount();
-  // PUBLIC_BASE_URL must be set in production; the hardcoded fallback is the
-  // Replit deployment URL and will bake wrong NFT metadata URLs if deployed elsewhere.
-  if (!process.env.PUBLIC_BASE_URL) {
-    console.warn(
-      "[mintPlotNftToAddress] PUBLIC_BASE_URL env var is not set — falling back to hardcoded Replit URL. Set PUBLIC_BASE_URL in production."
+  // PUBLIC_BASE_URL MUST be set before any NFT is minted: the URL is baked
+  // permanently into the on-chain ASA and cannot be changed after creation
+  // without a manager transaction (which still doesn't update wallets that
+  // have already cached the URL).
+  const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
+  if (!PUBLIC_BASE_URL) {
+    throw new Error(
+      "[mintPlotNftToAddress] PUBLIC_BASE_URL env var is not set. " +
+        "Set it to the canonical public URL of this deployment (e.g. https://your-app.example.com) " +
+        "before minting any Plot NFTs, otherwise the on-chain metadata URL will be permanently wrong."
     );
   }
-  const PUBLIC_BASE_URL =
-    process.env.PUBLIC_BASE_URL || "https://frontier-al--kudbeex.replit.app";
 
   // ── Step 1: Create the NFT ASA ────────────────────────────────────────────
   const createParams = await algodClient.getTransactionParams().do();
@@ -444,7 +451,7 @@ export async function mintPlotNftToAddress(
     freeze: account.addr.toString(),
     clawback: account.addr.toString(),
     suggestedParams: createParams,
-    note: new TextEncoder().encode(`FRONTIER Plot NFT #${plotId} - TestNet`),
+    note: new TextEncoder().encode(`FRONTIER Plot NFT #${plotId} - ${ALGORAND_NETWORK}`),
   });
 
   const signedCreate = createTxn.signTxn(account.sk);

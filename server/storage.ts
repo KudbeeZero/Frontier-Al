@@ -2328,16 +2328,8 @@ export class DbStorage implements IStorage {
         effectDescription = "EMP disabled turrets and shields, defense reduced by 2";
       } else if (action.attackType === "siege_barrage") {
         targetUpdates.defenseLevel = Math.max(1, target.defenseLevel - 1);
-        // Splash nearby — best-effort; won't cause transaction failure if none found
-        const nearby = await tx.select()
-          .from(parcelsTable)
-          .where(and(
-            sql`${parcelsTable.ownerId} IS NOT NULL`,
-            sql`${parcelsTable.ownerId} != ${player.id}`,
-            sql`(${parcelsTable.x} - ${target.id}) IS NOT NULL` // placeholder; real query below
-          ))
-          .limit(10);
-        // Practical approach: re-use sphereDistance on fetched neighbors
+        // Splash nearby — fetch candidate enemy parcels, then filter by
+        // sphereDistance in application code to find true neighbours.
         const allNearby = await tx.select().from(parcelsTable)
           .where(sql`${parcelsTable.ownerId} IS NOT NULL AND ${parcelsTable.ownerId} != ${player.id}`)
           .limit(500);
