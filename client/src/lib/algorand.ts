@@ -239,7 +239,8 @@ export async function getASABalance(address: string, assetId: number): Promise<n
   try {
     const accountInfo = await algodClient.accountInformation(address).do();
     const assets = accountInfo.assets || [];
-    const asset = assets.find((a: any) => (a.assetIndex ?? a["asset-id"]) === assetId);
+    // algosdk v3: .assetId (bigint) — v2/raw JSON: "asset-id" or assetIndex
+    const asset = assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === assetId);
     return asset ? Number(asset.amount) : 0;
   } catch (error) {
     console.error("Failed to fetch ASA balance:", error);
@@ -279,7 +280,8 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
       const accountInfo = await algodClient.accountInformation(address).do();
       const assets = accountInfo.assets || accountInfo["assets"] || [];
       return assets.some((a: any) => {
-        const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
+        // algosdk v3: .assetId (bigint); v2/raw JSON: "asset-id" / assetIndex
+        const id = a.assetId ?? a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
         return Number(id) === assetId;
       });
     } catch {
@@ -291,7 +293,10 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
 /**
  * Pure helper: checks whether an account is opted into a specific ASA by
  * inspecting the accountInfo object returned from algodClient.accountInformation().do().
- * Accepts both the legacy "asset-id" key and the newer "assetIndex" key.
+ *
+ * algosdk v3 deserializes AssetHolding with a camelCase `.assetId` (bigint) property.
+ * Older / raw-JSON paths expose the kebab-case `"asset-id"` key instead.
+ * We check all known variants so this works regardless of how the object was produced.
  */
 export function hasOptedIn(
   accountInfo: Record<string, unknown>,
@@ -299,7 +304,10 @@ export function hasOptedIn(
 ): boolean {
   const assets = (accountInfo.assets as Array<Record<string, unknown>>) ?? [];
   return assets.some(
-    (a) => Number(a["asset-id"] ?? a["assetIndex"]) === asaId
+    // assetId  → algosdk v3 AssetHolding (bigint, use Number() for comparison)
+    // asset-id → raw JSON / legacy algosdk v2 response
+    // assetIndex → older SDK alias sometimes seen in typed responses
+    (a) => Number(a["assetId"] ?? a["asset-id"] ?? a["assetIndex"]) === asaId
   );
 }
 

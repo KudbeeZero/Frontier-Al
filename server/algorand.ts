@@ -415,6 +415,13 @@ export async function mintPlotNftToAddress(
   }
 
   const account = getAdminAccount();
+  // PUBLIC_BASE_URL must be set in production; the hardcoded fallback is the
+  // Replit deployment URL and will bake wrong NFT metadata URLs if deployed elsewhere.
+  if (!process.env.PUBLIC_BASE_URL) {
+    console.warn(
+      "[mintPlotNftToAddress] PUBLIC_BASE_URL env var is not set — falling back to hardcoded Replit URL. Set PUBLIC_BASE_URL in production."
+    );
+  }
   const PUBLIC_BASE_URL =
     process.env.PUBLIC_BASE_URL || "https://frontier-al--kudbeex.replit.app";
 

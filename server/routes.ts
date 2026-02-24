@@ -192,7 +192,7 @@ export async function registerRoutes(
         mintedToAddress: row.mintedToAddress,
         mintedAt: row.mintedAt ? Number(row.mintedAt) : null,
         explorerUrl: row.assetId
-          ? `https://testnet.algoexplorer.io/asset/${row.assetId}`
+          ? `https://allo.info/asset/${row.assetId}` // algoexplorer.io shut down; allo.info is current
           : null,
       });
     } catch (error) {
