@@ -101,6 +101,7 @@ export async function sendPaymentTransaction(
   amountMicroAlgos: number,
   note?: string
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] sendPaymentTransaction triggered | txns: 1 | groupID: NO | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}... | to: ${toAddress.slice(0,8)}... | amount: ${amountMicroAlgos} microAlgos`);
   const suggestedParams = await getTransactionParams();
   
   const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
@@ -112,9 +113,11 @@ export async function sendPaymentTransaction(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] sendPaymentTransaction submitting to algod | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] sendPaymentTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
   
   return txId;
 }
@@ -125,6 +128,7 @@ export async function createGameActionTransaction(
   plotId: number,
   metadata?: Record<string, unknown>
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] createGameActionTransaction triggered | action: ${actionType} | plotId: ${plotId} | txns: 1 | groupID: NO | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}...`);
   const suggestedParams = await getTransactionParams();
 
   const actionData = JSON.stringify({
@@ -147,9 +151,11 @@ export async function createGameActionTransaction(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] createGameActionTransaction submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] createGameActionTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
   
   return txId;
 }
@@ -160,6 +166,7 @@ export async function createPurchaseWithAlgoTransaction(
   plotId: number,
   algoAmount: number
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] createPurchaseWithAlgoTransaction triggered | plotId: ${plotId} | algo: ${algoAmount} | txns: 1 | groupID: NO | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}... | to: ${treasuryAddress.slice(0,8)}...`);
   const suggestedParams = await getTransactionParams();
   const microAlgos = Math.floor(algoAmount * 1_000_000);
   
@@ -183,9 +190,11 @@ export async function createPurchaseWithAlgoTransaction(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] createPurchaseWithAlgoTransaction submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] createPurchaseWithAlgoTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
   
   return txId;
 }
@@ -194,6 +203,7 @@ export async function createClaimFrontierTransaction(
   fromAddress: string,
   frontierAmount: number
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] createClaimFrontierTransaction triggered | amount: ${frontierAmount} | txns: 1 | groupID: NO | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}...`);
   const suggestedParams = await getTransactionParams();
   
   const actionData = JSON.stringify({
@@ -215,9 +225,11 @@ export async function createClaimFrontierTransaction(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] createClaimFrontierTransaction submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] createClaimFrontierTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
   
   return txId;
 }
@@ -253,6 +265,7 @@ export async function optInToASA(
   address: string,
   assetId: number
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] optInToASA triggered | assetId: ${assetId} | txns: 1 | groupID: NO | ts: ${Date.now()} | address: ${address.slice(0,8)}...`);
   const suggestedParams = await getTransactionParams();
   
   const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
@@ -264,9 +277,11 @@ export async function optInToASA(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, address);
+  console.log(`[TXN-DEBUG] optInToASA submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] optInToASA confirmed | txId: ${txId} | ts: ${Date.now()}`);
   
   return txId;
 }
@@ -449,6 +464,7 @@ export async function createBatchedGameActionTransaction(
   fromAddress: string,
   actions: BatchedAction[]
 ): Promise<string> {
+  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction triggered | batchedActions: ${actions.length} | actions: [${actions.map(a => a.a).join(',')}] | txns: 1 | groupID: NO | noteBytes: ${_encodeBatch(actions).length} | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}...`);
   const noteBytes = _encodeBatch(actions);
   if (noteBytes.length > 1024) {
     throw new Error(`Batch note too large: ${noteBytes.length} bytes`);
@@ -464,9 +480,11 @@ export async function createBatchedGameActionTransaction(
   });
 
   const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
   const txId = response.txid || txn.txID();
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
 
   return txId;
 }

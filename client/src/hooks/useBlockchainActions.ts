@@ -105,6 +105,7 @@ export function useBlockchainActions() {
   const queueMineAction = useCallback(
     (plotId: number, minerals?: { iron: number; fuel: number; crystal: number }) => {
       if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueMineAction | path: enqueueGameAction→batch | plotId: ${plotId} | ts: ${Date.now()}`);
         const mineralData = minerals
           ? { fe: minerals.iron, fu: minerals.fuel, cr: minerals.crystal }
           : undefined;
@@ -116,61 +117,80 @@ export function useBlockchainActions() {
 
   const queueUpgradeAction = useCallback(
     (plotId: number, upgradeType: string) => {
-      if (isReady && address) enqueueGameAction("upgrade", plotId, { upgradeType });
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueUpgradeAction | path: enqueueGameAction→batch | plotId: ${plotId} | type: ${upgradeType} | ts: ${Date.now()}`);
+        enqueueGameAction("upgrade", plotId, { upgradeType });
+      }
     },
     [isReady, address]
   );
 
   const queueAttackAction = useCallback(
     (plotId: number, troops: number, iron: number, fuel: number) => {
-      if (isReady && address)
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueAttackAction | path: enqueueGameAction→batch | plotId: ${plotId} | troops: ${troops} | ts: ${Date.now()}`);
         enqueueGameAction("attack", plotId, { troops, iron, fuel });
+      }
     },
     [isReady, address]
   );
 
   const queueBuildAction = useCallback(
     (plotId: number, improvementType: string) => {
-      if (isReady && address) enqueueGameAction("build", plotId, { improvementType });
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueBuildAction | path: enqueueGameAction→batch | plotId: ${plotId} | type: ${improvementType} | ts: ${Date.now()}`);
+        enqueueGameAction("build", plotId, { improvementType });
+      }
     },
     [isReady, address]
   );
 
   const queueMintAvatarAction = useCallback(
     (tier: string) => {
-      if (isReady && address) enqueueGameAction("mint_avatar", 0, { tier });
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueMintAvatarAction | path: enqueueGameAction→batch | tier: ${tier} | ts: ${Date.now()}`);
+        enqueueGameAction("mint_avatar", 0, { tier });
+      }
     },
     [isReady, address]
   );
 
   const queueSpecialAttackAction = useCallback(
     (targetPlotId: number, attackType: string) => {
-      if (isReady && address)
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueSpecialAttackAction | path: enqueueGameAction→batch | plotId: ${targetPlotId} | type: ${attackType} | ts: ${Date.now()}`);
         enqueueGameAction("special_attack", targetPlotId, { attackType });
+      }
     },
     [isReady, address]
   );
 
   const queueSwitchCommanderAction = useCallback(
     (commanderIndex: number) => {
-      if (isReady && address)
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueSwitchCommanderAction | path: enqueueGameAction→batch | idx: ${commanderIndex} | ts: ${Date.now()}`);
         enqueueGameAction("switch_commander", 0, { commanderIndex });
+      }
     },
     [isReady, address]
   );
 
   const queueDeployDroneAction = useCallback(
     (targetPlotId?: number) => {
-      if (isReady && address)
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueDeployDroneAction | path: enqueueGameAction→batch | plotId: ${targetPlotId ?? 0} | ts: ${Date.now()}`);
         enqueueGameAction("deploy_drone", targetPlotId ?? 0);
+      }
     },
     [isReady, address]
   );
 
   const queueDeploySatelliteAction = useCallback(
     () => {
-      if (isReady && address)
+      if (isReady && address) {
+        console.log(`[ACTION-DEBUG] queueDeploySatelliteAction | path: enqueueGameAction→batch | ts: ${Date.now()}`);
         enqueueGameAction("deploy_satellite", 0);
+      }
     },
     [isReady, address]
   );
@@ -192,6 +212,7 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
+        console.log(`[ACTION-DEBUG] signGameAction | path: createGameActionTransaction (single txn) | action: ${actionType} | plotId: ${plotId} | ts: ${Date.now()}`);
         const txId = await createGameActionTransaction(
           address,
           actionType,
@@ -258,6 +279,7 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
+        console.log(`[ACTION-DEBUG] signPurchaseAction | path: createPurchaseWithAlgoTransaction (single txn) | plotId: ${plotId} | algo: ${algoAmount} | ts: ${Date.now()}`);
         let targetAddress = treasuryAddress || getCachedTreasuryAddress();
         if (!targetAddress) {
           const fresh = await fetchBlockchainStatus();
@@ -308,6 +330,7 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
+        console.log(`[ACTION-DEBUG] signClaimFrontierAction | path: createClaimFrontierTransaction (single txn) | amount: ${frontierAmount} | ts: ${Date.now()}`);
         const txId = await createClaimFrontierTransaction(address, frontierAmount);
         setLastTxId(txId);
         toast({
@@ -347,6 +370,7 @@ export function useBlockchainActions() {
 
       setIsPending(true);
       try {
+        console.log(`[ACTION-DEBUG] signOptInToFrontier | path: optInToASA (single txn) | asaId: ${frontierAsaId} | ts: ${Date.now()}`);
         const txId = await optInToASA(address, frontierAsaId);
         setLastTxId(txId);
         // waitForConfirmation inside optInToASA already confirmed the tx —

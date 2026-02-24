@@ -76,6 +76,7 @@ export async function getAdminBalance(): Promise<{ algo: number; frontierAsa: nu
 }
 
 export async function createFrontierASA(): Promise<number> {
+  console.log(`[TXN-DEBUG-SERVER] createFrontierASA triggered | txns: 1 | groupID: NO | ts: ${Date.now()}`);
   const account = getAdminAccount();
   const suggestedParams = await algodClient.getTransactionParams().do();
 
@@ -98,6 +99,7 @@ export async function createFrontierASA(): Promise<number> {
   });
 
   const signedTxn = txn.signTxn(account.sk);
+  console.log(`[TXN-DEBUG-SERVER] createFrontierASA submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxn).do();
   const txId = response.txid || txn.txID();
 
@@ -109,6 +111,7 @@ export async function createFrontierASA(): Promise<number> {
   }
 
   frontierAsaId = assetId;
+  console.log(`[TXN-DEBUG-SERVER] createFrontierASA confirmed | assetId: ${assetId} | txId: ${txId} | ts: ${Date.now()}`);
   console.log(`FRONTIER ASA created! Asset ID: ${assetId}, TX: ${txId}`);
 
   return assetId;
@@ -118,6 +121,7 @@ export async function transferFrontierASA(
   toAddress: string,
   amount: number
 ): Promise<string> {
+  console.log(`[TXN-DEBUG-SERVER] transferFrontierASA triggered | amount: ${amount} | txns: 1 | groupID: NO | ts: ${Date.now()} | to: ${toAddress.slice(0,8)}...`);
   if (!frontierAsaId) throw new Error("FRONTIER ASA not created yet");
 
   const account = getAdminAccount();
@@ -145,10 +149,12 @@ export async function transferFrontierASA(
   });
 
   const signedTxn = txn.signTxn(account.sk);
+  console.log(`[TXN-DEBUG-SERVER] transferFrontierASA submitting | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxn).do();
   const txId = response.txid || txn.txID();
 
   await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG-SERVER] transferFrontierASA confirmed | txId: ${txId} | ts: ${Date.now()}`);
   console.log(`Transferred ${amount} FRONTIER to ${toAddress}, TX: ${txId}`);
 
   return txId;
@@ -279,6 +285,7 @@ class FrontierTransferBatcher {
 async function sendAtomicFrontierTransfers(
   transfers: Array<{ toAddress: string; amount: number }>
 ): Promise<string[]> {
+  console.log(`[TXN-DEBUG-SERVER] sendAtomicFrontierTransfers triggered | txns: ${transfers.length} | groupID: ${transfers.length > 1 ? 'YES (assignGroupID)' : 'NO (single txn)'} | recipients: [${transfers.map(t => t.toAddress.slice(0,8)).join(',')}] | amounts: [${transfers.map(t => t.amount).join(',')}] | ts: ${Date.now()}`);
   if (!frontierAsaId) throw new Error("FRONTIER ASA not created yet");
 
   const account = getAdminAccount();
@@ -310,14 +317,17 @@ async function sendAtomicFrontierTransfers(
 
   // Assign a shared group ID so all transfers are atomic
   if (txns.length > 1) {
+    console.log(`[TXN-DEBUG-SERVER] sendAtomicFrontierTransfers assigning groupID to ${txns.length} txns | ts: ${Date.now()}`);
     algosdk.assignGroupID(txns);
   }
 
   const signedTxns = txns.map((txn) => txn.signTxn(account.sk));
+  console.log(`[TXN-DEBUG-SERVER] sendAtomicFrontierTransfers submitting ${signedTxns.length} signed txn(s) | ts: ${Date.now()}`);
   const response = await algodClient.sendRawTransaction(signedTxns).do();
   const firstTxId = response.txid || txns[0].txID();
 
   await algosdk.waitForConfirmation(algodClient, firstTxId, 4);
+  console.log(`[TXN-DEBUG-SERVER] sendAtomicFrontierTransfers confirmed | firstTxId: ${firstTxId} | txns: ${txns.length} | ts: ${Date.now()}`);
   console.log(
     `Atomic batch: ${txns.length} FRONTIER transfer(s) confirmed, first TX: ${firstTxId}`
   );
@@ -434,6 +444,7 @@ export async function mintPlotNftToAddress(
   }
 
   // ── Step 1: Create the NFT ASA ────────────────────────────────────────────
+  console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress triggered | plotId: ${plotId} | txns: 2 (create+transfer, NOT grouped) | groupID: NO | ts: ${Date.now()} | to: ${address.slice(0,8)}...`);
   const createParams = await algodClient.getTransactionParams().do();
 
   const createTxn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
@@ -455,10 +466,12 @@ export async function mintPlotNftToAddress(
   });
 
   const signedCreate = createTxn.signTxn(account.sk);
+  console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress step1 (create ASA) submitting | ts: ${Date.now()}`);
   const createResp = await algodClient.sendRawTransaction(signedCreate).do();
   const createTxId = createResp.txid || createTxn.txID();
 
   const confirmedCreate = await algosdk.waitForConfirmation(algodClient, createTxId, 4);
+  console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress step1 confirmed | createTxId: ${createTxId} | ts: ${Date.now()}`);
   const assetId = Number(
     (confirmedCreate as any).assetIndex ?? (confirmedCreate as any)["asset-index"]
   );
@@ -492,9 +505,11 @@ export async function mintPlotNftToAddress(
     });
 
     const signedTransfer = transferTxn.signTxn(account.sk);
+    console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress step2 (transfer NFT) submitting | ts: ${Date.now()}`);
     const transferResp = await algodClient.sendRawTransaction(signedTransfer).do();
     const transferTxId = transferResp.txid || transferTxn.txID();
     await algosdk.waitForConfirmation(algodClient, transferTxId, 4);
+    console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress step2 confirmed | transferTxId: ${transferTxId} | ts: ${Date.now()}`);
 
     mintedToAddress = address;
     console.log(
