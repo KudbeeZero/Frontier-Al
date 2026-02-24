@@ -435,8 +435,18 @@ export function FlatMap({
         }
 
         ctx.globalAlpha = plotAlpha;
-        ctx.fillStyle = color;
-        ctx.fillRect(x - size / 2, y - size / 2, size, size);
+        if (isSelected) {
+          // Draw a thin arc ring — no filled square, no white background.
+          // The radius is half of `size` so it scales correctly with zoom.
+          ctx.strokeStyle = "#00e5ff";
+          ctx.lineWidth   = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = color;
+          ctx.fillRect(x - size / 2, y - size / 2, size, size);
+        }
         ctx.globalAlpha = 1.0;
 
         ctx.shadowColor = "transparent";
@@ -749,9 +759,25 @@ export function FlatMap({
   }, [selectedParcelId, plotIndex, latLngToScreen, centerOnPlot]);
 
   return (
-    <div ref={containerRef} className={className} style={{ position: "relative", overflow: "hidden" }} data-testid="flat-map">
+    <div
+      ref={containerRef}
+      className={className}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        // Prevent the wrapper div from showing its own focus ring or tap flash
+        outline: "none",
+        WebkitTapHighlightColor: "transparent",
+        userSelect: "none",
+      }}
+      data-testid="flat-map"
+    >
       <canvas
         ref={canvasRef}
+        // tabIndex={-1} makes the element programmatically focusable but removes it from
+        // the tab order. Combined with outline:none this suppresses the browser focus ring
+        // on click/tap in Chrome, Firefox, and Safari without affecting pointer events.
+        tabIndex={-1}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -765,7 +791,7 @@ export function FlatMap({
           height: "100%",
           touchAction: "none",
           outline: "none",
-          // Suppress mobile browser tap-highlight (the "white circle" flash on iOS Safari)
+          // Suppress mobile browser tap-highlight (the white flash on iOS Safari)
           WebkitTapHighlightColor: "transparent",
           userSelect: "none",
         }}
