@@ -71,7 +71,7 @@ function GridOverlay() {
         color="#005577"
         wireframe={true}
         transparent={true}
-        opacity={0.10}
+        opacity={0.20}
         depthWrite={false}
       />
     </mesh>
@@ -201,7 +201,7 @@ function SelectionRing({
 
   const ringGeometry = useMemo(() => {
     const inner = basePlotSize * 0.50;
-    const outer = basePlotSize * 0.72;
+    const outer = basePlotSize * 0.75;
     return new THREE.RingGeometry(inner, outer, 36);
   }, [basePlotSize]);
   useEffect(() => () => ringGeometry.dispose(), [ringGeometry]);
