@@ -14,6 +14,8 @@ interface PlanetGlobeProps {
   onLocateTerritory?: () => void;
   onFindEnemyTarget?: () => void;
   hasOwnedPlots?: boolean;
+  /** Render a subtle translucent ring around the planet (Saturn-style). Default false. */
+  showRing?: boolean;
 }
 
 const GLOBE_RADIUS = 3;
@@ -206,6 +208,8 @@ function PlotInstances({
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null!);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  // Keep a ref mirror so callbacks can read current value without stale closure
+  const hoveredIndexRef = useRef<number | null>(null);
   const pulseRef = useRef(0);
   const { camera } = useThree();
 
@@ -316,14 +320,16 @@ function PlotInstances({
 
   const handlePointerMove = useCallback((e: THREE.Intersection) => {
     if (e.instanceId !== undefined) {
+      hoveredIndexRef.current = e.instanceId;
       setHoveredIndex(e.instanceId);
       document.body.style.cursor = "pointer";
     }
   }, []);
 
   const handlePointerOut = useCallback(() => {
-    if (hoveredIndex !== null) {
-      const p = parcelMap.get(hoveredIndex);
+    const idx = hoveredIndexRef.current;
+    if (idx !== null) {
+      const p = parcelMap.get(idx);
       if (p && meshRef.current) {
         const color = new THREE.Color();
         if (p.ownerId) {
@@ -332,13 +338,14 @@ function PlotInstances({
         } else {
           color.copy(OWNER_COLORS.none);
         }
-        meshRef.current.setColorAt(hoveredIndex, color);
+        meshRef.current.setColorAt(idx, color);
         if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
       }
     }
+    hoveredIndexRef.current = null;
     setHoveredIndex(null);
     document.body.style.cursor = "default";
-  }, [hoveredIndex, parcelMap, currentPlayerId]);
+  }, [parcelMap, currentPlayerId]);
 
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
@@ -354,8 +361,13 @@ function PlotInstances({
     <instancedMesh
       ref={meshRef}
       args={[geometry, undefined, parcels.length]}
-      onPointerMove={(e) => handlePointerMove(e.intersections[0])}
+      onPointerMove={(e) => {
+        // Guard: intersections[0] can be undefined if pointer moves but misses
+        const hit = e.intersections[0];
+        if (hit) handlePointerMove(hit);
+      }}
       onPointerOut={handlePointerOut}
+      onPointerCancel={handlePointerOut}
       onClick={handleClick}
     >
       <meshStandardMaterial
@@ -368,6 +380,41 @@ function PlotInstances({
         emissiveIntensity={0.2}
       />
     </instancedMesh>
+  );
+}
+
+// ── Optional Saturn-style ring ─────────────────────────────────────────────
+// Placed outside the rotating group so it stays axis-aligned regardless of
+// how the globe spins. depthWrite=false + renderOrder keeps it behind plots.
+function SaturnRing() {
+  const geometry = useMemo(
+    () =>
+      new THREE.TorusGeometry(
+        GLOBE_RADIUS * 1.55, // ring center radius — well clear of all plots
+        GLOBE_RADIUS * 0.18, // tube thickness
+        3,                   // tubular segments (flat cross-section)
+        64                   // radial segments
+      ),
+    []
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <mesh
+      geometry={geometry}
+      rotation={[Math.PI * 0.42, 0.18, 0.05]}
+      renderOrder={0}
+    >
+      <meshStandardMaterial
+        color="#8899bb"
+        transparent
+        opacity={0.22}
+        roughness={0.9}
+        metalness={0.1}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
   );
 }
 
@@ -466,16 +513,36 @@ export function PlanetGlobe({
   onLocateTerritory,
   onFindEnemyTarget,
   hasOwnedPlots,
+  showRing = false,
 }: PlanetGlobeProps) {
   return (
     <WebGLErrorBoundary fallback={<WebGLFallback className={className} />}>
-      <div className={className} data-testid="planet-globe" style={{ position: "relative" }}>
+      <div
+        className={className}
+        data-testid="planet-globe"
+        style={{
+          position: "relative",
+          // Suppress OS-level focus rectangle and mobile tap-highlight on the container
+          outline: "none",
+          WebkitTapHighlightColor: "transparent",
+          userSelect: "none",
+        }}
+      >
         <Canvas
           camera={{ fov: 45, near: 0.1, far: 100, position: [0, 0, 9] }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-          style={{ background: "#000005" }}
+          style={{
+            background: "#000005",
+            // Suppress the browser focus outline on the <canvas> element itself
+            outline: "none",
+            WebkitTapHighlightColor: "transparent",
+          }}
+          tabIndex={-1}
           onCreated={({ gl }) => {
             if (!gl.getContext()) throw new Error("WebGL context unavailable");
+            // Prevent canvas from stealing focus and triggering OS focus ring on click
+            gl.domElement.setAttribute("tabindex", "-1");
+            gl.domElement.style.outline = "none";
           }}
         >
           <SceneLighting />
@@ -483,6 +550,9 @@ export function PlanetGlobe({
 
           {/* Atmosphere stays outside the rotating group */}
           <AtmosphereGlow />
+
+          {/* Optional Saturn ring — outside the rotating group so it stays axis-aligned */}
+          {showRing && <SaturnRing />}
 
           {/* Everything that should rotate together */}
           <RotatingGlobe

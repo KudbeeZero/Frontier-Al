@@ -70,6 +70,19 @@ export async function registerRoutes(
       const adminAsset = Array.isArray(assets)
         ? assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === asaId)
         : undefined;
+
+      if (Array.isArray(assets) && adminAsset === undefined) {
+        // Admin account holds the ASA but it wasn't found in the assets array.
+        // This most likely means the admin has not yet opted in, or the algod
+        // response key names changed. Treasury will be reported as 0, which is
+        // misleading — log explicitly so it surfaces in monitoring.
+        console.warn(
+          `[/api/economics] asaId=${asaId} not found in admin account's 'assets' array ` +
+            `(${assets.length} entries). Treasury will be reported as 0. ` +
+            "Verify admin account is opted in to the FRONTIER ASA."
+        );
+      }
+
       const rawAdminBalance: number = Number(adminAsset?.amount ?? 0);
       const treasury = rawAdminBalance / divisor;
 

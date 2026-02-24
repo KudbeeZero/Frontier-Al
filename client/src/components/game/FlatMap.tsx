@@ -55,8 +55,9 @@ const COLORS = {
   enemy: "#ff2222",
   enemyGlow: "#ff6644",
   unclaimed: "#1a1a1a",
-  selected: "#ffffff",
-  hover: "#888888",
+  selected: "#00e5ff",     // cyan — replaces white to eliminate the "white square" artifact
+  selectedGlow: "#00b8cc", // darker cyan for shadow glow
+  hover: "#6699bb",        // muted blue-grey instead of plain grey
   background: "#050508",
   grid: "#111115",
 };
@@ -421,12 +422,13 @@ export function FlatMap({
           plotAlpha = 0.6;
         }
 
-        if (isPlayerOwned && !isSelected && !isHovered) {
+        if (isSelected) {
+          // Subtle cyan glow — NOT white, NOT oversized
+          ctx.shadowColor = COLORS.selectedGlow;
+          ctx.shadowBlur  = plotSize * 0.8;
+        } else if (isPlayerOwned && !isHovered) {
           ctx.shadowColor = COLORS.playerGlow;
           ctx.shadowBlur  = plotSize * 0.8;
-        } else if (isSelected) {
-          ctx.shadowColor = "#ffffff";
-          ctx.shadowBlur  = plotSize * 1.5;
         } else {
           ctx.shadowColor = "transparent";
           ctx.shadowBlur  = 0;
@@ -441,22 +443,24 @@ export function FlatMap({
         ctx.shadowBlur  = 0;
       }
 
-      // Selected plot rings
+      // Selected plot rings — cyan, not white
       if (selectedPlot) {
         const screenPos = latLngToScreen(selectedPlot.lat, selectedPlot.lng, w, h);
         if (screenPos) {
           const { x, y } = screenPos;
-          const ringSize  = plotSize * 2.5;
-          ctx.strokeStyle = "#ffffff";
+          // Pulse driven by pulseRef so the ring animates
+          const ringPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
+          const ringSize  = plotSize * 2.2;
+          ctx.strokeStyle = `rgba(0,229,255,${(ringPulse * 0.85).toFixed(2)})`;
           ctx.lineWidth   = 1.5;
           ctx.beginPath();
           ctx.arc(x, y, ringSize, 0, Math.PI * 2);
           ctx.stroke();
 
-          ctx.strokeStyle = "rgba(255,255,255,0.3)";
+          ctx.strokeStyle = `rgba(0,184,204,${(ringPulse * 0.25).toFixed(2)})`;
           ctx.lineWidth   = 1;
           ctx.beginPath();
-          ctx.arc(x, y, ringSize * 1.5, 0, Math.PI * 2);
+          ctx.arc(x, y, ringSize * 1.45, 0, Math.PI * 2);
           ctx.stroke();
 
           selectedScreenPosRef.current = { x, y };
@@ -614,6 +618,12 @@ export function FlatMap({
     [parcels, latLngToScreen, getPlotSize]
   );
 
+  const handlePointerLeave = useCallback(() => {
+    setHoveredPlotId(null);
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.cursor = "grab";
+  }, []);
+
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     isDragging.current = false;
     lastMouse.current  = { x: e.clientX, y: e.clientY };
@@ -745,10 +755,20 @@ export function FlatMap({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerLeave}
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
-        style={{ width: "100%", height: "100%", touchAction: "none" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          touchAction: "none",
+          outline: "none",
+          // Suppress mobile browser tap-highlight (the "white circle" flash on iOS Safari)
+          WebkitTapHighlightColor: "transparent",
+          userSelect: "none",
+        }}
         data-testid="map-canvas"
       />
 
