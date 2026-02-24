@@ -34,11 +34,15 @@ function PlotRow({
   parcel,
   isSelected,
   onSelect,
+  onMineParcel,
+  isMining,
   now,
 }: {
   parcel: LandParcel;
   isSelected: boolean;
   onSelect: () => void;
+  onMineParcel: (parcelId: string) => void;
+  isMining: boolean;
   now: number;
 }) {
   const elapsed = now - parcel.lastMineTs;
@@ -49,71 +53,96 @@ function PlotRow({
       parcel.storageCapacity) *
     100;
 
+  const handleMineClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onMineParcel(parcel.id);
+  };
+
   return (
-    <button
-      onClick={onSelect}
+    <div
       className={cn(
-        "w-full text-left p-3 rounded-lg border transition-colors hover:bg-muted/60 active:bg-muted/80",
+        "w-full rounded-lg border transition-colors overflow-hidden",
         isSelected
           ? "border-primary/60 bg-primary/10"
-          : "border-border bg-muted/20"
+          : "border-border bg-muted/20 hover:bg-muted/40"
       )}
       data-testid={`plot-row-${parcel.plotId}`}
     >
-      {/* Top row: ID + biome + mine status */}
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          className="w-5 h-5 rounded shrink-0 flex items-center justify-center"
-          style={{ backgroundColor: biomeColors[parcel.biome] + "40" }}
-        >
-          <MapPin className="w-3 h-3" style={{ color: biomeColors[parcel.biome] }} />
+      <button
+        onClick={onSelect}
+        className="w-full text-left p-3"
+      >
+        {/* Top row: ID + biome + mine status */}
+        <div className="flex items-center gap-2 mb-2">
+          <div
+            className="w-5 h-5 rounded shrink-0 flex items-center justify-center"
+            style={{ backgroundColor: biomeColors[parcel.biome] + "40" }}
+          >
+            <MapPin className="w-3 h-3" style={{ color: biomeColors[parcel.biome] }} />
+          </div>
+          <span className="font-display text-xs font-bold uppercase tracking-wide flex-1">
+            Plot #{parcel.plotId}
+          </span>
+          <Badge variant="outline" className="text-[9px] capitalize shrink-0">
+            {parcel.biome}
+          </Badge>
+          {mineReady ? (
+            <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+          ) : (
+            <div className="flex items-center gap-0.5 text-[9px] text-muted-foreground font-mono">
+              <Clock className="w-3 h-3" />
+              {formatCooldown(remaining)}
+            </div>
+          )}
         </div>
-        <span className="font-display text-xs font-bold uppercase tracking-wide flex-1">
-          Plot #{parcel.plotId}
-        </span>
-        <Badge variant="outline" className="text-[9px] capitalize shrink-0">
-          {parcel.biome}
-        </Badge>
-        {mineReady ? (
-          <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
-        ) : (
-          <div className="flex items-center gap-0.5 text-[9px] text-muted-foreground font-mono">
-            <Clock className="w-3 h-3" />
-            {formatCooldown(remaining)}
+
+        {/* Resource storage bar */}
+        <Progress value={storagePercent} className="h-1 mb-1.5" />
+
+        {/* Bottom row: resources + FRNTR rate */}
+        <div className="flex items-center gap-3 text-[10px]">
+          <span className="flex items-center gap-0.5 text-iron">
+            <Pickaxe className="w-2.5 h-2.5" /> {parcel.ironStored}
+          </span>
+          <span className="flex items-center gap-0.5 text-fuel">
+            <Fuel className="w-2.5 h-2.5" /> {parcel.fuelStored}
+          </span>
+          <span className="flex items-center gap-0.5 text-crystal">
+            <Gem className="w-2.5 h-2.5" /> {parcel.crystalStored}
+          </span>
+          <span className="flex items-center gap-0.5 text-primary ml-auto">
+            <Zap className="w-2.5 h-2.5" />
+            {parcel.frontierPerDay.toFixed(1)}/day
+          </span>
+          <span className="flex items-center gap-0.5 text-muted-foreground">
+            <Shield className="w-2.5 h-2.5" /> Lv{parcel.defenseLevel}
+          </span>
+        </div>
+
+        {/* Pending FRNTR — live computed */}
+        {liveFrontierAccumulated(parcel, now) > 0.001 && (
+          <div className="mt-1.5 text-[9px] text-yellow-400 font-mono">
+            {liveFrontierAccumulated(parcel, now).toFixed(4)} FRNTR accumulated
           </div>
         )}
-      </div>
+      </button>
 
-      {/* Resource storage bar */}
-      <Progress value={storagePercent} className="h-1 mb-1.5" />
-
-      {/* Bottom row: resources + FRNTR rate */}
-      <div className="flex items-center gap-3 text-[10px]">
-        <span className="flex items-center gap-0.5 text-iron">
-          <Pickaxe className="w-2.5 h-2.5" /> {parcel.ironStored}
-        </span>
-        <span className="flex items-center gap-0.5 text-fuel">
-          <Fuel className="w-2.5 h-2.5" /> {parcel.fuelStored}
-        </span>
-        <span className="flex items-center gap-0.5 text-crystal">
-          <Gem className="w-2.5 h-2.5" /> {parcel.crystalStored}
-        </span>
-        <span className="flex items-center gap-0.5 text-primary ml-auto">
-          <Zap className="w-2.5 h-2.5" />
-          {parcel.frontierPerDay.toFixed(1)}/day
-        </span>
-        <span className="flex items-center gap-0.5 text-muted-foreground">
-          <Shield className="w-2.5 h-2.5" /> Lv{parcel.defenseLevel}
-        </span>
-      </div>
-
-      {/* Pending FRNTR — live computed */}
-      {liveFrontierAccumulated(parcel, now) > 0.001 && (
-        <div className="mt-1.5 text-[9px] text-yellow-400 font-mono">
-          {liveFrontierAccumulated(parcel, now).toFixed(4)} FRNTR accumulated
+      {/* Quick mine button */}
+      {mineReady && (
+        <div className="px-3 pb-2 border-t border-border/50">
+          <Button
+            onClick={handleMineClick}
+            disabled={isMining}
+            size="sm"
+            className="w-full h-7 font-display uppercase tracking-wide text-xs"
+            data-testid={`button-quick-mine-${parcel.plotId}`}
+          >
+            <Pickaxe className="w-3 h-3 mr-1.5" />
+            {isMining ? "Mining..." : "Mine"}
+          </Button>
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -320,6 +349,7 @@ interface CommandCenterPanelProps {
   onClaimFrontier: () => void;
   onCollectAll: () => void;
   onMine: () => void;
+  onMineParcel?: (parcelId: string) => void;
   onUpgrade: (type: string) => void;
   onAttack: () => void;
   isMining: boolean;
@@ -337,6 +367,7 @@ export function CommandCenterPanel({
   onClaimFrontier,
   onCollectAll,
   onMine,
+  onMineParcel,
   onUpgrade,
   onAttack,
   isMining,
@@ -569,6 +600,8 @@ export function CommandCenterPanel({
                 parcel={p}
                 isSelected={selectedParcel?.id === p.id}
                 onSelect={() => onSelectParcel(p.id)}
+                onMineParcel={onMineParcel || (() => {})}
+                isMining={isMining && selectedParcel?.id === p.id}
                 now={now}
               />
             ))

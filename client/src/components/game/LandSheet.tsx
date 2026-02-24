@@ -94,33 +94,33 @@ export function LandSheet({
       )}
       data-testid="land-sheet"
     >
-      <div className="mx-2 backdrop-blur-xl bg-card/95 border border-border rounded-t-lg shadow-xl flex flex-col" style={{ maxHeight: expanded ? "75vh" : "280px" }}>
+      <div className="mx-2 backdrop-blur-xl bg-gradient-to-b from-card/95 to-card/85 border border-border/60 rounded-t-xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: expanded ? "75vh" : "280px" }}>
         <div
-          className="h-1.5 w-full shrink-0"
+          className="h-2 w-full shrink-0"
           style={{ backgroundColor: biomeColors[parcel.biome] }}
         />
 
         <div className="p-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-border/30">
+            <div className="flex items-center gap-3">
               <div
-                className="w-8 h-8 rounded-md flex items-center justify-center"
-                style={{ backgroundColor: biomeColors[parcel.biome] + "30" }}
+                className="w-10 h-10 rounded-lg flex items-center justify-center shadow-md"
+                style={{ backgroundColor: biomeColors[parcel.biome] + "35", border: `2px solid ${biomeColors[parcel.biome]}30` }}
               >
-                <MapPin className="w-4 h-4" style={{ color: biomeColors[parcel.biome] }} />
+                <MapPin className="w-5 h-5" style={{ color: biomeColors[parcel.biome] }} />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-display text-sm font-bold uppercase tracking-wide" data-testid="text-plot-id">
                     Plot #{parcel.plotId}
                   </span>
-                  <Badge variant="outline" className="text-[10px] capitalize">{parcel.biome}</Badge>
+                  <Badge variant="outline" className="text-[10px] capitalize font-semibold">{parcel.biome}</Badge>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  {isOwned && <span className="text-primary font-display uppercase">Your Territory</span>}
-                  {isEnemyOwned && <span className="text-destructive font-display uppercase">Enemy Territory</span>}
+                <div className="flex items-center gap-2 text-[10px] mt-0.5">
+                  {isOwned && <span className="text-primary font-display uppercase font-semibold">Your Territory</span>}
+                  {isEnemyOwned && <span className="text-destructive font-display uppercase font-semibold">Enemy Territory</span>}
                   {isUnclaimed && <span className="font-display uppercase">Unclaimed</span>}
-                  <span className="font-mono">{parcel.frontierPerDay.toFixed(1)} FRNTR/day</span>
+                  <span className="text-primary font-mono font-semibold">{parcel.frontierPerDay.toFixed(1)} FRNTR/day</span>
                 </div>
               </div>
             </div>
@@ -128,6 +128,7 @@ export function LandSheet({
               <Button
                 variant="ghost"
                 size="icon"
+                className="hover:bg-muted/40"
                 onClick={() => setExpanded(!expanded)}
                 data-testid="button-expand-sheet"
               >
@@ -136,6 +137,7 @@ export function LandSheet({
               <Button
                 variant="ghost"
                 size="icon"
+                className="hover:bg-muted/40"
                 onClick={onClose}
                 data-testid="button-close-sheet"
               >
@@ -145,25 +147,25 @@ export function LandSheet({
           </div>
 
           <div className="grid grid-cols-4 gap-2 mb-3">
-            <div className="p-2 rounded-md bg-muted/50 text-center">
-              <Shield className={cn("w-3.5 h-3.5 mx-auto mb-0.5", parcel.defenseLevel > 5 ? "text-primary" : parcel.defenseLevel > 2 ? "text-warning" : "text-destructive")} />
-              <span className="text-[10px] text-muted-foreground block font-display uppercase">Defense</span>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
+              <Shield className={cn("w-4 h-4 mx-auto mb-1", parcel.defenseLevel > 5 ? "text-green-500" : parcel.defenseLevel > 2 ? "text-yellow-500" : "text-red-500")} />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Defense</span>
               <span className="font-mono text-sm font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
             </div>
-            <div className="p-2 rounded-md bg-muted/50 text-center">
-              <MapPin className="w-3.5 h-3.5 mx-auto mb-0.5 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground block font-display uppercase">Richness</span>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
+              <MapPin className="w-4 h-4 mx-auto mb-1 text-amber-500" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Richness</span>
               <span className="font-mono text-sm font-bold">{parcel.richness}%</span>
             </div>
-            <div className="p-2 rounded-md bg-muted/50 text-center">
-              <Pickaxe className="w-3.5 h-3.5 mx-auto mb-0.5 text-iron" />
-              <span className="text-[10px] text-muted-foreground block font-display uppercase">Iron</span>
-              <span className="font-mono text-sm font-bold">{parcel.ironStored}</span>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-iron/40 transition-colors">
+              <Pickaxe className="w-4 h-4 mx-auto mb-1 text-iron" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Iron</span>
+              <span className="font-mono text-sm font-bold text-iron">{parcel.ironStored}</span>
             </div>
-            <div className="p-2 rounded-md bg-muted/50 text-center">
-              <Fuel className="w-3.5 h-3.5 mx-auto mb-0.5 text-fuel" />
-              <span className="text-[10px] text-muted-foreground block font-display uppercase">Fuel</span>
-              <span className="font-mono text-sm font-bold">{parcel.fuelStored}</span>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-fuel/40 transition-colors">
+              <Fuel className="w-4 h-4 mx-auto mb-1 text-fuel" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Fuel</span>
+              <span className="font-mono text-sm font-bold text-fuel">{parcel.fuelStored}</span>
             </div>
           </div>
 
@@ -185,10 +187,13 @@ export function LandSheet({
                   size="sm"
                   onClick={onMine}
                   disabled={!canMine || isMining}
-                  className="flex-1 font-display uppercase tracking-wide text-xs"
+                  className={cn(
+                    "flex-1 font-display uppercase tracking-wide text-xs font-semibold",
+                    canMine && !isMining && "bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg"
+                  )}
                   data-testid="button-mine"
                 >
-                  <Pickaxe className="w-3.5 h-3.5 mr-1" />
+                  <Pickaxe className="w-4 h-4 mr-1.5" />
                   {isMining ? "Mining..." : "Mine"}
                 </Button>
                 <Button
@@ -196,7 +201,7 @@ export function LandSheet({
                   size="sm"
                   onClick={() => onUpgrade("defense")}
                   disabled={isUpgrading}
-                  className="font-display uppercase tracking-wide text-xs"
+                  className="font-display uppercase tracking-wide text-xs font-semibold"
                   data-testid="button-upgrade"
                 >
                   <Shield className="w-3.5 h-3.5 mr-1" />

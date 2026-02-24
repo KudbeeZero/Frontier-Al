@@ -164,6 +164,29 @@ export function GameLayout() {
     );
   };
 
+  const handleMineParcel = async (parcelId: string) => {
+    if (!player) return;
+    const parcel = gameState?.parcels.find(p => p.id === parcelId);
+    if (!parcel) return;
+    // Log to chain (batched, fire-and-forget)
+    queueMineAction(parcel.plotId);
+    mineMutation.mutate(
+      { playerId: player.id, parcelId },
+      {
+        onSuccess: (data: any) => {
+          const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
+          // Log to chain (batched, fire-and-forget) with actual mineral yields
+          queueMineAction(parcel.plotId, yields);
+          const desc = yields
+            ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
+            : "Resources extracted successfully.";
+          toast({ title: "Mining Complete", description: desc });
+        },
+        onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
+      }
+    );
+  };
+
   const handleUpgrade = async (type: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
     // Log to chain (batched, fire-and-forget)
@@ -445,6 +468,7 @@ export function GameLayout() {
     onClaimFrontier: handleClaimFrontier,
     onCollectAll: handleCollectAll,
     onMine: handleMine,
+    onMineParcel: handleMineParcel,
     onUpgrade: handleUpgrade,
     onAttack: handleAttackClick,
     isMining: mineMutation.isPending,
