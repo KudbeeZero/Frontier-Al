@@ -53,8 +53,8 @@ function latLngToSphere(lat: number, lng: number, radius: number): THREE.Vector3
 function SceneLighting() {
   return (
     <>
-      <ambientLight intensity={0.3} />
-      <directionalLight position={[5, 3, 5]} intensity={1.2} color="#ffffff" />
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[10, 5, 10]} intensity={2.0} color="#ffffff" />
       <directionalLight position={[-3, -1, -3]} intensity={0.3} color="#4466aa" />
       <pointLight position={[0, 8, 0]} intensity={0.5} color="#ffccaa" />
     </>
@@ -81,21 +81,37 @@ function GridOverlay() {
 function Planet() {
   const albedo = useMemo(() => {
     const loader = new THREE.TextureLoader();
-    const tex = loader.load("/textures/planets/ascendancy/planet_albedo.png");
+    const tex = loader.load(
+      "/textures/planets/ascendancy/planet_albedo.png",
+      () => console.log("[ALBEDO OK]"),
+      undefined,
+      (err) => console.error("[ALBEDO FAIL]", err)
+    );
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
 
   const nightLights = useMemo(() => {
     const loader = new THREE.TextureLoader();
-    const tex = loader.load("/textures/planets/ascendancy/planet_night_lights.png");
+    const tex = loader.load(
+      "/textures/planets/ascendancy/planet_night_lights.png",
+      () => console.log("[NIGHT OK]"),
+      undefined,
+      (err) => console.error("[NIGHT FAIL]", err)
+    );
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
 
   const clouds = useMemo(() => {
     const loader = new THREE.TextureLoader();
-    const tex = loader.load("/textures/planets/ascendancy/planet_clouds.png");
+    const tex = loader.load(
+      "/textures/planets/ascendancy/planet_clouds.png",
+      () => console.log("[CLOUDS OK]"),
+      undefined,
+      (err) => console.error("[CLOUDS FAIL]", err)
+    );
+    tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
 
@@ -107,17 +123,17 @@ function Planet() {
           map={albedo}
           emissiveMap={nightLights}
           emissive="#ffffff"
-          emissiveIntensity={1.2}
+          emissiveIntensity={1.5}
           roughness={0.8}
           metalness={0.1}
         />
       </mesh>
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.008, 64, 64]} />
+        <sphereGeometry args={[GLOBE_RADIUS * 1.01, 64, 64]} />
         <meshStandardMaterial
           map={clouds}
           transparent
-          opacity={0.35}
+          opacity={0.25}
           depthWrite={false}
           roughness={1}
           metalness={0}
