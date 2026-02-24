@@ -3,7 +3,6 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import type { LandParcel, BiomeType, OrbitalEvent } from "@shared/schema";
-import planetTexturePath from "@/assets/images/planet-surface.png";
 import { OrbitalLayer } from "./OrbitalLayer";
 
 interface PlanetGlobeProps {
@@ -79,19 +78,52 @@ function GridOverlay() {
   );
 }
 
-// Planet no longer self-rotates — the parent RotatingGlobe group handles it
 function Planet() {
-  const texture = useMemo(() => {
+  const albedo = useMemo(() => {
     const loader = new THREE.TextureLoader();
-    const tex = loader.load(planetTexturePath);
+    const tex = loader.load("/textures/planets/ascendancy/planet_albedo.png");
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }, []);
+
+  const nightLights = useMemo(() => {
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load("/textures/planets/ascendancy/planet_night_lights.png");
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, []);
+
+  const clouds = useMemo(() => {
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load("/textures/planets/ascendancy/planet_clouds.png");
+    return tex;
+  }, []);
+
   return (
-    <mesh>
-      <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
-      <meshStandardMaterial map={texture} roughness={0.8} metalness={0.1} />
-    </mesh>
+    <>
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
+        <meshStandardMaterial
+          map={albedo}
+          emissiveMap={nightLights}
+          emissive="#ffffff"
+          emissiveIntensity={1.2}
+          roughness={0.8}
+          metalness={0.1}
+        />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.008, 64, 64]} />
+        <meshStandardMaterial
+          map={clouds}
+          transparent
+          opacity={0.35}
+          depthWrite={false}
+          roughness={1}
+          metalness={0}
+        />
+      </mesh>
+    </>
   );
 }
 

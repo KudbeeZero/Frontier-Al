@@ -1,0 +1,115 @@
+You are working in my Replit project “Frontier-AL”. I need you to fix the Vite dev server crash and then confirm the planet globe renders using my new textures.
+
+CURRENT ERROR (npm run dev):
+ERROR: The injected path "/home/runner/workspace/node_modules/@esbuild-plugins/node-globals-polyfill/_buffer.js" cannot be marked as external
+Also shows: Failed to run dependency scan, failed to scan entries from /home/runner/workspace/client/index.html
+
+GOAL:
+1) Make `npm run dev` start cleanly (no node-globals-polyfill external crash).
+2) Keep browser-compatible polyfills so algosdk / walletconnect can run (Buffer/process/etc).
+3) Confirm the globe loads the texture files from:
+   - /textures/planets/ascendancy/planet_albedo.png
+   - /textures/planets/ascendancy/planet_clouds.png
+   - /textures/planets/ascendancy/planet_night_lights.png
+   - /textures/landmarks/nasa_launch.png
+   - /textures/satellites/satellite.png
+
+STEP A — FIND THE SOURCE OF node-globals-polyfill INJECTION
+- Run:
+  - `npm ls @esbuild-plugins/node-globals-polyfill`
+  - `grep -R "node-globals-polyfill" -n .`
+  - `grep -R "NodeGlobalsPolyfillPlugin" -n .`
+- Identify which config/package is adding it (usually in vite config optimizeDeps.esbuildOptions.plugins or an older polyfill plugin).
+
+STEP B — REMOVE CONFLICTING POLYFILL SYSTEMS
+We should use ONE polyfill system only. Keep `vite-plugin-node-polyfills` and remove anything that injects `@esbuild-plugins/node-globals-polyfill`.
+
+Actions:
+- If any Vite config contains NodeGlobalsPolyfillPlugin or references @esbuild-plugins/node-globals-polyfill, remove that plugin entirely.
+- If any dependencies directly include @esbuild-plugins/node-globals-polyfill only for Vite, remove that Vite plugin usage (do NOT remove runtime deps needed by wallet libs).
+- If there is a second Vite config file being used (client/vite.config.ts vs root vite.config.ts), ensure scripts use ONLY ONE config consistently.
+
+STEP C — MAKE SURE THE PROJECT RUNS WITH A SINGLE VITE CONFIG
+- Open package.json and fix scripts so dev clearly runs Vite from the client root:
+  - dev should run Vite using root = client, port 5000, host 0.0.0.0
+  - example acceptable: `"dev": "vite --host 0.0.0.0 --port 5000"` IF vite.config.ts root is set to client
+- Ensure we are not accidentally running a different config file.
+
+STEP D — REPLACE vite.config.ts WITH THIS KNOWN-GOOD CONFIG (USE EXACTLY)
+Replace the entire root `vite.config.ts` with:
+
+--- START FILE ---
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default defineConfig({
+  plugins: [
+    react(),
+    nodePolyfills({
+      include: ["buffer", "crypto", "stream", "events", "util", "process"],
+      globals: { Buffer: true, global: true, process: true },
+    }),
+  ],
+  root: path.resolve(__dirname, "client"),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets"),
+    },
+  },
+  build: {
+    outDir: path.resolve(__dirname, "dist/public"),
+    emptyOutDir: true,
+  },
+  server: {
+    host: "0.0.0.0",
+    port: 5000,
+    allowedHosts: true,
+    fs: { strict: true, deny: ["**/.*"] },
+    proxy: {
+      "/api": {
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+    },
+  },
+});
+--- END FILE ---
+
+STEP E — HARD RESET VITE CACHES THEN REINSTALL
+Run these in Shell:
+- `rm -rf node_modules client/node_modules`
+- `rm -rf package-lock.json client/package-lock.json`
+- `rm -rf client/node_modules/.vite node_modules/.vite`
+- `npm install`
+
+STEP F — START DEV AND VERIFY GLOBE
+Run:
+- `npm run dev`
+
+If it starts:
+- Open `client/src/components/game/PlanetGlobe.tsx`
+- Confirm the texture paths used by THREE.TextureLoader are using public paths like:
+  - `/textures/planets/ascendancy/planet_albedo.png`
+If not, update that file so the globe uses:
+  - map/albedo = `/textures/planets/ascendancy/planet_albedo.png`
+  - clouds overlay = `/textures/planets/ascendancy/planet_clouds.png` (transparent material over same sphere)
+  - night lights = `/textures/planets/ascendancy/planet_night_lights.png` (additive/emissive layer or separate mesh for night side)
+Also ensure `tex.colorSpace = THREE.SRGBColorSpace` for albedo and night lights.
+
+STEP G — VISUAL CONFIRMATION
+Add temporary console logs or on-screen debug text that prints:
+- Which texture URLs were requested
+- Whether loader onLoad fired successfully
+Then remove debug once verified.
+
+DELIVERABLE:
+- Commit-ready changes: package.json scripts (if needed), vite.config.ts replaced, any old node-globals polyfill plugin removed, and PlanetGlobe.tsx updated (only if texture paths were wrong).
+- After fixes, `npm run dev` must start without the injected _buffer.js external error and globe must render with the new map.
