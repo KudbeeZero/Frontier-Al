@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["nano", "emacsclient-commands"]
+packages = ["nano", "emacsclient-commands", "lsof"]
 
 [env]
 PORT = "5000"
@@ -38,7 +38,7 @@ waitForPort = 5000
 
 [[ports]]
 localPort = 5000
-externalPort = 80
+externalPort = 8080
 
 [agent]
 expertMode = true
