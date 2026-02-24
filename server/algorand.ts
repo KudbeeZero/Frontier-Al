@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plotNfts } from "./db-schema";
 
-const ALGOD_URL = "https://testnet-api.algonode.cloud";
-const INDEXER_URL = "https://testnet-idx.algonode.cloud";
+// Override with ALGOD_URL / INDEXER_URL env vars to switch networks without code changes.
+const ALGOD_URL = process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud";
+const INDEXER_URL = process.env.INDEXER_URL ?? "https://testnet-idx.algonode.cloud";
 
 export const algodClient = new algosdk.Algodv2("", ALGOD_URL, "");
 export const indexerClient = new algosdk.Indexer("", INDEXER_URL, "");
@@ -415,6 +416,13 @@ export async function mintPlotNftToAddress(
   }
 
   const account = getAdminAccount();
+  // PUBLIC_BASE_URL must be set in production; the hardcoded fallback is the
+  // Replit deployment URL and will bake wrong NFT metadata URLs if deployed elsewhere.
+  if (!process.env.PUBLIC_BASE_URL) {
+    console.warn(
+      "[mintPlotNftToAddress] PUBLIC_BASE_URL env var is not set — falling back to hardcoded Replit URL. Set PUBLIC_BASE_URL in production."
+    );
+  }
   const PUBLIC_BASE_URL =
     process.env.PUBLIC_BASE_URL || "https://frontier-al--kudbeex.replit.app";
 

@@ -4,11 +4,12 @@ import LuteConnect from "lute-connect";
 
 export type WalletType = "pera" | "lute";
 
+// Override with VITE_ALGOD_URL / VITE_INDEXER_URL at build time to switch networks.
 export const ALGORAND_TESTNET = {
   chainId: 416002 as const,
   genesisID: "testnet-v1.0",
-  algodUrl: "https://testnet-api.algonode.cloud",
-  indexerUrl: "https://testnet-idx.algonode.cloud",
+  algodUrl: (import.meta.env.VITE_ALGOD_URL as string | undefined) ?? "https://testnet-api.algonode.cloud",
+  indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? "https://testnet-idx.algonode.cloud",
 };
 
 export const algodClient = new algosdk.Algodv2(
@@ -239,7 +240,8 @@ export async function getASABalance(address: string, assetId: number): Promise<n
   try {
     const accountInfo = await algodClient.accountInformation(address).do();
     const assets = accountInfo.assets || [];
-    const asset = assets.find((a: any) => (a.assetIndex ?? a["asset-id"]) === assetId);
+    // algosdk v3: .assetId (bigint) — v2/raw JSON: "asset-id" or assetIndex
+    const asset = assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === assetId);
     return asset ? Number(asset.amount) : 0;
   } catch (error) {
     console.error("Failed to fetch ASA balance:", error);
@@ -279,7 +281,8 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
       const accountInfo = await algodClient.accountInformation(address).do();
       const assets = accountInfo.assets || accountInfo["assets"] || [];
       return assets.some((a: any) => {
-        const id = a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
+        // algosdk v3: .assetId (bigint); v2/raw JSON: "asset-id" / assetIndex
+        const id = a.assetId ?? a["asset-id"] ?? a.assetIndex ?? a["assetIndex"];
         return Number(id) === assetId;
       });
     } catch {
@@ -291,7 +294,10 @@ export async function isOptedInToASA(address: string, assetId: number): Promise<
 /**
  * Pure helper: checks whether an account is opted into a specific ASA by
  * inspecting the accountInfo object returned from algodClient.accountInformation().do().
- * Accepts both the legacy "asset-id" key and the newer "assetIndex" key.
+ *
+ * algosdk v3 deserializes AssetHolding with a camelCase `.assetId` (bigint) property.
+ * Older / raw-JSON paths expose the kebab-case `"asset-id"` key instead.
+ * We check all known variants so this works regardless of how the object was produced.
  */
 export function hasOptedIn(
   accountInfo: Record<string, unknown>,
@@ -299,7 +305,10 @@ export function hasOptedIn(
 ): boolean {
   const assets = (accountInfo.assets as Array<Record<string, unknown>>) ?? [];
   return assets.some(
-    (a) => Number(a["asset-id"] ?? a["assetIndex"]) === asaId
+    // assetId  → algosdk v3 AssetHolding (bigint, use Number() for comparison)
+    // asset-id → raw JSON / legacy algosdk v2 response
+    // assetIndex → older SDK alias sometimes seen in typed responses
+    (a) => Number(a["assetId"] ?? a["asset-id"] ?? a["assetIndex"]) === asaId
   );
 }
 
@@ -330,6 +339,11 @@ export function getCachedAsaId(): number | null {
   return _cachedAsaId;
 }
 
+/**
+ * @deprecated Not used for any real transaction. The actual treasury address is fetched
+ * at runtime from /api/blockchain/status and stored in _cachedTreasuryAddress.
+ * This placeholder will be removed once all call-sites are confirmed clean.
+ */
 export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";
 
 // ---------------------------------------------------------------------------
