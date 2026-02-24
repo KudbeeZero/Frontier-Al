@@ -729,11 +729,8 @@ export function FlatMap({
 
   const handleLocate = useCallback(() => {
     if (onLocateTerritory) onLocateTerritory();
-    if (currentPlayerId) {
-      const owned = parcels.find((p) => p.ownerId === currentPlayerId);
-      if (owned) centerOnPlot(owned);
-    }
-  }, [onLocateTerritory, currentPlayerId, parcels, centerOnPlot]);
+    // Centering is handled by the selectedParcelId effect after GameLayout sets the new random plot
+  }, [onLocateTerritory]);
 
   const handleFindEnemy = useCallback(() => {
     if (onFindEnemyTarget) onFindEnemyTarget();
@@ -743,20 +740,14 @@ export function FlatMap({
     setCamera({ centerLat: 0, centerLng: 0, zoom: 1 });
   }, []);
 
-  // Auto-rotate globe to bring a newly selected plot into view if it is on the back hemisphere.
+  // Auto-rotate globe to center on a newly selected plot.
+  // Always centers so that locate/enemy/battle-link actions always bring the plot into view.
   useEffect(() => {
     if (selectedParcelId) {
       const plot = plotIndex.get(selectedParcelId);
-      if (plot) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const rect      = canvas.getBoundingClientRect();
-          const screenPos = latLngToScreen(plot.lat, plot.lng, rect.width, rect.height);
-          if (!screenPos) centerOnPlot(plot);
-        }
-      }
+      if (plot) centerOnPlot(plot);
     }
-  }, [selectedParcelId, plotIndex, latLngToScreen, centerOnPlot]);
+  }, [selectedParcelId, plotIndex, centerOnPlot]);
 
   return (
     <div
