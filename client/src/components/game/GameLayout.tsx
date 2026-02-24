@@ -85,6 +85,8 @@ export function GameLayout() {
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Per-parcel mining state — prevents double-clicks and rapid-fire clicking
+  const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
 
   // Tick every second for live FRNTR accumulation display in ResourceHUD.
   useEffect(() => {
@@ -145,14 +147,14 @@ export function GameLayout() {
 
   const handleMine = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueMineAction(selectedParcel.plotId);
+    if (miningParcelIds.has(selectedParcelId)) return;
+    setMiningParcelIds((prev) => new Set([...prev, selectedParcelId]));
     mineMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log to chain (batched, fire-and-forget) with actual mineral yields
+          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(selectedParcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
@@ -160,22 +162,29 @@ export function GameLayout() {
           toast({ title: "Mining Complete", description: desc });
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
+        onSettled: () => {
+          setMiningParcelIds((prev) => {
+            const next = new Set(prev);
+            next.delete(selectedParcelId);
+            return next;
+          });
+        },
       }
     );
   };
 
   const handleMineParcel = async (parcelId: string) => {
     if (!player) return;
+    if (miningParcelIds.has(parcelId)) return;
     const parcel = gameState?.parcels.find(p => p.id === parcelId);
     if (!parcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueMineAction(parcel.plotId);
+    setMiningParcelIds((prev) => new Set([...prev, parcelId]));
     mineMutation.mutate(
       { playerId: player.id, parcelId },
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log to chain (batched, fire-and-forget) with actual mineral yields
+          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(parcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
@@ -183,6 +192,13 @@ export function GameLayout() {
           toast({ title: "Mining Complete", description: desc });
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
+        onSettled: () => {
+          setMiningParcelIds((prev) => {
+            const next = new Set(prev);
+            next.delete(parcelId);
+            return next;
+          });
+        },
       }
     );
   };
@@ -458,6 +474,8 @@ export function GameLayout() {
     );
   }
 
+  const isMiningParcel = (parcelId: string) => miningParcelIds.has(parcelId);
+
   const commandCenterProps = {
     player,
     parcels: gameState?.parcels ?? [],
@@ -469,6 +487,7 @@ export function GameLayout() {
     onCollectAll: handleCollectAll,
     onMine: handleMine,
     onMineParcel: handleMineParcel,
+    isMiningParcel,
     onUpgrade: handleUpgrade,
     onAttack: handleAttackClick,
     isMining: mineMutation.isPending,
@@ -599,6 +618,8 @@ export function GameLayout() {
               onCollectAll={handleCollectAll}
               onClaimFrontier={handleClaimFrontier}
               onSelectParcel={handleParcelSelectFromInventory}
+              onMineParcel={handleMineParcel}
+              isMiningParcel={isMiningParcel}
               isCollecting={collectMutation.isPending}
               isClaimingFrontier={claimFrontierMutation.isPending}
             />

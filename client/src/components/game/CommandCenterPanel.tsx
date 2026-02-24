@@ -35,14 +35,14 @@ function PlotRow({
   isSelected,
   onSelect,
   onMineParcel,
-  isMining,
+  isMiningThisParcel,
   now,
 }: {
   parcel: LandParcel;
   isSelected: boolean;
   onSelect: () => void;
   onMineParcel: (parcelId: string) => void;
-  isMining: boolean;
+  isMiningThisParcel: boolean;
   now: number;
 }) {
   const elapsed = now - parcel.lastMineTs;
@@ -52,11 +52,6 @@ function PlotRow({
     ((parcel.ironStored + parcel.fuelStored + parcel.crystalStored) /
       parcel.storageCapacity) *
     100;
-
-  const handleMineClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onMineParcel(parcel.id);
-  };
 
   return (
     <div
@@ -127,18 +122,21 @@ function PlotRow({
         )}
       </button>
 
-      {/* Quick mine button */}
+      {/* Mine Resources button — only shown when plot is ready; per-parcel disabled state */}
       {mineReady && (
         <div className="px-3 pb-2 border-t border-border/50">
           <Button
-            onClick={handleMineClick}
-            disabled={isMining}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMineParcel(parcel.id);
+            }}
+            disabled={isMiningThisParcel}
             size="sm"
-            className="w-full h-7 font-display uppercase tracking-wide text-xs"
-            data-testid={`button-quick-mine-${parcel.plotId}`}
+            className="w-full h-7 font-display uppercase tracking-wide text-xs transition-all active:scale-95"
+            data-testid={`button-mine-resources-${parcel.plotId}`}
           >
-            <Pickaxe className="w-3 h-3 mr-1.5" />
-            {isMining ? "Mining..." : "Mine"}
+            <Pickaxe className={cn("w-3 h-3 mr-1.5", isMiningThisParcel && "animate-spin")} />
+            {isMiningThisParcel ? "Extracting..." : "Mine Resources"}
           </Button>
         </div>
       )}
@@ -146,7 +144,7 @@ function PlotRow({
   );
 }
 
-// ─── SelectedParcelActions (inlined from BaseInfoPanel) ──────────────────────
+// ─── SelectedParcelActions ────────────────────────────────────────────────────
 
 function SelectedParcelActions({
   parcel,
@@ -154,7 +152,7 @@ function SelectedParcelActions({
   onMine,
   onUpgrade,
   onAttack,
-  isMining,
+  isMiningThisParcel,
   isUpgrading,
 }: {
   parcel: LandParcel;
@@ -162,7 +160,7 @@ function SelectedParcelActions({
   onMine: () => void;
   onUpgrade: (type: string) => void;
   onAttack: () => void;
-  isMining: boolean;
+  isMiningThisParcel: boolean;
   isUpgrading: boolean;
 }) {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -248,15 +246,20 @@ function SelectedParcelActions({
           })()}
 
           <div className="space-y-2">
+            {/* Mine For Resources — resource extraction only, NOT token minting */}
             <Button
               onClick={onMine}
-              disabled={!canMine || isMining}
-              className="w-full font-display uppercase tracking-wide"
+              disabled={!canMine || isMiningThisParcel}
+              className="w-full font-display uppercase tracking-wide transition-all active:scale-95"
               size="sm"
               data-testid="button-mine-cc"
             >
-              <Pickaxe className="w-3.5 h-3.5 mr-2" />
-              {isMining ? "Mining..." : "Mine Resources"}
+              <Pickaxe className={cn("w-3.5 h-3.5 mr-2", isMiningThisParcel && "animate-spin")} />
+              {isMiningThisParcel
+                ? "Extracting Resources..."
+                : canMine
+                ? "Mine For Resources"
+                : "Mine Cooldown Active"}
             </Button>
 
             <Collapsible open={upgradeOpen} onOpenChange={setUpgradeOpen}>
@@ -350,6 +353,7 @@ interface CommandCenterPanelProps {
   onCollectAll: () => void;
   onMine: () => void;
   onMineParcel?: (parcelId: string) => void;
+  isMiningParcel?: (parcelId: string) => boolean;
   onUpgrade: (type: string) => void;
   onAttack: () => void;
   isMining: boolean;
@@ -368,6 +372,7 @@ export function CommandCenterPanel({
   onCollectAll,
   onMine,
   onMineParcel,
+  isMiningParcel,
   onUpgrade,
   onAttack,
   isMining,
@@ -402,7 +407,6 @@ export function CommandCenterPanel({
     () => ownedParcels.reduce((s, p) => s + p.frontierPerDay, 0),
     [ownedParcels]
   );
-  // Live total: stored DB amount + time-elapsed earnings since last claim.
   const totalFrontierPending = useMemo(
     () => ownedParcels.reduce((s, p) => s + liveFrontierAccumulated(p, now), 0),
     [ownedParcels, now]
@@ -433,13 +437,13 @@ export function CommandCenterPanel({
         )}
       </div>
 
-      {/* ── FRNTR Accumulation Banner ── */}
+      {/* ── FRNTR Token Mint Banner (ASA tokens only — not related to mining) ── */}
       {player && ownedParcels.length > 0 && (
         <div className="mx-3 mt-3 p-3 rounded-lg border border-primary/40 bg-primary/5 shrink-0">
           <div className="flex items-center gap-1.5 mb-2">
             <TrendingUp className="w-3.5 h-3.5 text-primary" />
             <span className="font-display text-[10px] font-bold uppercase tracking-wider text-primary">
-              FRNTR Generation
+              FRNTR Token Generation
             </span>
           </div>
 
@@ -474,6 +478,7 @@ export function CommandCenterPanel({
             </div>
           </div>
 
+          {/* MINT FRNTR TOKEN — this mints the ASA token, separate from mining */}
           <Button
             onClick={onClaimFrontier}
             disabled={isClaimingFrontier || !hasPending}
@@ -482,20 +487,20 @@ export function CommandCenterPanel({
           >
             <Zap className="w-3.5 h-3.5 mr-1.5" />
             {isClaimingFrontier
-              ? "Minting..."
+              ? "Minting FRNTR Token..."
               : hasPending
-              ? `Mint All — ${totalFrontierPending.toFixed(2)} FRNTR`
+              ? `Mint FRNTR Token — ${totalFrontierPending.toFixed(2)}`
               : "No FRNTR Accumulated Yet"}
           </Button>
           {hasPending && (
             <p className="text-[8px] text-muted-foreground text-center mt-1">
-              Sent in max-batch atomic transactions on-chain
+              Mints FRNTR ASA tokens to your Algorand wallet on-chain
             </p>
           )}
         </div>
       )}
 
-      {/* ── Collect Minerals ── */}
+      {/* ── Collect Minerals — collects extracted resources (iron/fuel/crystal) ── */}
       {player && hasStored && (
         <div className="mx-3 mt-2 shrink-0">
           <Button
@@ -513,13 +518,13 @@ export function CommandCenterPanel({
         </div>
       )}
 
-      {/* ── Lifetime mineral stats ── */}
+      {/* ── Lifetime resource extraction stats ── */}
       {player && (player.totalIronMined > 0 || player.totalFuelMined > 0) && (
         <div className="mx-3 mt-2 p-2 rounded-md bg-muted/20 border border-border shrink-0">
           <div className="flex items-center gap-1 mb-1">
             <FlaskConical className="w-3 h-3 text-muted-foreground" />
             <span className="text-[9px] font-display uppercase tracking-wide text-muted-foreground">
-              Total Extracted
+              Total Resources Extracted
             </span>
           </div>
           <div className="grid grid-cols-3 gap-1 text-center">
@@ -601,14 +606,14 @@ export function CommandCenterPanel({
                 isSelected={selectedParcel?.id === p.id}
                 onSelect={() => onSelectParcel(p.id)}
                 onMineParcel={onMineParcel || (() => {})}
-                isMining={isMining && selectedParcel?.id === p.id}
+                isMiningThisParcel={isMiningParcel ? isMiningParcel(p.id) : false}
                 now={now}
               />
             ))
           )}
         </div>
 
-        {/* ── Selected parcel actions (shown at bottom of scroll area) ── */}
+        {/* ── Selected parcel actions ── */}
         {selectedParcel && player && (
           <div className="mt-3">
             <SelectedParcelActions
@@ -617,7 +622,9 @@ export function CommandCenterPanel({
               onMine={onMine}
               onUpgrade={onUpgrade}
               onAttack={onAttack}
-              isMining={isMining}
+              isMiningThisParcel={
+                isMiningParcel ? isMiningParcel(selectedParcel.id) : isMining
+              }
               isUpgrading={isUpgrading}
             />
           </div>
@@ -656,7 +663,9 @@ export function CommandCenterPanel({
                 onMine={onMine}
                 onUpgrade={onUpgrade}
                 onAttack={onAttack}
-                isMining={isMining}
+                isMiningThisParcel={
+                  isMiningParcel ? isMiningParcel(selectedParcel.id) : isMining
+                }
                 isUpgrading={isUpgrading}
               />
             </div>
