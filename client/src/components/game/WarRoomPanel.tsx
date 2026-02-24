@@ -1,4 +1,4 @@
-import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff, Eye } from "lucide-react";
+import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff, Eye, Globe } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,10 +13,11 @@ interface WarRoomPanelProps {
   events: GameEvent[];
   players: Player[];
   onWatchBattle?: (battleId: string) => void;
+  onViewOnGlobe?: (parcelId: string) => void;
   className?: string;
 }
 
-function BattleCard({ battle, players, onWatch }: { battle: Battle; players: Player[]; onWatch?: (id: string) => void }) {
+function BattleCard({ battle, players, onWatch, onViewOnGlobe }: { battle: Battle; players: Player[]; onWatch?: (id: string) => void; onViewOnGlobe?: (parcelId: string) => void }) {
   const attacker = players.find((p) => p.id === battle.attackerId);
   const defender = players.find((p) => p.id === battle.defenderId);
   const now = Date.now();
@@ -85,17 +86,30 @@ function BattleCard({ battle, players, onWatch }: { battle: Battle; players: Pla
         </span>
       </div>
 
-      {onWatch && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-7 text-[10px] font-display uppercase tracking-wide gap-1.5"
-          onClick={() => onWatch(battle.id)}
-        >
-          <Eye className="w-3 h-3" />
-          Watch Battle
-        </Button>
-      )}
+      <div className="flex gap-1.5">
+        {onViewOnGlobe && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 h-7 text-[10px] font-display uppercase tracking-wide gap-1.5 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
+            onClick={() => onViewOnGlobe(battle.targetParcelId)}
+          >
+            <Globe className="w-3 h-3" />
+            View Plot
+          </Button>
+        )}
+        {onWatch && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 h-7 text-[10px] font-display uppercase tracking-wide gap-1.5"
+            onClick={() => onWatch(battle.id)}
+          >
+            <Eye className="w-3 h-3" />
+            Watch Battle
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -200,7 +214,7 @@ function AIActivityFeed({ players, events }: { players: Player[]; events: GameEv
   );
 }
 
-export function WarRoomPanel({ battles, events, players, onWatchBattle, className }: WarRoomPanelProps) {
+export function WarRoomPanel({ battles, events, players, onWatchBattle, onViewOnGlobe, className }: WarRoomPanelProps) {
   const activeBattles = battles.filter((b) => b.status === "pending");
   const recentBattles = battles.filter((b) => b.status === "resolved").slice(0, 5);
   const recentEvents = events.slice(0, 15);
@@ -255,13 +269,13 @@ export function WarRoomPanel({ battles, events, players, onWatchBattle, classNam
               ) : (
                 <>
                   {activeBattles.map((battle) => (
-                    <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} />
+                    <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} onViewOnGlobe={onViewOnGlobe} />
                   ))}
                   {recentBattles.length > 0 && (
                     <>
                       <p className="text-xs text-muted-foreground uppercase font-display tracking-wide pt-2">Recent</p>
                       {recentBattles.map((battle) => (
-                        <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} />
+                        <BattleCard key={battle.id} battle={battle} players={players} onWatch={onWatchBattle} onViewOnGlobe={onViewOnGlobe} />
                       ))}
                     </>
                   )}

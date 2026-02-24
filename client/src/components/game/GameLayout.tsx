@@ -87,6 +87,8 @@ export function GameLayout() {
   const [now, setNow] = useState(() => Date.now());
   // Per-parcel mining state — prevents double-clicks and rapid-fire clicking
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
+  const lastLocatedOwnedId = useRef<string | null>(null);
+  const lastLocatedEnemyId = useRef<string | null>(null);
 
   // Tick every second for live FRNTR accumulation display in ResourceHUD.
   useEffect(() => {
@@ -385,7 +387,12 @@ export function GameLayout() {
     if (!player || !gameState) return;
     const ownedPlots = gameState.parcels.filter(p => p.ownerId === player.id);
     if (ownedPlots.length > 0) {
-      setSelectedParcelId(ownedPlots[0].id);
+      // Pick a random plot that differs from the last one shown (if possible)
+      let candidates = ownedPlots.filter(p => p.id !== lastLocatedOwnedId.current);
+      if (candidates.length === 0) candidates = ownedPlots;
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      lastLocatedOwnedId.current = pick.id;
+      setSelectedParcelId(pick.id);
       setActiveTab("map");
     }
   };
@@ -394,13 +401,22 @@ export function GameLayout() {
     if (!gameState) return;
     const enemyPlots = gameState.parcels.filter(p => p.ownerId && p.ownerId !== player?.id);
     if (enemyPlots.length > 0) {
-      const randomEnemy = enemyPlots[Math.floor(Math.random() * enemyPlots.length)];
+      // Pick a random enemy plot that differs from the last one shown (if possible)
+      let candidates = enemyPlots.filter(p => p.id !== lastLocatedEnemyId.current);
+      if (candidates.length === 0) candidates = enemyPlots;
+      const randomEnemy = candidates[Math.floor(Math.random() * candidates.length)];
+      lastLocatedEnemyId.current = randomEnemy.id;
       setSelectedParcelId(randomEnemy.id);
       setActiveTab("map");
       toast({ title: "Enemy Located", description: `Plot #${randomEnemy.plotId} owned by ${randomEnemy.ownerType === "ai" ? "AI Faction" : "Player"} — tap to attack!` });
     } else {
       toast({ title: "No Enemies Found", description: "No enemy territories detected yet." });
     }
+  };
+
+  const handleViewOnGlobe = (parcelId: string) => {
+    setSelectedParcelId(parcelId);
+    setActiveTab("map");
   };
 
   const playerHasOwnedPlots = player && gameState ? gameState.parcels.some(p => p.ownerId === player.id) : false;
@@ -604,6 +620,7 @@ export function GameLayout() {
             events={gameState.events}
             players={gameState.players}
             onWatchBattle={setWatchingBattleId}
+            onViewOnGlobe={handleViewOnGlobe}
             className="h-full border-0 rounded-none"
           />
         ) : null}
@@ -630,6 +647,7 @@ export function GameLayout() {
               events={gameState.events}
               players={gameState.players}
               onWatchBattle={setWatchingBattleId}
+              onViewOnGlobe={handleViewOnGlobe}
             />
           )}
           {activeTab === "commander" && gameState && (
