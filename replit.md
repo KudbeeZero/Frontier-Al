@@ -5,7 +5,7 @@ FRONTIER is a persistent 2D map-based war strategy game where players and AI fac
 
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite, TailwindCSS
-- **Map Rendering**: 2D HTML Canvas (FlatMap.tsx) - equirectangular projection with zoom/pan, replaces 3D globe
+- **Map Rendering**: 2D HTML Canvas (FlatMap.tsx) - equirectangular projection with zoom/pan, 3-layer planet textures (albedo + night lights screen-blended + clouds overlay)
 - **3D Globe (legacy)**: Three.js, @react-three/fiber, @react-three/drei (PlanetGlobe.tsx still exists but not used)
 - **Backend**: Node.js, Express, In-memory storage
 - **Blockchain**: Algorand TestNet with dual wallet support (Pera + LUTE)

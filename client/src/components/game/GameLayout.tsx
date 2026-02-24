@@ -541,9 +541,7 @@ export function GameLayout() {
             players={gameState.players}
           />
           {/* Orbital streaks canvas overlay — pointer-events: none, doesn't affect map interaction */}
-          {orbitalEvents.length > 0 && (
-            <OrbitalCanvas events={orbitalEvents} />
-          )}
+          <OrbitalCanvas events={orbitalEvents} />
         </>
       ) : null}
 

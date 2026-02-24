@@ -241,11 +241,11 @@ export interface OrbitalEvent {
 
 // Cosmetic epoch window (ms): every client uses the same window so they generate
 // the same visual events without server communication.
-export const ORBITAL_EPOCH_MS = 60_000; // 60-second windows
+export const ORBITAL_EPOCH_MS = 15_000; // 15-second windows for frequent events
 export const ORBITAL_WORLD_SEED = 31337; // stable across all clients
 
 // Maximum cosmetic events generated per epoch (tunable)
-export const ORBITAL_MAX_COSMETIC_PER_EPOCH = 3;
+export const ORBITAL_MAX_COSMETIC_PER_EPOCH = 4;
 
 // Impact event rarity: probability that server creates a gameplay-affecting event
 // when `triggerOrbitalCheck` is called.

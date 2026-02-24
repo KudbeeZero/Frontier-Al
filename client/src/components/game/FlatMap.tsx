@@ -79,6 +79,10 @@ export function FlatMap({
   const [hoveredPlotId, setHoveredPlotId] = useState<string | null>(null);
   const mapImageRef = useRef<HTMLImageElement | null>(null);
   const mapImageLoaded = useRef(false);
+  const nightImageRef = useRef<HTMLImageElement | null>(null);
+  const nightImageLoaded = useRef(false);
+  const cloudsImageRef = useRef<HTMLImageElement | null>(null);
+  const cloudsImageLoaded = useRef(false);
   const selectedScreenPosRef = useRef<{ x: number; y: number } | null>(null);
   const [selectedScreenPos, setSelectedScreenPos] = useState<{ x: number; y: number } | null>(null);
   const lastPosUpdateRef = useRef(0);
@@ -141,11 +145,23 @@ export function FlatMap({
   }
 
   useEffect(() => {
-    const img = new Image();
-    img.src = "/images/map-background.jpg";
-    img.onload = () => {
-      mapImageRef.current = img;
+    const albedo = new Image();
+    albedo.src = "/textures/planets/ascendancy/planet_albedo.png";
+    albedo.onload = () => {
+      mapImageRef.current = albedo;
       mapImageLoaded.current = true;
+    };
+    const night = new Image();
+    night.src = "/textures/planets/ascendancy/planet_night_lights.png";
+    night.onload = () => {
+      nightImageRef.current = night;
+      nightImageLoaded.current = true;
+    };
+    const clouds = new Image();
+    clouds.src = "/textures/planets/ascendancy/planet_clouds.png";
+    clouds.onload = () => {
+      cloudsImageRef.current = clouds;
+      cloudsImageLoaded.current = true;
     };
     const satImg = new Image();
     satImg.src = "/images/satellite.png";
@@ -337,9 +353,23 @@ export function FlatMap({
       // not a pixel-perfect warp, but gives the correct visual impression of
       // a globe with a visible surface texture).
       if (mapImageLoaded.current && mapImageRef.current) {
-        ctx.globalAlpha = 0.85; // Increased visibility of the image
+        ctx.globalAlpha = 0.9;
         ctx.drawImage(mapImageRef.current, cx - R, cy - R, R * 2, R * 2);
         ctx.globalAlpha = 1.0;
+
+        if (nightImageLoaded.current && nightImageRef.current) {
+          ctx.globalCompositeOperation = "screen";
+          ctx.globalAlpha = 0.5;
+          ctx.drawImage(nightImageRef.current, cx - R, cy - R, R * 2, R * 2);
+          ctx.globalCompositeOperation = "source-over";
+          ctx.globalAlpha = 1.0;
+        }
+
+        if (cloudsImageLoaded.current && cloudsImageRef.current) {
+          ctx.globalAlpha = 0.25;
+          ctx.drawImage(cloudsImageRef.current, cx - R, cy - R, R * 2, R * 2);
+          ctx.globalAlpha = 1.0;
+        }
       } else {
         ctx.fillStyle = "#0a1628";
         ctx.fillRect(cx - R, cy - R, R * 2, R * 2);

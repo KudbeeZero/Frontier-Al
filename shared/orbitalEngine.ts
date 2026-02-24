@@ -113,10 +113,10 @@ export function generateCosmeticEvents(epochIndex: number): OrbitalEvent[] {
     [offsetRaw, state] = lcgFloat(state);
     const startOffset = offsetRaw * (ORBITAL_EPOCH_MS * 0.8); // within first 80% of epoch
 
-    // Duration: 4–18 seconds (visual trail lifespan)
+    // Duration: 6–14 seconds (visual trail lifespan)
     let durationRaw: number;
     [durationRaw, state] = lcgFloat(state);
-    const durationMs = (4 + durationRaw * 14) * 1000;
+    const durationMs = (6 + durationRaw * 8) * 1000;
 
     // Unique ID derived from epoch + index
     const id = `cosmetic-${epochIndex}-${i}`;
