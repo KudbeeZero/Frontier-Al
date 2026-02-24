@@ -205,7 +205,16 @@ See `design_guidelines.md` for detailed cyberpunk military theme specifications.
 
 ## Key Files (Blockchain)
 - `server/algorand.ts` - Server-side Algorand: admin wallet, ASA creation, transfers, opt-in checks
-- `client/src/lib/algorand.ts` - Client-side Algorand: wallet signing, ASA helpers, blockchain status fetch
+- `client/src/lib/algorand.ts` - Client-side Algorand: wallet signing, ASA helpers, blockchain status fetch, atomic transaction queue
+
+## Client-Side Atomic Transaction Batching
+- Game actions (mine, upgrade, attack, build, commander, drones, etc.) are queued as individual 0-ALGO self-payment transactions
+- After debounce (BATCH_WINDOW_MS=800ms) or queue full (MAX_GROUP_SIZE=16) or hard cap (MAX_WAIT_MS=2000ms), queued txns are grouped via `algosdk.assignGroupID()`, signed in one wallet popup, and submitted atomically
+- Tuning: Adjust constants in `client/src/lib/algorand.ts` — lower BATCH_WINDOW_MS for faster submission, raise for more bundling
+- UX: Toast indicators show "Bundling N/16 operations...", "Submitting batch (N ops)", "Confirmed (N ops)"
+- Purchase, FRONTIER claim, and ASA opt-in remain as direct single-transaction flows (not batched)
+- Dev logs use `[BATCH-DEBUG]` prefix for filtering
+- Both Pera and LUTE wallets support grouped signing via `signGroupedTransactionsWithActiveWallet()`
 
 ## Development
 Run with: `npm run dev`

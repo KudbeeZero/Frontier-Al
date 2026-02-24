@@ -80,6 +80,60 @@ export async function signTransactionWithActiveWallet(
   throw new Error("No wallet connected");
 }
 
+function _encodeUnsignedTxnToBase64(txn: algosdk.Transaction): string {
+  const encoded = algosdk.encodeUnsignedTransaction(txn);
+  const bytes = new Uint8Array(encoded);
+  let str = "";
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    str += String.fromCharCode.apply(null, Array.from(bytes.slice(i, i + chunk)));
+  }
+  return btoa(str);
+}
+
+function _normalizeSignedBlob(item: unknown): Uint8Array {
+  if (item instanceof Uint8Array) return item;
+  if (typeof item === "object" && item !== null && "blob" in item) {
+    return (item as { blob: Uint8Array }).blob;
+  }
+  if (typeof item === "string") {
+    const binary = atob(item);
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    return arr;
+  }
+  return item as Uint8Array;
+}
+
+export async function signGroupedTransactionsWithActiveWallet(
+  txns: algosdk.Transaction[],
+  signerAddress: string
+): Promise<Uint8Array[]> {
+  console.log(`[BATCH-DEBUG] signGroupedTransactions | wallet: ${activeWalletType} | txnCount: ${txns.length} | signer: ${signerAddress.slice(0, 8)}... | ts: ${Date.now()}`);
+  if (activeWalletType === "pera") {
+    const txnGroup = txns.map((txn) => ({ txn, signers: [signerAddress] }));
+    const signedResult = await peraWallet.signTransaction([txnGroup]);
+    const flat = signedResult.flat().map(_normalizeSignedBlob);
+    console.log(`[BATCH-DEBUG] Pera signed ${flat.length} txns | ts: ${Date.now()}`);
+    return flat;
+  } else if (activeWalletType === "lute") {
+    const encodedTxns = txns.map((txn) => ({
+      txn: _encodeUnsignedTxnToBase64(txn),
+      signers: [signerAddress],
+    }));
+    const signedResult = await luteWallet.signTxns(encodedTxns);
+    const flat = (signedResult as unknown[])
+      .filter((s) => s !== null && s !== undefined)
+      .map((s) => _normalizeSignedBlob(s));
+    if (flat.length !== txns.length) {
+      console.warn(`[BATCH-DEBUG] LUTE signed ${flat.length} blobs but expected ${txns.length} — possible signature loss`);
+    }
+    console.log(`[BATCH-DEBUG] LUTE signed ${flat.length} txns | ts: ${Date.now()}`);
+    return flat;
+  }
+  throw new Error("No wallet connected");
+}
+
 export async function getAccountBalance(address: string): Promise<number> {
   try {
     const accountInfo = await algodClient.accountInformation(address).do();
@@ -358,60 +412,76 @@ export function getCachedAsaId(): number | null {
 // cached in _cachedTreasuryAddress. Use getCachedTreasuryAddress() to access it.
 
 // ---------------------------------------------------------------------------
-// Client-side game action batch queue
+// Client-side atomic transaction group queue
 //
-// All significant game actions (mine, upgrade, attack, build, turrets,
-// commander actions, drones, special attacks) are logged on-chain via a
-// compact batch transaction. Instead of one transaction per action, actions
-// accumulate until the encoded note reaches ~1 KB, then a SINGLE 0-ALGO
-// self-payment transaction is signed (one wallet popup covers many actions).
-// A 10-second safety timer ensures partial batches are flushed promptly.
+// Game actions (mine, upgrade, attack, build, commander actions, drones,
+// special attacks) are queued as individual 0-ALGO self-payment transactions.
+// After a debounce window (BATCH_WINDOW_MS) or when the queue reaches
+// MAX_GROUP_SIZE, all pending transactions are grouped via
+// algosdk.assignGroupID(), signed in one wallet popup, and submitted as
+// an atomic group. A hard MAX_WAIT_MS cap prevents indefinite queueing.
 // ---------------------------------------------------------------------------
 
-/** Compact on-chain action record (short keys keep the note small). */
+export const MAX_GROUP_SIZE = 16;
+export const BATCH_WINDOW_MS = 800;
+export const MAX_WAIT_MS = 2000;
+
 export interface BatchedAction {
-  /** Action type abbreviation */
   a: string;
-  /** Plot ID (0 if not plot-specific) */
   p: number;
-  /** Optional extra fields (improvement type, troops, tier, mineral yields, etc.) */
   x?: Record<string, unknown>;
-  /** Unix ms timestamp */
   t: number;
-  /** Mineral yields (mine actions only): iron, fuel, crystal */
   m?: { fe: number; fu: number; cr: number };
 }
 
-type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
-
-// Module-level queue state (survives re-renders)
-let _actionQueue: BatchedAction[] = [];
-let _flushTimer: ReturnType<typeof setTimeout> | null = null;
-let _batchSignFn: BatchSignCallback | null = null;
-let _batchAddress: string | null = null;
-
-const MAX_BATCH_NOTE_BYTES = 1000; // stay under Algorand's 1024-byte note limit
-const BATCH_FLUSH_DELAY_MS = 10_000; // 10-second safety flush
-
-function _encodeBatch(actions: BatchedAction[]): Uint8Array {
-  const payload = { game: "FRONTIER", v: 1, network: "testnet", actions };
-  return new TextEncoder().encode(`FRNTR:${JSON.stringify(payload)}`);
+interface TxnQueueEntry {
+  action: BatchedAction;
+  enqueuedAt: number;
 }
 
-function _estimatedBatchBytes(): number {
-  return _encodeBatch(_actionQueue).length;
+export type BatchStatusCallback = (
+  event: "bundling" | "submitting" | "confirmed" | "error",
+  detail: { count: number; txIds?: string[]; message?: string }
+) => void;
+
+let _txnQueue: TxnQueueEntry[] = [];
+let _txnDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _txnMaxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+let _txnFlushInProgress = false;
+let _txnQueueAddress: string | null = null;
+let _txnStatusCallback: BatchStatusCallback | null = null;
+
+export function registerTxnQueueAddress(address: string) {
+  _txnQueueAddress = address;
+  if (_txnQueue.length > 0 && !_txnFlushInProgress) {
+    console.log(`[BATCH-DEBUG] address registered with ${_txnQueue.length} queued entries → scheduling flush | ts: ${Date.now()}`);
+    _clearTimers();
+    _txnDebounceTimer = setTimeout(() => {
+      _txnDebounceTimer = null;
+      _triggerAtomicFlush();
+    }, BATCH_WINDOW_MS);
+  }
 }
 
-/** Called by the hook when the player's wallet address or connection changes. */
-export function registerBatchSignCallback(
-  address: string,
-  callback: BatchSignCallback
-) {
-  _batchAddress = address;
-  _batchSignFn = callback;
+export function registerBatchStatusCallback(cb: BatchStatusCallback) {
+  _txnStatusCallback = cb;
 }
 
-/** Enqueue a game action for batched on-chain logging. Fire-and-forget. */
+function _buildActionNote(action: BatchedAction, fromAddress: string): Uint8Array {
+  const data = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
+    action: action.a,
+    plotId: action.p,
+    player: fromAddress.slice(0, 8),
+    ts: action.t,
+    network: "testnet",
+    ...(action.x || {}),
+    ...(action.m ? { minerals: action.m } : {}),
+  });
+  return new TextEncoder().encode(`FRNTR:${data}`);
+}
+
 export function enqueueGameAction(
   type: string,
   plotId: number,
@@ -420,71 +490,128 @@ export function enqueueGameAction(
 ) {
   const action: BatchedAction = { a: type, p: plotId, x: extra, t: Date.now() };
   if (minerals) action.m = minerals;
-  _actionQueue.push(action);
 
-  if (_estimatedBatchBytes() >= MAX_BATCH_NOTE_BYTES) {
-    // Hit the 1 KB threshold — flush immediately
-    if (_flushTimer) {
-      clearTimeout(_flushTimer);
-      _flushTimer = null;
-    }
-    _triggerFlush();
-  } else if (!_flushTimer) {
-    // Schedule a safety flush so the batch doesn't sit forever
-    _flushTimer = setTimeout(() => {
-      _flushTimer = null;
-      _triggerFlush();
-    }, BATCH_FLUSH_DELAY_MS);
+  _txnQueue.push({ action, enqueuedAt: Date.now() });
+  console.log(`[BATCH-DEBUG] enqueue | type: ${type} | plotId: ${plotId} | queueSize: ${_txnQueue.length}/${MAX_GROUP_SIZE} | ts: ${Date.now()}`);
+
+  _txnStatusCallback?.("bundling", { count: _txnQueue.length });
+
+  if (_txnQueue.length >= MAX_GROUP_SIZE) {
+    console.log(`[BATCH-DEBUG] queue full (${MAX_GROUP_SIZE}) → immediate flush | ts: ${Date.now()}`);
+    _clearTimers();
+    _triggerAtomicFlush();
+    return;
+  }
+
+  if (!_txnDebounceTimer) {
+    _txnDebounceTimer = setTimeout(() => {
+      _txnDebounceTimer = null;
+      console.log(`[BATCH-DEBUG] debounce expired (${BATCH_WINDOW_MS}ms) → flush | queueSize: ${_txnQueue.length} | ts: ${Date.now()}`);
+      _triggerAtomicFlush();
+    }, BATCH_WINDOW_MS);
+  }
+
+  if (!_txnMaxWaitTimer) {
+    _txnMaxWaitTimer = setTimeout(() => {
+      _txnMaxWaitTimer = null;
+      console.log(`[BATCH-DEBUG] maxWait expired (${MAX_WAIT_MS}ms) → flush | queueSize: ${_txnQueue.length} | ts: ${Date.now()}`);
+      _clearTimers();
+      _triggerAtomicFlush();
+    }, MAX_WAIT_MS);
   }
 }
 
-function _triggerFlush() {
-  if (_actionQueue.length === 0 || !_batchSignFn) return;
-  const batch = _actionQueue.splice(0); // drain the queue atomically
-  _batchSignFn(batch)
-    .then((txId) => {
-      if (txId) {
-        console.log(
-          `Game action batch confirmed: ${batch.length} action(s), TX: ${txId}`
-        );
-      }
+function _clearTimers() {
+  if (_txnDebounceTimer) {
+    clearTimeout(_txnDebounceTimer);
+    _txnDebounceTimer = null;
+  }
+  if (_txnMaxWaitTimer) {
+    clearTimeout(_txnMaxWaitTimer);
+    _txnMaxWaitTimer = null;
+  }
+}
+
+function _triggerAtomicFlush() {
+  if (_txnQueue.length === 0 || _txnFlushInProgress || !_txnQueueAddress) return;
+  _clearTimers();
+  const entries = _txnQueue.splice(0);
+  _txnFlushInProgress = true;
+
+  const address = _txnQueueAddress;
+  const waitedMs = Date.now() - entries[0].enqueuedAt;
+  console.log(`[BATCH-DEBUG] flush start | count: ${entries.length} | waitedMs: ${waitedMs} | address: ${address.slice(0, 8)}... | ts: ${Date.now()}`);
+
+  _flushAtomicGroup(address, entries)
+    .then((txIds) => {
+      console.log(`[BATCH-DEBUG] flush complete | txIds: [${txIds.map(t => t.slice(0, 8)).join(",")}] | ts: ${Date.now()}`);
+      _txnStatusCallback?.("confirmed", { count: entries.length, txIds });
     })
     .catch((err) => {
-      console.error("Game action batch failed — re-queuing:", err);
-      // Re-queue at the front so the actions aren't lost
-      _actionQueue.unshift(...batch);
+      const msg = (err as Error)?.message || String(err);
+      console.error(`[BATCH-DEBUG] flush FAILED | error: ${msg} | re-queuing ${entries.length} entries | ts: ${Date.now()}`);
+      if (!msg.includes("cancelled") && !msg.includes("rejected")) {
+        _txnQueue.unshift(...entries);
+      }
+      _txnStatusCallback?.("error", { count: entries.length, message: msg });
+    })
+    .finally(() => {
+      _txnFlushInProgress = false;
     });
 }
 
-/**
- * Create and submit a single 0-ALGO self-payment transaction whose note field
- * encodes a batch of game actions (up to ~1 KB).
- */
-export async function createBatchedGameActionTransaction(
+async function _flushAtomicGroup(
   fromAddress: string,
-  actions: BatchedAction[]
-): Promise<string> {
-  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction triggered | batchedActions: ${actions.length} | actions: [${actions.map(a => a.a).join(',')}] | txns: 1 | groupID: NO | noteBytes: ${_encodeBatch(actions).length} | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}...`);
-  const noteBytes = _encodeBatch(actions);
-  if (noteBytes.length > 1024) {
-    throw new Error(`Batch note too large: ${noteBytes.length} bytes`);
+  entries: TxnQueueEntry[]
+): Promise<string[]> {
+  const suggestedParams = await getTransactionParams();
+  const allTxIds: string[] = [];
+
+  const chunks: TxnQueueEntry[][] = [];
+  for (let i = 0; i < entries.length; i += MAX_GROUP_SIZE) {
+    chunks.push(entries.slice(i, i + MAX_GROUP_SIZE));
   }
 
-  const suggestedParams = await getTransactionParams();
-  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-    sender: fromAddress,
-    receiver: fromAddress,
-    amount: 0,
-    note: noteBytes,
-    suggestedParams,
-  });
+  for (const chunk of chunks) {
+    const txns = chunk.map((entry) => {
+      return algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: fromAddress,
+        receiver: fromAddress,
+        amount: 0,
+        note: _buildActionNote(entry.action, fromAddress),
+        suggestedParams,
+      });
+    });
 
-  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
-  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction submitting | ts: ${Date.now()}`);
-  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
-  const txId = response.txid || txn.txID();
-  await algosdk.waitForConfirmation(algodClient, txId, 4);
-  console.log(`[TXN-DEBUG] createBatchedGameActionTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
+    if (txns.length > 1) {
+      algosdk.assignGroupID(txns);
+      console.log(`[BATCH-DEBUG] assignGroupID applied | groupSize: ${txns.length} | ts: ${Date.now()}`);
+    }
 
-  return txId;
+    _txnStatusCallback?.("submitting", { count: txns.length });
+
+    const signedBlobs = txns.length === 1
+      ? await signTransactionWithActiveWallet(txns[0], fromAddress)
+      : await signGroupedTransactionsWithActiveWallet(txns, fromAddress);
+
+    console.log(`[BATCH-DEBUG] signed ${signedBlobs.length} blob(s) → submitting to algod | ts: ${Date.now()}`);
+    const response = await algodClient.sendRawTransaction(signedBlobs).do();
+    const firstTxId = response.txid || txns[0].txID();
+    await algosdk.waitForConfirmation(algodClient, firstTxId, 4);
+    console.log(`[BATCH-DEBUG] group confirmed | firstTxId: ${firstTxId} | ts: ${Date.now()}`);
+    allTxIds.push(firstTxId);
+  }
+
+  return allTxIds;
+}
+
+export function getTxnQueueSize(): number {
+  return _txnQueue.length;
+}
+
+export function registerBatchSignCallback(
+  address: string,
+  _callback: unknown
+) {
+  registerTxnQueueAddress(address);
 }
