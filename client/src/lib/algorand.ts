@@ -422,7 +422,7 @@ export function getCachedAsaId(): number | null {
 // an atomic group. A hard MAX_WAIT_MS cap prevents indefinite queueing.
 // ---------------------------------------------------------------------------
 
-export const MAX_GROUP_SIZE = 16;
+export const MAX_GROUP_SIZE = 8;
 export const BATCH_WINDOW_MS = 800;
 export const MAX_WAIT_MS = 2000;
 
@@ -440,9 +440,9 @@ type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
 // Increase MAX_ACTIONS to allow more actions to accumulate before flushing.
 // The "Satellite Relay" framing makes this feel like a game mechanic, not lag.
 const MAX_BATCH_NOTE_BYTES   = 1000;  // stay under Algorand's 1024-byte limit
-const MAX_ACTIONS_PER_FLUSH  = 16;    // Algorand group-tx limit (also our soft cap)
-const FLUSH_INTERVAL_MS      = 15_000; // Satellite relay window: 15 seconds
-const FLUSH_MAX_WAIT_MS      = 45_000; // Never hold longer than 45 seconds
+const MAX_ACTIONS_PER_FLUSH  = 8;     // Hard cap: flush before Algorand's 16-txn group limit
+const FLUSH_INTERVAL_MS      = 5_000; // Relay window: 5 seconds (was 15s — prevents overrun)
+const FLUSH_MAX_WAIT_MS      = 15_000; // Never hold longer than 15 seconds (was 45s)
 interface TxnQueueEntry {
   action: BatchedAction;
   enqueuedAt: number;

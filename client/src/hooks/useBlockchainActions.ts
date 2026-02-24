@@ -89,37 +89,33 @@ export function useBlockchainActions() {
     const statusHandler: BatchStatusCallback = (event, detail) => {
       switch (event) {
         case "bundling":
-          toast({
-            title: "Bundling Operations",
-            description: `Bundling ${detail.count}/16 operations...`,
-            duration: 2000,
-          });
+          // bundling event is informational only — no toast needed
           break;
         case "submitting":
           toast({
-            title: "Submitting Batch",
-            description: `Submitting batch (${detail.count} ops)`,
+            title: "Logging to Chain",
+            description: `Recording ${detail.count} game action${detail.count !== 1 ? "s" : ""} to Algorand...`,
             duration: 3000,
           });
           break;
         case "confirmed":
           toast({
-            title: "Satellite Relay Confirmed",
-            description: `${detail.count} action${detail.count !== 1 ? "s" : ""} uplinked to Algorand${detail.txIds?.[0] ? `. TX: ${detail.txIds[0].slice(0, 8)}...` : ""}`,
+            title: "Actions Logged",
+            description: `${detail.count} game action${detail.count !== 1 ? "s" : ""} recorded on Algorand${detail.txIds?.[0] ? `. TX: ${detail.txIds[0].slice(0, 8)}...` : ""}`,
           });
           break;
         case "error": {
           const msg = detail.message || "Unknown error";
           if (!msg.includes("cancelled") && !msg.includes("rejected")) {
             toast({
-              title: "Batch Failed",
+              title: "Chain Log Failed",
               description: msg.slice(0, 100),
               variant: "destructive",
             });
           } else {
             toast({
-              title: "Batch Cancelled",
-              description: "You cancelled the transaction in your wallet.",
+              title: "Cancelled",
+              description: "You cancelled the wallet transaction.",
             });
           }
           break;
