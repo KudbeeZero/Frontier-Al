@@ -1,0 +1,85 @@
+You are my senior engineer inside a Replit workspace. Make a small, safe code diff that fixes the FlatMap “white square” selection artifact (especially on iOS Safari) and makes selection look like a ring (same vibe as the Globe).
+
+Repo context:
+- TypeScript + React
+- Flat map view is a canvas renderer
+
+Primary target file:
+- client/src/components/game/FlatMap.tsx
+
+NON-NEGOTIABLE REQUIREMENTS
+- Keep gameplay logic and data flow unchanged (no API changes, no parcel structure changes).
+- Keep existing pointer/touch/wheel handlers unless a change is required for the fix.
+- Do not remove necessary fillRect calls used to clear the canvas or paint the background.
+- The only selection visual change should be: replace the “selected parcel square” with a stroked ring.
+- Keep diff minimal and explain every change.
+
+TASKS (DO ALL 4)
+
+(1) iOS tap highlight suppression on wrapper
+- Find the wrapper <div> that contains the <canvas>.
+- Add style (inline or class) that ensures:
+  outline: "none"
+  WebkitTapHighlightColor: "transparent"
+  userSelect: "none"
+  WebkitUserSelect: "none"
+- Add -webkit-touch-callout: "none" if using CSS; if inline, use WebkitTouchCallout: "none".
+- Prefer NOT to change layout, only interactivity styling.
+
+(2) Prevent canvas focus/selection artifacts
+- Add tabIndex={-1} to the <canvas>.
+- Ensure the canvas is not focusable and does not show focus/selection artifacts on tap.
+
+(3) Replace selection square with ring stroke (the real visual fix)
+- In the drawing loop, locate the selection highlight.
+- There is currently a selection marker drawn with something like:
+  ctx.fillRect(x - size/2, y - size/2, size, size)
+- Replace ONLY that “selected marker square” with the ring:
+
+  ctx.strokeStyle = "#00e5ff";
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+- Keep hover indicators / animated rings unchanged if they already exist.
+- Ensure ring scales correctly with zoom by using the existing “size” that already accounts for zoom.
+- If selected marker currently uses different “size”, keep that same size value but render a ring.
+
+(4) Ensure no other selection squares remain in FlatMap.tsx
+- Search FlatMap.tsx for ctx.fillRect calls and classify each:
+  A) background clear/fill
+  B) UI markers not related to selection
+  C) selection marker
+- Only replace category C.
+- If multiple selection states exist (selected / targeted / pinned), ensure none of them draw a SOLID square for selection.
+
+REPLIT-SAFE COMMANDS & OUTPUT
+After the code change:
+1) Run in Replit Shell (bash):
+   - npm run build
+   - npm run typecheck (if it exists; if not, say “not present”)
+2) Also run a focused search to prove the selection square is gone:
+   - grep -n "fillRect(x - size / 2" -n client/src/components/game/FlatMap.tsx || true
+   - grep -n "fillRect(x - size/2" -n client/src/components/game/FlatMap.tsx || true
+   - grep -n "ctx\.fillRect" client/src/components/game/FlatMap.tsx
+
+FINAL RESPONSE FORMAT (MUST FOLLOW)
+A) “What changed” bullet list with approximate line numbers
+B) “Why it fixes iOS white square” explanation (tap highlight + focus + no more square draw)
+C) “Proof / verification” include:
+   - build output summary
+   - grep results summary
+D) “Manual test checklist”:
+   - iPhone Safari: tap tiles repeatedly → no white square; ring appears
+   - zoom in/out → ring scales correctly
+   - desktop click → selection works
+   - drag/pan/zoom gestures still work
+
+DO NOT:
+- refactor the whole component
+- rename public functions
+- change canvas sizing math unless absolutely necessary
+- introduce new dependencies
+
+Proceed now.
