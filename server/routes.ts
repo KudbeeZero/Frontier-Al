@@ -120,14 +120,21 @@ export async function registerRoutes(
     }
 
     try {
-      // Derive base URL: env var (production) → request origin (dev/fallback).
-      // Never use localhost in production image/external_url fields.
+      // Derive base URL: env var (production) → request origin (non-localhost).
+      // LOCAL DEVELOPMENT: set PUBLIC_BASE_URL in .env so metadata served at
+      // /nft/metadata/:plotId returns a real public URL rather than localhost.
+      // Without it, NFT image links in metadata JSON will be broken for anyone
+      // not running the server locally.
       const reqHost = req.get("host") || "";
-      const baseUrl =
-        process.env.PUBLIC_BASE_URL ||
-        (reqHost.includes("localhost") || reqHost.includes("127.0.0.1")
-          ? "https://frontier-al--kudbeex.replit.app"
-          : `${req.protocol}://${reqHost}`);
+      const isLocal = reqHost.includes("localhost") || reqHost.includes("127.0.0.1");
+      const baseUrl = process.env.PUBLIC_BASE_URL || (isLocal ? null : `${req.protocol}://${reqHost}`);
+
+      if (!baseUrl) {
+        // Metadata would contain localhost URLs — log and return a 503 so the
+        // caller knows the data is unreliable rather than silently serving bad URLs.
+        console.error("[/nft/metadata] PUBLIC_BASE_URL is not set and request is from localhost. Set PUBLIC_BASE_URL for NFT metadata to work correctly.");
+        return res.status(503).json({ error: "PUBLIC_BASE_URL not configured — NFT metadata URLs would be invalid. Set PUBLIC_BASE_URL env var." });
+      }
 
       // Select only the columns needed for immutable ARC-3 metadata.
       const [parcel] = await db

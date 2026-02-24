@@ -58,17 +58,16 @@ function SceneLighting() {
 }
 
 // Wireframe grid overlay — sits just above the planet surface
-// instanced hexagonal cells rendered on the globe surface
 function GridOverlay() {
   const geometry = useMemo(() => new THREE.SphereGeometry(GLOBE_RADIUS + 0.025, 48, 32), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <mesh geometry={geometry}>
       <meshBasicMaterial
-        color="#00ccff"
+        color="#005577"
         wireframe={true}
         transparent={true}
-        opacity={0.04} // Reduced from 0.08
+        opacity={0.10}
         depthWrite={false}
       />
     </mesh>
@@ -122,6 +121,73 @@ function AtmosphereGlow() {
         side={THREE.BackSide}
         blending={THREE.AdditiveBlending}
         depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+// ── Selection Ring ─────────────────────────────────────────────────────────
+// A thin cyan ring placed on the globe surface at the selected plot's position.
+// Uses depthTest=false so it always renders on top, and scales with camera
+// distance so it remains proportional regardless of zoom level.
+function SelectionRing({
+  parcel,
+  parcelsCount,
+}: {
+  parcel: LandParcel | null;
+  parcelsCount: number;
+}) {
+  const ringRef = useRef<THREE.Mesh>(null!);
+  const pulseRef = useRef(0);
+  const { camera } = useThree();
+
+  const basePlotSize = useMemo(() => {
+    const surfaceArea = 4 * Math.PI * GLOBE_RADIUS * GLOBE_RADIUS;
+    return Math.sqrt(surfaceArea / Math.max(1, parcelsCount)) * 0.42;
+  }, [parcelsCount]);
+
+  const ringGeometry = useMemo(() => {
+    const inner = basePlotSize * 0.50;
+    const outer = basePlotSize * 0.72;
+    return new THREE.RingGeometry(inner, outer, 36);
+  }, [basePlotSize]);
+  useEffect(() => () => ringGeometry.dispose(), [ringGeometry]);
+
+  useFrame((_, delta) => {
+    if (!ringRef.current || !parcel) return;
+    pulseRef.current += delta * 2.5;
+
+    // Match the instanced-plot zoom scale so ring stays aligned with plot tile
+    const dist = camera.position.length();
+    const maxDist = GLOBE_RADIUS * 5;
+    const minDist = GLOBE_RADIUS + 0.5;
+    const t = Math.max(0, Math.min(1, (dist - minDist) / (maxDist - minDist)));
+    const s = THREE.MathUtils.lerp(2.5, 0.6, t);
+    ringRef.current.scale.setScalar(s);
+
+    // Gentle opacity pulse
+    const mat = ringRef.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = THREE.MathUtils.lerp(0.55, 0.92, (Math.sin(pulseRef.current) + 1) / 2);
+  });
+
+  if (!parcel) return null;
+
+  const pos = latLngToSphere(parcel.lat, parcel.lng, GLOBE_RADIUS + PLOT_ELEVATION + 0.005);
+  const normal = pos.clone().normalize();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1),
+    normal,
+  );
+
+  return (
+    <mesh ref={ringRef} geometry={ringGeometry} position={pos} quaternion={quaternion}>
+      <meshBasicMaterial
+        color="#00e5ff"
+        transparent
+        opacity={0.8}
+        depthTest={false}
+        depthWrite={false}
+        side={THREE.DoubleSide}
       />
     </mesh>
   );
@@ -225,8 +291,9 @@ function PlotInstances({
 
       if (isSelected || isHovered || isPlayerOwned) {
         if (isSelected) {
-          const pulse = Math.sin(pulseRef.current) * 0.3 + 0.7;
-          color.set("#ffffff").multiplyScalar(pulse);
+          // Subtle teal tint — the cyan SelectionRing is the primary selection indicator
+          const pulse = Math.sin(pulseRef.current) * 0.15 + 0.75;
+          color.set("#00b8cc").multiplyScalar(pulse);
         } else if (isHovered) {
           if (p.ownerId) {
             const base = isPlayerOwned ? OWNER_COLORS.player : OWNER_COLORS.ai;
@@ -304,8 +371,8 @@ function PlotInstances({
   );
 }
 
-// THE KEY FIX: Planet + Grid + Plots all inside ONE rotating group
-// Previously Planet rotated alone while Plots stayed static in world space
+// Planet + Grid + Plots + SelectionRing all inside ONE rotating group
+// so they all spin together without drifting apart.
 function RotatingGlobe({
   parcels,
   selectedParcelId,
@@ -318,6 +385,11 @@ function RotatingGlobe({
   onParcelSelect: (id: string) => void;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
+
+  const selectedParcel = useMemo(
+    () => (selectedParcelId ? parcels.find((p) => p.id === selectedParcelId) ?? null : null),
+    [parcels, selectedParcelId],
+  );
 
   useFrame((_, delta) => {
     if (groupRef.current) {
@@ -335,6 +407,7 @@ function RotatingGlobe({
         currentPlayerId={currentPlayerId}
         onParcelSelect={onParcelSelect}
       />
+      <SelectionRing parcel={selectedParcel} parcelsCount={parcels.length} />
     </group>
   );
 }
@@ -398,7 +471,7 @@ export function PlanetGlobe({
     <WebGLErrorBoundary fallback={<WebGLFallback className={className} />}>
       <div className={className} data-testid="planet-globe" style={{ position: "relative" }}>
         <Canvas
-          camera={{ fov: 45, near: 0.1, far: 100 }}
+          camera={{ fov: 45, near: 0.1, far: 100, position: [0, 0, 9] }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           style={{ background: "#000005" }}
           onCreated={({ gl }) => {

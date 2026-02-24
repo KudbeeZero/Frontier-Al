@@ -339,12 +339,8 @@ export function getCachedAsaId(): number | null {
   return _cachedAsaId;
 }
 
-/**
- * @deprecated Not used for any real transaction. The actual treasury address is fetched
- * at runtime from /api/blockchain/status and stored in _cachedTreasuryAddress.
- * This placeholder will be removed once all call-sites are confirmed clean.
- */
-export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";
+// Treasury address is fetched at runtime from /api/blockchain/status and
+// cached in _cachedTreasuryAddress. Use getCachedTreasuryAddress() to access it.
 
 // ---------------------------------------------------------------------------
 // Client-side game action batch queue
