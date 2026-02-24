@@ -4,8 +4,8 @@ import {
   createGameActionTransaction,
   createPurchaseWithAlgoTransaction,
   createClaimFrontierTransaction,
-  createBatchedGameActionTransaction,
-  registerBatchSignCallback,
+  registerTxnQueueAddress,
+  registerBatchStatusCallback,
   enqueueGameAction,
   fetchBlockchainStatus,
   getCachedTreasuryAddress,
@@ -13,7 +13,7 @@ import {
   optInToASA,
   algodClient,
   hasOptedIn,
-  type BatchedAction,
+  type BatchStatusCallback,
 } from "@/lib/algorand";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -101,10 +101,49 @@ export function useBlockchainActions() {
           console.error("[TXN-DEBUG] Batch action sign failed:", err);
         } else {
           console.log(`[TXN-DEBUG] flush cancelled by user | actions: ${count}`);
+    registerTxnQueueAddress(address);
+
+    const statusHandler: BatchStatusCallback = (event, detail) => {
+      switch (event) {
+        case "bundling":
+          toast({
+            title: "Bundling Operations",
+            description: `Bundling ${detail.count}/16 operations...`,
+            duration: 2000,
+          });
+          break;
+        case "submitting":
+          toast({
+            title: "Submitting Batch",
+            description: `Submitting batch (${detail.count} ops)`,
+            duration: 3000,
+          });
+          break;
+        case "confirmed":
+          toast({
+            title: "Batch Confirmed",
+            description: `Confirmed (${detail.count} ops)${detail.txIds?.[0] ? ` TX: ${detail.txIds[0].slice(0, 8)}...` : ""}`,
+          });
+          break;
+        case "error": {
+          const msg = detail.message || "Unknown error";
+          if (!msg.includes("cancelled") && !msg.includes("rejected")) {
+            toast({
+              title: "Batch Failed",
+              description: msg.slice(0, 100),
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Batch Cancelled",
+              description: "You cancelled the transaction in your wallet.",
+            });
+          }
+          break;
         }
-        return null;
       }
-    });
+    };
+    registerBatchStatusCallback(statusHandler);
   }, [address, isReady, toast]);
 
   const queueMineAction = useCallback(

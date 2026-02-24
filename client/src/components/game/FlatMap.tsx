@@ -231,7 +231,7 @@ export function FlatMap({
   const getPlotSize = useCallback(
     (canvasW: number, canvasH: number) => {
       const R = getGlobeRadius(canvasW, canvasH);
-      return Math.max(2, R / 90);
+      return Math.max(2, R / 78);
     },
     [getGlobeRadius]
   );
