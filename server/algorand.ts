@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plotNfts } from "./db-schema";
 
-const ALGOD_URL = "https://testnet-api.algonode.cloud";
-const INDEXER_URL = "https://testnet-idx.algonode.cloud";
+// Override with ALGOD_URL / INDEXER_URL env vars to switch networks without code changes.
+const ALGOD_URL = process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud";
+const INDEXER_URL = process.env.INDEXER_URL ?? "https://testnet-idx.algonode.cloud";
 
 export const algodClient = new algosdk.Algodv2("", ALGOD_URL, "");
 export const indexerClient = new algosdk.Indexer("", INDEXER_URL, "");

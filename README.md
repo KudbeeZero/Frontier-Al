@@ -151,10 +151,18 @@ shared/
 - TestNet ALGO for land purchases (available from [Algorand TestNet Faucet](https://bank.testnet.algorand.network/))
 
 ### Environment Variables
-The following secrets must be configured:
+
+**Required secrets:**
 - `ALGORAND_ADMIN_ADDRESS` - Admin wallet address for FRONTIER ASA management
 - `ALGORAND_ADMIN_MNEMONIC` - Admin wallet mnemonic (25-word phrase)
-- `SESSION_SECRET` - Express session secret
+- `DATABASE_URL` - PostgreSQL connection string (Neon or compatible)
+- `PUBLIC_BASE_URL` - Canonical public URL of this deployment (e.g. `https://yourapp.replit.app`). Required in production — baked into on-chain NFT metadata URLs at mint time.
+
+**Optional overrides (defaults to Algorand TestNet):**
+- `ALGOD_URL` - Algod node URL (server-side). Default: `https://testnet-api.algonode.cloud`
+- `INDEXER_URL` - Indexer node URL (server-side). Default: `https://testnet-idx.algonode.cloud`
+- `VITE_ALGOD_URL` - Algod node URL (client-side, baked at build time). Default: same as above
+- `VITE_INDEXER_URL` - Indexer node URL (client-side, baked at build time). Default: same as above
 
 ### Run Development Server
 ```bash

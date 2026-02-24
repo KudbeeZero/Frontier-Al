@@ -4,11 +4,12 @@ import LuteConnect from "lute-connect";
 
 export type WalletType = "pera" | "lute";
 
+// Override with VITE_ALGOD_URL / VITE_INDEXER_URL at build time to switch networks.
 export const ALGORAND_TESTNET = {
   chainId: 416002 as const,
   genesisID: "testnet-v1.0",
-  algodUrl: "https://testnet-api.algonode.cloud",
-  indexerUrl: "https://testnet-idx.algonode.cloud",
+  algodUrl: (import.meta.env.VITE_ALGOD_URL as string | undefined) ?? "https://testnet-api.algonode.cloud",
+  indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? "https://testnet-idx.algonode.cloud",
 };
 
 export const algodClient = new algosdk.Algodv2(
@@ -338,6 +339,11 @@ export function getCachedAsaId(): number | null {
   return _cachedAsaId;
 }
 
+/**
+ * @deprecated Not used for any real transaction. The actual treasury address is fetched
+ * at runtime from /api/blockchain/status and stored in _cachedTreasuryAddress.
+ * This placeholder will be removed once all call-sites are confirmed clean.
+ */
 export const GAME_TREASURY_ADDRESS = "FRONTIER_TREASURY_TESTNET";
 
 // ---------------------------------------------------------------------------

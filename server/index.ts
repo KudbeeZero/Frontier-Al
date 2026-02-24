@@ -98,6 +98,14 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      // Warn early so misconfigured deployments are caught at boot, not at first NFT mint.
+      if (process.env.NODE_ENV === "production") {
+        if (!process.env.PUBLIC_BASE_URL) {
+          log("WARNING: PUBLIC_BASE_URL is not set — NFT image/metadata URLs will use the request host as a per-request fallback. Set PUBLIC_BASE_URL to the canonical public URL of this deployment.");
+        } else {
+          log(`PUBLIC_BASE_URL = ${process.env.PUBLIC_BASE_URL}`);
+        }
+      }
     },
   );
 })();

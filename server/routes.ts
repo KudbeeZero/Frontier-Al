@@ -61,13 +61,15 @@ export async function registerRoutes(
       const rawTotal: number = Number(assetParams.total ?? assetParams["total"] ?? 0);
       const totalSupply = rawTotal / divisor;
 
-      const assets: any[] =
-        (adminAccountInfo as any).assets ??
-        (adminAccountInfo as any)["created-assets"] ??
-        [];
-      const adminAsset = assets.find(
-        (a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === asaId
-      );
+      // Use only the held-assets array — "created-assets" has a different shape
+      // (no `amount` field) and would silently report treasury=0 if used here.
+      const assets: any[] = (adminAccountInfo as any).assets ?? [];
+      if (!Array.isArray(assets)) {
+        console.error("[/api/economics] Unexpected admin accountInfo shape — 'assets' is not an array. Keys:", Object.keys(adminAccountInfo as any ?? {}));
+      }
+      const adminAsset = Array.isArray(assets)
+        ? assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === asaId)
+        : undefined;
       const rawAdminBalance: number = Number(adminAsset?.amount ?? 0);
       const treasury = rawAdminBalance / divisor;
 
