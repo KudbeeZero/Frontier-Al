@@ -418,6 +418,20 @@ function SaturnRing() {
   );
 }
 
+function ParallaxStars() {
+  const groupRef = useRef<THREE.Group>(null!);
+  useFrame((_, delta) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y += delta * 0.02 * 0.2;
+    }
+  });
+  return (
+    <group ref={groupRef}>
+      <Stars radius={50} depth={50} count={3000} factor={4} saturation={0.3} fade speed={0.5} />
+    </group>
+  );
+}
+
 // Planet + Grid + Plots + SelectionRing all inside ONE rotating group
 // so they all spin together without drifting apart.
 function RotatingGlobe({
@@ -546,7 +560,7 @@ export function PlanetGlobe({
           }}
         >
           <SceneLighting />
-          <Stars radius={50} depth={50} count={3000} factor={4} saturation={0.3} fade speed={0.5} />
+          <ParallaxStars />
 
           {/* Atmosphere stays outside the rotating group */}
           <AtmosphereGlow />
