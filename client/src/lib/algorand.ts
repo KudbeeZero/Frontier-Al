@@ -436,13 +436,6 @@ export interface BatchedAction {
 
 type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
 
-// Module-level queue state (survives re-renders)
-let _actionQueue: BatchedAction[] = [];
-let _flushTimer: ReturnType<typeof setTimeout> | null = null;
-let _maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
-let _batchSignFn: BatchSignCallback | null = null;
-let _batchAddress: string | null = null;
-
 // ── Batch / queue tuning knobs ────────────────────────────────────────────────
 // Increase MAX_ACTIONS to allow more actions to accumulate before flushing.
 // The "Satellite Relay" framing makes this feel like a game mechanic, not lag.
@@ -507,92 +500,40 @@ export function enqueueGameAction(
   const action: BatchedAction = { a: type, p: plotId, x: extra, t: Date.now() };
   if (minerals) action.m = minerals;
 
-  const byteCount = _estimatedBatchBytes();
-  console.log(
-    `[ACTION-DEBUG] player action enqueued | type: ${type} | plotId: ${plotId} | queue: ${_actionQueue.length} | bytes: ${byteCount} | ts: ${Date.now()}`
-  );
-
-  const shouldFlushNow =
-    byteCount >= MAX_BATCH_NOTE_BYTES ||
-    _actionQueue.length >= MAX_ACTIONS_PER_FLUSH;
-
-  if (shouldFlushNow) {
-    // Hit the size/count threshold — flush immediately (Satellite relay opens)
-    if (_flushTimer) {
-      clearTimeout(_flushTimer);
-      _flushTimer = null;
-    }
-    _triggerFlush();
-  } else if (!_flushTimer) {
-    // Schedule the relay window: flush after FLUSH_INTERVAL_MS
-    _flushTimer = setTimeout(() => {
-      _flushTimer = null;
-      _triggerFlush();
-    }, FLUSH_INTERVAL_MS);
-
-    // Hard upper bound: never hold longer than FLUSH_MAX_WAIT_MS
-    if (_maxWaitTimer) clearTimeout(_maxWaitTimer);
-    _maxWaitTimer = setTimeout(() => {
-      _maxWaitTimer = null;
-      if (_actionQueue.length > 0) {
-        console.log(`[TXN-DEBUG] FLUSH_MAX_WAIT_MS reached — force flushing ${_actionQueue.length} actions`);
-        if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-        _triggerFlush();
-      }
-    }, FLUSH_MAX_WAIT_MS);
-  }
-}
-
-function _triggerFlush() {
-  if (_actionQueue.length === 0 || !_batchSignFn) return;
-  const batch = _actionQueue.splice(0); // drain the queue atomically
-  const noteBytes = _encodeBatch(batch).length;
-  console.log(
-    `[TXN-DEBUG] flush started | actions: ${batch.length} | noteBytes: ${noteBytes} | types: [${batch.map((a) => a.a).join(",")}] | ts: ${Date.now()}`
-  );
-  _batchSignFn(batch)
-    .then((txId) => {
-      if (txId) {
-        console.log(
-          `[TXN-DEBUG] flush confirmed | actions: ${batch.length} | TX: ${txId} | ts: ${Date.now()}`
-        );
-      } else {
-        console.log(`[TXN-DEBUG] flush skipped (no wallet / cancelled) | actions: ${batch.length}`);
-      }
-    })
-    .catch((err) => {
-      console.error(`[TXN-DEBUG] flush failed — re-queuing ${batch.length} actions:`, err);
-      // Re-queue at the front so the actions aren't lost
-      _actionQueue.unshift(...batch);
   _txnQueue.push({ action, enqueuedAt: Date.now() });
-  console.log(`[BATCH-DEBUG] enqueue | type: ${type} | plotId: ${plotId} | queueSize: ${_txnQueue.length}/${MAX_GROUP_SIZE} | ts: ${Date.now()}`);
+  console.log(
+    `[ACTION-DEBUG] player action enqueued | type: ${type} | plotId: ${plotId} | queue: ${_txnQueue.length} | ts: ${Date.now()}`
+  );
 
-  _txnStatusCallback?.("bundling", { count: _txnQueue.length });
-
-  if (_txnQueue.length >= MAX_GROUP_SIZE) {
-    console.log(`[BATCH-DEBUG] queue full (${MAX_GROUP_SIZE}) → immediate flush | ts: ${Date.now()}`);
+  if (_txnQueue.length >= MAX_ACTIONS_PER_FLUSH) {
+    // Hit the count threshold — flush immediately (Satellite relay opens)
     _clearTimers();
     _triggerAtomicFlush();
     return;
   }
 
   if (!_txnDebounceTimer) {
+    // Schedule the relay window: flush after FLUSH_INTERVAL_MS
     _txnDebounceTimer = setTimeout(() => {
       _txnDebounceTimer = null;
-      console.log(`[BATCH-DEBUG] debounce expired (${BATCH_WINDOW_MS}ms) → flush | queueSize: ${_txnQueue.length} | ts: ${Date.now()}`);
+      console.log(`[TXN-DEBUG] relay window expired (${FLUSH_INTERVAL_MS}ms) → flush | queueSize: ${_txnQueue.length} | ts: ${Date.now()}`);
       _triggerAtomicFlush();
-    }, BATCH_WINDOW_MS);
+    }, FLUSH_INTERVAL_MS);
   }
 
   if (!_txnMaxWaitTimer) {
+    // Hard upper bound: never hold longer than FLUSH_MAX_WAIT_MS
     _txnMaxWaitTimer = setTimeout(() => {
       _txnMaxWaitTimer = null;
-      console.log(`[BATCH-DEBUG] maxWait expired (${MAX_WAIT_MS}ms) → flush | queueSize: ${_txnQueue.length} | ts: ${Date.now()}`);
-      _clearTimers();
-      _triggerAtomicFlush();
-    }, MAX_WAIT_MS);
+      if (_txnQueue.length > 0) {
+        console.log(`[TXN-DEBUG] FLUSH_MAX_WAIT_MS reached — force flushing ${_txnQueue.length} actions`);
+        _clearTimers();
+        _triggerAtomicFlush();
+      }
+    }, FLUSH_MAX_WAIT_MS);
   }
 }
+
 
 function _clearTimers() {
   if (_txnDebounceTimer) {
@@ -613,11 +554,11 @@ function _triggerAtomicFlush() {
 
   const address = _txnQueueAddress;
   const waitedMs = Date.now() - entries[0].enqueuedAt;
-  console.log(`[BATCH-DEBUG] flush start | count: ${entries.length} | waitedMs: ${waitedMs} | address: ${address.slice(0, 8)}... | ts: ${Date.now()}`);
+  console.log(`[TXN-DEBUG] flush started | actions: ${entries.length} | types: [${entries.map(e => e.action.a).join(",")}] | waitedMs: ${waitedMs} | ts: ${Date.now()}`);
 
   _flushAtomicGroup(address, entries)
     .then((txIds) => {
-      console.log(`[BATCH-DEBUG] flush complete | txIds: [${txIds.map(t => t.slice(0, 8)).join(",")}] | ts: ${Date.now()}`);
+      console.log(`[TXN-DEBUG] flush confirmed | actions: ${entries.length} | txIds: [${txIds.map(t => t.slice(0, 8)).join(",")}] | ts: ${Date.now()}`);
       _txnStatusCallback?.("confirmed", { count: entries.length, txIds });
     })
     .catch((err) => {
