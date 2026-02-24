@@ -24,6 +24,9 @@ import type {
   SpecialAttackRecord,
   CommanderTier,
   SpecialAttackType,
+  OrbitalEvent,
+  OrbitalEffect,
+  OrbitalEffectType,
 } from "@shared/schema";
 import {
   biomeBonuses,
@@ -56,12 +59,17 @@ import {
   PILLAGE_RATE,
   CASCADE_DEFENSE_PENALTY,
   COMMANDER_LOCK_MS,
+  ORBITAL_RESOURCE_BURST_BONUS,
+  ORBITAL_RESOURCE_BURST_MS,
+  ORBITAL_TILE_HAZARD_PENALTY,
+  ORBITAL_TILE_HAZARD_MS,
+  ORBITAL_IMPACT_CHANCE,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType } from "@shared/schema";
 import { generateFibonacciSphere, sphereDistance, type PlotCoord } from "./sphereUtils";
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
-import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable } from "./db-schema";
+import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable, orbitalEvents as orbitalEventsTable } from "./db-schema";
 import type { DB } from "./db";
 
 const MICRO = 1_000_000;
@@ -125,6 +133,16 @@ export interface IStorage {
 
   resolveBattles(): Promise<Battle[]>;
   runAITurn(): Promise<GameEvent[]>;
+
+  // ── Orbital Event Engine ──────────────────────────────────────────────────
+  /** Get all impact (non-cosmetic) orbital events that have not yet expired. */
+  getActiveOrbitalEvents(): Promise<OrbitalEvent[]>;
+  /** Server creates a new gameplay-affecting impact event and persists it. */
+  createOrbitalImpactEvent(type: OrbitalEvent["type"], targetParcelId?: string): Promise<OrbitalEvent>;
+  /** Apply gameplay effects for an impact event and mark it resolved. */
+  resolveOrbitalEvent(eventId: string): Promise<void>;
+  /** Trigger a random impact check — may or may not create an event. */
+  triggerOrbitalCheck(): Promise<OrbitalEvent | null>;
 }
 
 export class MemStorage implements IStorage {
@@ -1295,6 +1313,39 @@ export class MemStorage implements IStorage {
 
     return newEvents;
   }
+
+  // ── Orbital stubs (MemStorage — no DB, so in-memory only) ────────────────
+  private _memOrbitalEvents: OrbitalEvent[] = [];
+
+  async getActiveOrbitalEvents(): Promise<OrbitalEvent[]> {
+    const now = Date.now();
+    return this._memOrbitalEvents.filter((e) => !e.resolved && e.endAt > now);
+  }
+
+  async createOrbitalImpactEvent(type: OrbitalEvent["type"], targetParcelId?: string): Promise<OrbitalEvent> {
+    const now = Date.now();
+    const event: OrbitalEvent = {
+      id: randomUUID(), type, cosmetic: false,
+      startAt: now, endAt: now + 10 * 60 * 1000,
+      seed: Math.floor(Math.random() * 0x7fffffff), intensity: 0.7,
+      trajectory: { startLat: 45, startLng: 0, endLat: -45, endLng: 90 },
+      targetParcelId, effects: [], resolved: false,
+    };
+    this._memOrbitalEvents.push(event);
+    console.log(`[ORBITAL-DEBUG] MemStorage createOrbitalImpactEvent | type: ${type}`);
+    return event;
+  }
+
+  async resolveOrbitalEvent(eventId: string): Promise<void> {
+    const evt = this._memOrbitalEvents.find((e) => e.id === eventId);
+    if (evt) evt.resolved = true;
+    console.log(`[ORBITAL-DEBUG] MemStorage resolveOrbitalEvent | id: ${eventId}`);
+  }
+
+  async triggerOrbitalCheck(): Promise<OrbitalEvent | null> {
+    if (Math.random() > ORBITAL_IMPACT_CHANCE) return null;
+    return this.createOrbitalImpactEvent("IMPACT_STRIKE");
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1472,6 +1523,27 @@ export class DbStorage implements IStorage {
       )
     `);
 
+    // Orbital events table — persists server-authoritative impact events.
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS orbital_events (
+        id               VARCHAR(36) PRIMARY KEY,
+        type             VARCHAR(30) NOT NULL,
+        cosmetic         BOOLEAN NOT NULL DEFAULT FALSE,
+        start_at         BIGINT NOT NULL,
+        end_at           BIGINT NOT NULL,
+        seed             INT NOT NULL DEFAULT 0,
+        intensity        REAL NOT NULL DEFAULT 0.5,
+        trajectory       JSONB NOT NULL DEFAULT '{}',
+        target_parcel_id VARCHAR(36),
+        effects          JSONB NOT NULL DEFAULT '[]',
+        resolved         BOOLEAN NOT NULL DEFAULT FALSE
+      )
+    `);
+    await this.db.execute(sql`
+      CREATE INDEX IF NOT EXISTS orbital_events_active_idx
+        ON orbital_events (resolved, end_at)
+    `);
+
     await this.db.execute(
       sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_crystal_mined REAL NOT NULL DEFAULT 0`
     );
@@ -1631,6 +1703,169 @@ export class DbStorage implements IStorage {
     const perDay = calculateFrontierPerDay(parcel.improvements);
     return perDay * days;
   }
+  // ── Orbital Event Engine ─────────────────────────────────────────────────
+
+  async getActiveOrbitalEvents(): Promise<OrbitalEvent[]> {
+    await this.initialize();
+    const now = Date.now();
+    const rows = await this.db.select().from(orbitalEventsTable)
+      .where(and(eq(orbitalEventsTable.resolved, false), sql`${orbitalEventsTable.endAt} > ${now}`));
+
+    return rows.map((r) => ({
+      id:            r.id,
+      type:          r.type as OrbitalEvent["type"],
+      cosmetic:      r.cosmetic,
+      startAt:       Number(r.startAt),
+      endAt:         Number(r.endAt),
+      seed:          r.seed,
+      intensity:     r.intensity,
+      trajectory:    r.trajectory as OrbitalEvent["trajectory"],
+      targetParcelId: r.targetParcelId ?? undefined,
+      effects:       (r.effects ?? []) as OrbitalEffect[],
+      resolved:      r.resolved,
+    }));
+  }
+
+  async createOrbitalImpactEvent(
+    type: OrbitalEvent["type"],
+    targetParcelId?: string
+  ): Promise<OrbitalEvent> {
+    await this.initialize();
+    const now = Date.now();
+    const id = randomUUID();
+
+    // Duration: impact events last 8–15 minutes
+    const durationMs = (8 + Math.random() * 7) * 60 * 1000;
+    const intensity = 0.5 + Math.random() * 0.5;
+    const seed = Math.floor(Math.random() * 0x7fffffff);
+
+    // Trajectory: random strike angle
+    const trajectory: OrbitalEvent["trajectory"] = {
+      startLat: Math.random() * 180 - 90,
+      startLng: Math.random() * 360 - 180,
+      endLat:   Math.random() * 180 - 90,
+      endLng:   Math.random() * 360 - 180,
+    };
+
+    // Build gameplay effects based on event type
+    const effects: OrbitalEffect[] = [];
+    if (type === "IMPACT_STRIKE") {
+      effects.push({
+        type:        "RESOURCE_BURST" as OrbitalEffectType,
+        magnitude:   ORBITAL_RESOURCE_BURST_BONUS,
+        durationMs:  ORBITAL_RESOURCE_BURST_MS,
+        description: `+${Math.round(ORBITAL_RESOURCE_BURST_BONUS * 100)}% mining yield for affected parcel`,
+      });
+    } else if (type === "ATMOSPHERIC_BURST") {
+      effects.push({
+        type:        "TILE_HAZARD" as OrbitalEffectType,
+        magnitude:   ORBITAL_TILE_HAZARD_PENALTY,
+        durationMs:  ORBITAL_TILE_HAZARD_MS,
+        description: `${Math.round(ORBITAL_TILE_HAZARD_PENALTY * 100)}% mining yield reduction (EMP storm)`,
+      });
+    }
+
+    await this.db.insert(orbitalEventsTable).values({
+      id,
+      type,
+      cosmetic:      false,
+      startAt:       now,
+      endAt:         now + durationMs,
+      seed,
+      intensity,
+      trajectory,
+      targetParcelId,
+      effects,
+      resolved:      false,
+    });
+
+    // Emit a game event so the activity feed shows it
+    const systemPlayerId = "system";
+    await this.addEvent({
+      type:        "orbital_event",
+      playerId:    systemPlayerId,
+      parcelId:    targetParcelId,
+      description: `ORBITAL WARNING: ${type.replace(/_/g, " ")} detected — ${effects[0]?.description ?? "area affected"}`,
+      timestamp:   now,
+    });
+
+    console.log(
+      `[ORBITAL-DEBUG] createOrbitalImpactEvent | id: ${id} | type: ${type} | parcel: ${targetParcelId ?? "global"} | effects: ${effects.length} | startAt: ${now}`
+    );
+
+    const event: OrbitalEvent = {
+      id, type, cosmetic: false,
+      startAt: now, endAt: now + durationMs,
+      seed, intensity, trajectory,
+      targetParcelId, effects, resolved: false,
+    };
+    return event;
+  }
+
+  async resolveOrbitalEvent(eventId: string): Promise<void> {
+    await this.initialize();
+    const now = Date.now();
+    const [row] = await this.db.select().from(orbitalEventsTable)
+      .where(eq(orbitalEventsTable.id, eventId));
+    if (!row || row.resolved) return;
+
+    // Apply gameplay effects
+    const effects = (row.effects ?? []) as OrbitalEffect[];
+    if (row.targetParcelId && effects.length > 0) {
+      for (const effect of effects) {
+        const [parcelRow] = await this.db.select().from(parcelsTable)
+          .where(eq(parcelsTable.id, row.targetParcelId));
+        if (parcelRow) {
+          // Apply yield multiplier delta (clamped to [0.1, 3.0])
+          const current = parcelRow.yieldMultiplier ?? 1.0;
+          const newYield = Math.max(0.1, Math.min(3.0, current + effect.magnitude));
+          await this.db.update(parcelsTable)
+            .set({ yieldMultiplier: newYield })
+            .where(eq(parcelsTable.id, row.targetParcelId));
+          console.log(
+            `[ORBITAL-DEBUG] resolveOrbitalEvent | effect: ${effect.type} | parcel: ${row.targetParcelId} | yield: ${current} → ${newYield}`
+          );
+        }
+      }
+    }
+
+    await this.db.update(orbitalEventsTable)
+      .set({ resolved: true })
+      .where(eq(orbitalEventsTable.id, eventId));
+
+    console.log(`[ORBITAL-DEBUG] resolveOrbitalEvent | id: ${eventId} | resolved at: ${now}`);
+  }
+
+  async triggerOrbitalCheck(): Promise<OrbitalEvent | null> {
+    await this.initialize();
+
+    // Roll for impact event
+    if (Math.random() > ORBITAL_IMPACT_CHANCE) {
+      console.log(`[ORBITAL-DEBUG] triggerOrbitalCheck | no event this roll`);
+      return null;
+    }
+
+    // Pick a random impact type
+    const impactTypes: OrbitalEvent["type"][] = ["IMPACT_STRIKE", "ATMOSPHERIC_BURST"];
+    const type = impactTypes[Math.floor(Math.random() * impactTypes.length)];
+
+    // Optionally target a random owned parcel
+    const allParcels = await this.db.select({ id: parcelsTable.id })
+      .from(parcelsTable)
+      .where(sql`${parcelsTable.ownerId} IS NOT NULL`)
+      .limit(200);
+
+    const targetParcelId = allParcels.length > 0
+      ? allParcels[Math.floor(Math.random() * allParcels.length)].id
+      : undefined;
+
+    console.log(
+      `[ORBITAL-DEBUG] triggerOrbitalCheck | IMPACT triggered | type: ${type} | parcel: ${targetParcelId ?? "global"}`
+    );
+
+    return this.createOrbitalImpactEvent(type, targetParcelId);
+  }
+
   /* ✅ INSERT NEW METHOD HERE */
 
   async getOrCreatePlayerByAddress(address: string): Promise<Player> {
@@ -2729,10 +2964,14 @@ export class DbStorage implements IStorage {
               const target = nearby[Math.floor(Math.random() * nearby.length)];
               try {
                 await this.purchaseLand({ playerId: ai.id, parcelId: target.id });
+                const desc = `${ai.name} purchased new territory`;
+                console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/purchase | player: ${ai.name} (${ai.id}) | parcel: ${target.id} | ts: ${now}`);
                 const evt: GameEvent = {
                   id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: target.id,
-                  description: `${ai.name} purchased new territory`, timestamp: now,
+                  description: desc, timestamp: now,
                 };
+                // Persist AI event to DB so it shows in the activity feed
+                await this.addEvent(evt);
                 newEvents.push(evt);
               } catch {}
               break;
@@ -2764,10 +3003,15 @@ export class DbStorage implements IStorage {
                     resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
                   });
                   const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
-                  newEvents.push({
+                  const desc = `${ai.name} deployed troops${statusMsg}`;
+                  console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/attack | player: ${ai.name} (${ai.id}) | target: ${attackTarget.id} | morale_debuffed: ${!!moraleDebuffed} | ts: ${now}`);
+                  const evt: GameEvent = {
                     id: randomUUID(), type: "ai_action", playerId: ai.id,
-                    description: `${ai.name} deployed troops${statusMsg}`, timestamp: now,
-                  });
+                    description: desc, timestamp: now,
+                  };
+                  // Persist AI event to DB so it shows in the activity feed
+                  await this.addEvent(evt);
+                  newEvents.push(evt);
                 } catch {}
                 break;
               }
@@ -2780,7 +3024,10 @@ export class DbStorage implements IStorage {
       if (ai.aiBehavior === "defensive") {
         for (const parcel of ownedParcels) {
           if (parcel.defenseLevel < 5 && ai.iron >= UPGRADE_COSTS.defense.iron && ai.fuel >= UPGRADE_COSTS.defense.fuel) {
-            try { await this.upgradeBase({ playerId: ai.id, parcelId: parcel.id, upgradeType: "defense" }); } catch {}
+            try {
+              await this.upgradeBase({ playerId: ai.id, parcelId: parcel.id, upgradeType: "defense" });
+              console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/upgrade | player: ${ai.name} (${ai.id}) | parcel: ${parcel.id} | ts: ${now}`);
+            } catch {}
             break;
           }
         }
@@ -2792,8 +3039,12 @@ export class DbStorage implements IStorage {
       .set({ currentTurn: sql`${gameMeta.currentTurn} + 1`, lastUpdateTs: now })
       .where(eq(gameMeta.id, 1));
 
+    if (newEvents.length > 0) {
+      console.log(`[ACTION-DEBUG] AI turn complete | events: ${newEvents.length} | persisted to DB | ts: ${now}`);
+    }
     return newEvents;
   }
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

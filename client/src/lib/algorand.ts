@@ -387,11 +387,17 @@ type BatchSignCallback = (actions: BatchedAction[]) => Promise<string | null>;
 // Module-level queue state (survives re-renders)
 let _actionQueue: BatchedAction[] = [];
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+let _maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let _batchSignFn: BatchSignCallback | null = null;
 let _batchAddress: string | null = null;
 
-const MAX_BATCH_NOTE_BYTES = 1000; // stay under Algorand's 1024-byte note limit
-const BATCH_FLUSH_DELAY_MS = 10_000; // 10-second safety flush
+// ── Batch / queue tuning knobs ────────────────────────────────────────────────
+// Increase MAX_ACTIONS to allow more actions to accumulate before flushing.
+// The "Satellite Relay" framing makes this feel like a game mechanic, not lag.
+const MAX_BATCH_NOTE_BYTES   = 1000;  // stay under Algorand's 1024-byte limit
+const MAX_ACTIONS_PER_FLUSH  = 16;    // Algorand group-tx limit (also our soft cap)
+const FLUSH_INTERVAL_MS      = 15_000; // Satellite relay window: 15 seconds
+const FLUSH_MAX_WAIT_MS      = 45_000; // Never hold longer than 45 seconds
 
 function _encodeBatch(actions: BatchedAction[]): Uint8Array {
   const payload = { game: "FRONTIER", v: 1, network: "testnet", actions };
@@ -422,35 +428,61 @@ export function enqueueGameAction(
   if (minerals) action.m = minerals;
   _actionQueue.push(action);
 
-  if (_estimatedBatchBytes() >= MAX_BATCH_NOTE_BYTES) {
-    // Hit the 1 KB threshold — flush immediately
+  const byteCount = _estimatedBatchBytes();
+  console.log(
+    `[ACTION-DEBUG] player action enqueued | type: ${type} | plotId: ${plotId} | queue: ${_actionQueue.length} | bytes: ${byteCount} | ts: ${Date.now()}`
+  );
+
+  const shouldFlushNow =
+    byteCount >= MAX_BATCH_NOTE_BYTES ||
+    _actionQueue.length >= MAX_ACTIONS_PER_FLUSH;
+
+  if (shouldFlushNow) {
+    // Hit the size/count threshold — flush immediately (Satellite relay opens)
     if (_flushTimer) {
       clearTimeout(_flushTimer);
       _flushTimer = null;
     }
     _triggerFlush();
   } else if (!_flushTimer) {
-    // Schedule a safety flush so the batch doesn't sit forever
+    // Schedule the relay window: flush after FLUSH_INTERVAL_MS
     _flushTimer = setTimeout(() => {
       _flushTimer = null;
       _triggerFlush();
-    }, BATCH_FLUSH_DELAY_MS);
+    }, FLUSH_INTERVAL_MS);
+
+    // Hard upper bound: never hold longer than FLUSH_MAX_WAIT_MS
+    if (_maxWaitTimer) clearTimeout(_maxWaitTimer);
+    _maxWaitTimer = setTimeout(() => {
+      _maxWaitTimer = null;
+      if (_actionQueue.length > 0) {
+        console.log(`[TXN-DEBUG] FLUSH_MAX_WAIT_MS reached — force flushing ${_actionQueue.length} actions`);
+        if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+        _triggerFlush();
+      }
+    }, FLUSH_MAX_WAIT_MS);
   }
 }
 
 function _triggerFlush() {
   if (_actionQueue.length === 0 || !_batchSignFn) return;
   const batch = _actionQueue.splice(0); // drain the queue atomically
+  const noteBytes = _encodeBatch(batch).length;
+  console.log(
+    `[TXN-DEBUG] flush started | actions: ${batch.length} | noteBytes: ${noteBytes} | types: [${batch.map((a) => a.a).join(",")}] | ts: ${Date.now()}`
+  );
   _batchSignFn(batch)
     .then((txId) => {
       if (txId) {
         console.log(
-          `Game action batch confirmed: ${batch.length} action(s), TX: ${txId}`
+          `[TXN-DEBUG] flush confirmed | actions: ${batch.length} | TX: ${txId} | ts: ${Date.now()}`
         );
+      } else {
+        console.log(`[TXN-DEBUG] flush skipped (no wallet / cancelled) | actions: ${batch.length}`);
       }
     })
     .catch((err) => {
-      console.error("Game action batch failed — re-queuing:", err);
+      console.error(`[TXN-DEBUG] flush failed — re-queuing ${batch.length} actions:`, err);
       // Re-queue at the front so the actions aren't lost
       _actionQueue.unshift(...batch);
     });

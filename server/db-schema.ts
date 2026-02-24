@@ -151,6 +151,30 @@ export const battles = pgTable(
   })
 );
 
+// ─── orbital_events ───────────────────────────────────────────────────────────
+// Persists server-authoritative IMPACT events (cosmetic-only events are
+// generated deterministically on the client; no DB row required for those).
+
+export const orbitalEvents = pgTable(
+  "orbital_events",
+  {
+    id:            varchar("id", { length: 36 }).primaryKey(),
+    type:          varchar("type", { length: 30 }).notNull(),
+    cosmetic:      boolean("cosmetic").notNull().default(false),
+    startAt:       bigint("start_at",  { mode: "number" }).notNull(),
+    endAt:         bigint("end_at",    { mode: "number" }).notNull(),
+    seed:          integer("seed").notNull().default(0),
+    intensity:     real("intensity").notNull().default(0.5),
+    trajectory:    jsonb("trajectory").$type<object>().notNull(),
+    targetParcelId: varchar("target_parcel_id", { length: 36 }),
+    effects:       jsonb("effects").$type<object[]>().notNull().default([]),
+    resolved:      boolean("resolved").notNull().default(false),
+  },
+  (t) => ({
+    activeIdx: index("orbital_events_active_idx").on(t.resolved, t.endAt),
+  })
+);
+
 // ─── game_events ──────────────────────────────────────────────────────────────
 
 export const gameEvents = pgTable(

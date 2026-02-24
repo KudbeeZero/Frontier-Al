@@ -2,8 +2,9 @@ import { useRef, useMemo, useCallback, useState, useEffect, Component, type Reac
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
-import type { LandParcel, BiomeType } from "@shared/schema";
+import type { LandParcel, BiomeType, OrbitalEvent } from "@shared/schema";
 import planetTexturePath from "@/assets/images/planet-surface.png";
+import { OrbitalLayer } from "./OrbitalLayer";
 
 interface PlanetGlobeProps {
   parcels: LandParcel[];
@@ -16,6 +17,8 @@ interface PlanetGlobeProps {
   hasOwnedPlots?: boolean;
   /** Render a subtle translucent ring around the planet (Saturn-style). Default false. */
   showRing?: boolean;
+  /** Active orbital events to render as streaks/rings in the scene. */
+  orbitalEvents?: OrbitalEvent[];
 }
 
 const GLOBE_RADIUS = 3;
@@ -514,6 +517,7 @@ export function PlanetGlobe({
   onFindEnemyTarget,
   hasOwnedPlots,
   showRing = false,
+  orbitalEvents = [],
 }: PlanetGlobeProps) {
   return (
     <WebGLErrorBoundary fallback={<WebGLFallback className={className} />}>
@@ -553,6 +557,9 @@ export function PlanetGlobe({
 
           {/* Optional Saturn ring — outside the rotating group so it stays axis-aligned */}
           {showRing && <SaturnRing />}
+
+          {/* Orbital event streaks — outside RotatingGlobe so they don't spin with planet */}
+          {orbitalEvents.length > 0 && <OrbitalLayer events={orbitalEvents} />}
 
           {/* Everything that should rotate together */}
           <RotatingGlobe

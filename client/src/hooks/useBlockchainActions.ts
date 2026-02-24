@@ -85,17 +85,22 @@ export function useBlockchainActions() {
   useEffect(() => {
     if (!address || !isReady) return;
     registerBatchSignCallback(address, async (actions: BatchedAction[]) => {
+      const count = actions.length;
+      console.log(`[TXN-DEBUG] flush started | actions: ${count} | types: [${actions.map((a) => a.a).join(",")}] | noteBytes estimation in-flight | ts: ${Date.now()}`);
       try {
         const txId = await createBatchedGameActionTransaction(address, actions);
+        console.log(`[TXN-DEBUG] flush confirmed | actions: ${count} | TX: ${txId} | ts: ${Date.now()}`);
         toast({
-          title: "Actions Logged On-Chain",
-          description: `${actions.length} action${actions.length !== 1 ? "s" : ""} recorded on Algorand. TX: ${txId.slice(0, 8)}...`,
+          title: "Satellite Relay Confirmed",
+          description: `${count} action${count !== 1 ? "s" : ""} uplinked to Algorand. TX: ${txId.slice(0, 8)}…`,
         });
         return txId;
       } catch (err) {
         const e = err as { message?: string };
         if (!e?.message?.includes("cancelled") && !e?.message?.includes("rejected")) {
-          console.error("Batch action sign failed:", err);
+          console.error("[TXN-DEBUG] Batch action sign failed:", err);
+        } else {
+          console.log(`[TXN-DEBUG] flush cancelled by user | actions: ${count}`);
         }
         return null;
       }
