@@ -16,6 +16,9 @@ import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { WalletConnect } from "./WalletConnect";
+import { OrbitalEventToast } from "./OrbitalEventToast";
+import { OrbitalCanvas } from "./OrbitalCanvas";
+import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
@@ -55,6 +58,8 @@ export function GameLayout() {
   // useCurrentPlayer now accepts an address so each wallet sees its own data.
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
+  // Orbital event engine (cosmetic + impact events)
+  const { events: orbitalEvents, impactEvents } = useOrbitalEngine();
 
   const initializedAddressRef = useRef<string | null>(null);
   const ambienceStartedRef = useRef(false);
@@ -464,22 +469,31 @@ export function GameLayout() {
           </div>
         </div>
       ) : gameState ? (
-        <FlatMap
-          parcels={gameState.parcels}
-          selectedParcelId={selectedParcelId}
-          currentPlayerId={player?.id || null}
-          onParcelSelect={setSelectedParcelId}
-          className="absolute inset-0 w-full h-full"
-          onLocateTerritory={handleLocateTerritory}
-          onFindEnemyTarget={handleFindEnemyTarget}
-          hasOwnedPlots={playerHasOwnedPlots}
-          players={gameState.players}
-        />
+        <>
+          <FlatMap
+            parcels={gameState.parcels}
+            selectedParcelId={selectedParcelId}
+            currentPlayerId={player?.id || null}
+            onParcelSelect={setSelectedParcelId}
+            className="absolute inset-0 w-full h-full"
+            onLocateTerritory={handleLocateTerritory}
+            onFindEnemyTarget={handleFindEnemyTarget}
+            hasOwnedPlots={playerHasOwnedPlots}
+            players={gameState.players}
+          />
+          {/* Orbital streaks canvas overlay — pointer-events: none, doesn't affect map interaction */}
+          {orbitalEvents.length > 0 && (
+            <OrbitalCanvas events={orbitalEvents} />
+          )}
+        </>
       ) : null}
 
       <div className="absolute top-0 left-0 right-0 z-40">
         <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
       </div>
+
+      {/* Orbital impact event notifications */}
+      {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 
       {isConnected && frontierAsaId && isOptedInToFrontier === false && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">

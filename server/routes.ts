@@ -640,6 +640,47 @@ export async function registerRoutes(
     }
   });
 
+  // ── Orbital Event Engine API ──────────────────────────────────────────────
+
+  /** GET /api/orbital/active — return all live gameplay-affecting impact events */
+  app.get("/api/orbital/active", async (_req, res) => {
+    try {
+      const events = await storage.getActiveOrbitalEvents();
+      console.log(`[ORBITAL-DEBUG] GET /api/orbital/active | found: ${events.length} events`);
+      res.json({ events });
+    } catch (error) {
+      console.error("[ORBITAL-DEBUG] getActiveOrbitalEvents error:", error);
+      res.status(500).json({ error: "Failed to fetch orbital events" });
+    }
+  });
+
+  /** POST /api/orbital/trigger — server rolls for an impact event (called by interval) */
+  app.post("/api/orbital/trigger", async (_req, res) => {
+    try {
+      const event = await storage.triggerOrbitalCheck();
+      if (event) {
+        console.log(`[ORBITAL-DEBUG] POST /api/orbital/trigger | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
+      }
+      res.json({ event: event ?? null });
+    } catch (error) {
+      console.error("[ORBITAL-DEBUG] triggerOrbitalCheck error:", error);
+      res.status(500).json({ error: "Failed to trigger orbital check" });
+    }
+  });
+
+  /** POST /api/orbital/resolve/:id — mark an impact event resolved + apply effects */
+  app.post("/api/orbital/resolve/:id", async (req, res) => {
+    try {
+      await storage.resolveOrbitalEvent(req.params.id);
+      console.log(`[ORBITAL-DEBUG] POST /api/orbital/resolve/${req.params.id} | resolved`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[ORBITAL-DEBUG] resolveOrbitalEvent error:", error);
+      res.status(500).json({ error: "Failed to resolve orbital event" });
+    }
+  });
+
+  // Background tasks: resolve battles, run AI turns, trigger orbital checks
   setInterval(async () => {
     try {
       await storage.resolveBattles();
@@ -648,6 +689,18 @@ export async function registerRoutes(
       console.error("Background task error:", error);
     }
   }, 15000);
+
+  // Orbital check every 5 minutes
+  setInterval(async () => {
+    try {
+      const event = await storage.triggerOrbitalCheck();
+      if (event) {
+        console.log(`[ORBITAL-DEBUG] Background orbital check | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
+      }
+    } catch (error) {
+      console.error("[ORBITAL-DEBUG] Background orbital check error:", error);
+    }
+  }, 5 * 60 * 1000);
 
   return httpServer;
 }

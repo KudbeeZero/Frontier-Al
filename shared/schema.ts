@@ -186,13 +186,76 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone" | "deploy_satellite";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone" | "deploy_satellite" | "orbital_event";
   playerId: string;
   parcelId?: string;
   battleId?: string;
   description: string;
   timestamp: number;
 }
+
+// ── Orbital Event Engine ─────────────────────────────────────────────────────
+
+export type OrbitalEventType =
+  | "METEOR_SHOWER"
+  | "SINGLE_BOLIDE"
+  | "COMET_PASS"
+  | "ORBITAL_DEBRIS"
+  | "ATMOSPHERIC_BURST"
+  | "IMPACT_STRIKE";
+
+export type OrbitalEffectType = "RESOURCE_BURST" | "TILE_HAZARD";
+
+export interface OrbitalEffect {
+  type: OrbitalEffectType;
+  /** Multiplier delta: positive = buff, negative = debuff (e.g. 0.5 = +50%) */
+  magnitude: number;
+  durationMs: number;
+  description: string;
+}
+
+export interface OrbitalTrajectory {
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+}
+
+export interface OrbitalEvent {
+  id: string;
+  type: OrbitalEventType;
+  /** true = visual-only; false = affects gameplay and requires server authority */
+  cosmetic: boolean;
+  startAt: number;
+  endAt: number;
+  /** Deterministic seed — all clients use this to reproduce visuals */
+  seed: number;
+  /** 0–1 intensity; affects trail length, brightness, shake */
+  intensity: number;
+  trajectory: OrbitalTrajectory;
+  targetParcelId?: string;
+  effects?: OrbitalEffect[];
+  /** server-set: whether gameplay effects have been applied/resolved */
+  resolved?: boolean;
+}
+
+// Cosmetic epoch window (ms): every client uses the same window so they generate
+// the same visual events without server communication.
+export const ORBITAL_EPOCH_MS = 60_000; // 60-second windows
+export const ORBITAL_WORLD_SEED = 31337; // stable across all clients
+
+// Maximum cosmetic events generated per epoch (tunable)
+export const ORBITAL_MAX_COSMETIC_PER_EPOCH = 3;
+
+// Impact event rarity: probability that server creates a gameplay-affecting event
+// when `triggerOrbitalCheck` is called.
+export const ORBITAL_IMPACT_CHANCE = 0.15; // 15% chance per check
+
+// Effect constants
+export const ORBITAL_RESOURCE_BURST_BONUS = 0.5;   // +50% yield
+export const ORBITAL_RESOURCE_BURST_MS = 10 * 60 * 1000; // 10 minutes
+export const ORBITAL_TILE_HAZARD_PENALTY = -0.4;   // -40% yield
+export const ORBITAL_TILE_HAZARD_MS = 8 * 60 * 1000; // 8 minutes
 
 export interface LeaderboardEntry {
   playerId: string;
