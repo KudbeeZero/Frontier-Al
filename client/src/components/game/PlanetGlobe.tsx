@@ -311,7 +311,7 @@ interface SceneProps {
 
 function Scene({ parcels, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
   const globeGroupRef = useRef<THREE.Group>(null!);
-  const showWarp = false;
+  const showWarp = true;
 
   return (
     <>
