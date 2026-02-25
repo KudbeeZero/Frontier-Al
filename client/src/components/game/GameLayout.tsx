@@ -327,6 +327,13 @@ export function GameLayout() {
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const toggleViewMode = () => setViewMode(prev => (prev === "2d" ? "3d" : "2d"));
 
+  const handleTabChange = (tab: NavTab) => setActiveTab(tab);
+
+  const handleParcelSelectFromInventory = (parcelId: string) => {
+    setSelectedParcelId(parcelId);
+    setActiveTab("map");
+  };
+
   const handleLocateTerritory = () => {
     setViewMode("2d");
     if (!player || !gameState) return;
