@@ -1,0 +1,40 @@
+You are working in a React + TypeScript + React Three Fiber project (Frontier-AL). Implement a cinematic “Hex Tunnel Warp” overlay effect that can be toggled on/off without interfering with existing globe rotation group, raycasting, plot picking, or UI.
+
+GOALS
+- Create a new component: client/src/components/effects/HexTunnelWarp.tsx
+- The tunnel is a forward-facing camera-space effect that appears like flying through a hex corridor (instanced hex rings + streaks).
+- It must render as a separate sibling layer (not inside the globe rotation group).
+- It must be toggleable via a boolean prop `enabled`.
+- It must be performant: use InstancedMesh and reuse geometries/materials.
+- It must NOT steal pointer events / raycasting from the globe (set appropriate layers or pointer events logic; do not attach handlers).
+- It must follow camera and simulate forward motion by recycling instances.
+- Provide safe defaults for mobile: instanceCount ~ 120, simple materials, no heavy postprocessing required.
+
+IMPLEMENTATION DETAILS
+1) Create HexTunnelWarp.tsx:
+- Use InstancedMesh with a hex-outline ring geometry:
+  - Use THREE.CylinderGeometry with radialSegments=6 and openEnded=true, very thin height (like 0.05–0.15), scaled to look like a ring.
+  - Alternatively use THREE.RingGeometry but hex look is preferred via cylinder segments.
+- Place instances along -Z in camera local space (e.g. z from -2 to -120).
+- Randomize slight rotation, scale jitter, and alpha intensity per ring.
+- Animate in useFrame: move rings towards camera by `speed * delta` (in local space). When a ring passes z > -2, recycle it back to far distance (e.g. z = -120) with new random rotation/scale.
+- Keep the whole effect positioned on the camera each frame:
+  - group.position = camera.position
+  - group.quaternion = camera.quaternion
+- Set material:
+  - MeshBasicMaterial or MeshStandardMaterial with emissive look (but basic is fine)
+  - transparent=true, opacity around 0.25–0.65, depthWrite=false
+  - blending=AdditiveBlending
+- Add optional “streak” lines:
+  - Use a second InstancedMesh of thin planes oriented along Z, low opacity, to sell motion.
+- Ensure frustumCulled={false} to avoid popping.
+
+2) Wire into PlanetGlobe.tsx:
+- Import HexTunnelWarp from ../effects/HexTunnelWarp (adjust relative path as needed).
+- Mount it as a sibling to the globe rotation group, not inside it.
+- Add a temporary toggle constant: `const showWarp = false;` (default off), or reuse existing debug toggles if present.
+- Example placement:
+  <HexTunnelWarp enabled={showWarp} />
+
+3) Provide exact code (full file content for HexTunnelWarp.tsx) + the exact minimal insertion snippet for PlanetGlobe.tsx.
+Do not refactor unrelated code. Do not change existing globe group logic.

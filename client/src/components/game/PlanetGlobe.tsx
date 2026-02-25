@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree, useLoader } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import HexTunnelWarp from "../effects/HexTunnelWarp";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, BiomeType } from "@shared/schema";
 import { biomeColors } from "@shared/schema";
@@ -310,6 +311,7 @@ interface SceneProps {
 
 function Scene({ parcels, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
   const globeGroupRef = useRef<THREE.Group>(null!);
+  const showWarp = false;
 
   return (
     <>
@@ -327,6 +329,8 @@ function Scene({ parcels, currentPlayerId, selectedPlotId, onPlotSelect, control
         />
         <Satellite orbitRadius={GLOBE_RADIUS * 1.25} />
       </group>
+
+      <HexTunnelWarp enabled={showWarp} />
 
       <AtmosphereGlow />
 
