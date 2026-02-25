@@ -360,8 +360,8 @@ export function FlatMap({
         let xOff = ((-(lng / 360) * W % W) + W) % W - W;
 
         // Vertical scroll: subtle + clamped to prevent polar banding
-        let yOff = (lat / 180) * R;
-        yOff = Math.max(-R * 0.5, Math.min(R * 0.5, yOff));
+        let yOff = (lat / 180) * R * 0.45;
+        yOff = Math.max(-R * 0.4, Math.min(R * 0.4, yOff));
 
         // Draw img three times horizontally to cover the dateline seam
         const drawWrapped = (img: HTMLImageElement, alpha: number, op = "source-over", extraX = 0, extraY = 0) => {

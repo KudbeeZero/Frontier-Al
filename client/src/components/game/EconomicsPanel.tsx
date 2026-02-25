@@ -150,18 +150,24 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
           ) : error || !data ? (
             <div className="text-center py-12 px-6 text-muted-foreground bg-card/20 rounded-xl border border-border/40 mx-4">
               <BarChart3 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-medium text-foreground/80 mb-1">Economics Data Unavailable</p>
-              <p className="text-[11px] leading-relaxed mb-4">
-                {error instanceof Error ? error.message : "The economics dashboard is currently synchronizing with the Algorand testnet. Please check back in a moment."}
-              </p>
+              <p className="text-sm font-medium text-foreground/80 mb-1 text-primary">Data Connection Lost</p>
+              <div className="text-[11px] leading-relaxed mb-6 space-y-2">
+                <p>
+                  {error instanceof Error ? error.message : "The economics server is temporarily unreachable. This usually happens during network synchronization."}
+                </p>
+                <p className="text-muted-foreground/60 italic">
+                  Attempting to reconnect automatically...
+                </p>
+              </div>
               <Button 
-                variant="outline" 
+                variant="default" 
                 size="sm" 
                 onClick={() => refetch()}
-                className="gap-2"
+                className="gap-2 px-6 shadow-lg shadow-primary/20"
+                disabled={isFetching}
               >
                 <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-                Retry Sync
+                {isFetching ? "Reconnecting..." : "Force Reconnect"}
               </Button>
             </div>
           ) : (
