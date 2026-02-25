@@ -1,0 +1,158 @@
+You are working in a Vite + React + Three.js (likely R3F) project.
+
+IMPORTANT:
+- Do NOT scan the entire repo.
+- Do NOT list all files.
+- Only inspect and modify the minimal files necessary.
+- Do NOT touch backend/server/database files.
+- Do NOT modify package.json, lock files, build config, or unrelated UI components.
+- Only touch globe/3D rendering, plot mesh, rotation controls, and picking logic.
+
+------------------------------------------------------
+OBJECTIVE
+------------------------------------------------------
+
+We need to:
+
+1) Reduce visual density of the 21,000 plot overlay mesh to ~20% opacity
+2) Ensure globe terrain + plot overlay + satellite rotate together
+3) Fix "North" button to reset to canonical orientation reliably
+4) Ensure raycast → lat/lon → plotId mapping remains correct under rotation
+5) Add animated space station satellite that rotates with the globe
+
+------------------------------------------------------
+SEARCH TARGETS (start here only)
+------------------------------------------------------
+
+Search for:
+- Globe / Earth / Planet component
+- OrbitControls
+- Raycaster
+- latLon conversion
+- plotId mapping
+- mesh containing 21000 plots
+- North button handler
+
+Likely files:
+- Globe*.tsx
+- Planet*.tsx
+- Earth*.tsx
+- MapScene*.tsx
+- utils/geo.ts
+- plotUtils.ts
+- coordinate.ts
+
+Do not inspect unrelated components.
+
+------------------------------------------------------
+TASK 1 — Reduce Plot Overlay to 20% Visible
+------------------------------------------------------
+
+Find the mesh/material rendering the 21,000 plots.
+
+Modify material:
+
+- material.transparent = true
+- material.opacity = 0.2
+- material.depthWrite = false
+
+IMPORTANT:
+- Do NOT disable raycasting.
+- Do NOT remove pointer events.
+- Plots must remain selectable.
+- Preserve vertex colors if used.
+
+------------------------------------------------------
+TASK 2 — Create Single Rotation Authority (globeGroup)
+------------------------------------------------------
+
+Wrap:
+- Earth mesh
+- Plot overlay mesh
+- Satellite mesh
+
+Inside a single THREE.Group (globeGroupRef).
+
+All rotation must apply ONLY to this group.
+
+If multiple refs exist (earthRef, plotRef, etc):
+Refactor so they are children of globeGroup.
+
+OrbitControls should manipulate this group.
+
+------------------------------------------------------
+TASK 3 — Fix North Button
+------------------------------------------------------
+
+Ensure North button resets rotation to canonical orientation:
+
+globeGroup.rotation.set(0, 0, 0)
+
+OR
+
+globeGroup.quaternion.identity()
+
+If OrbitControls is used:
+- Also reset controls.target correctly
+- Prevent camera snap/jump bugs
+
+After reset:
+- Plot selection must still resolve correct lat/lon
+- Purchasing ocean plots must remain deterministic
+
+------------------------------------------------------
+TASK 4 — Fix Picking Under Rotation
+------------------------------------------------------
+
+When raycasting:
+
+- Get intersection point in WORLD space
+- Convert to LOCAL space of globeGroup:
+
+const localPoint = globeGroup.worldToLocal(intersection.point.clone())
+
+- Compute lat/lon from LOCAL coordinates
+- Resolve plotId from that lat/lon
+
+This ensures rotation never breaks mapping.
+
+------------------------------------------------------
+TASK 5 — Add Satellite
+------------------------------------------------------
+
+Use texture:
+
+/assets/space_station.png
+
+Implementation requirements:
+
+- Use Sprite OR Plane with transparent texture
+- Parent satellite under globeGroup
+- Orbit radius: globeRadius * 1.2
+- Subtle animation in useFrame:
+    - slow orbit
+    - small bobbing
+    - slight yaw rotation
+- Do NOT recreate material/geometry every frame
+- Memoize texture
+
+Satellite must visually scale proportionally to Earth.
+
+------------------------------------------------------
+PERFORMANCE RULES
+------------------------------------------------------
+
+- No geometry recreation in render loop
+- No unnecessary re-renders
+- Keep useFrame lightweight
+- Memoize textures and materials
+
+------------------------------------------------------
+DELIVERABLE
+------------------------------------------------------
+
+Provide:
+
+1) Exact files modified
+2) Short explanation of changes
+3) Final git commit commands
