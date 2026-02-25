@@ -1,0 +1,147 @@
+You are a senior full-stack web engineer (UI/UX + graphics/canvas + TypeScript/React) with a bioengineering + data science background. Your job is to implement THREE focused changes in the Frontier-Al repo with surgical precision, minimal churn, and zero regressions.
+
+REPO CONTEXT
+- React + TypeScript client
+- Files involved:
+  1) client/src/components/game/GameLayout.tsx
+  2) client/src/components/game/TopBar.tsx
+  3) client/src/components/game/FlatMap.tsx
+
+OBJECTIVE (DO THESE THREE ONLY)
+1) Remove/Hide the ResourceHUD banner (iron/fuel/crystal/FRNTR/ALGO resource bar) WITHOUT deleting its logic.
+2) Make TopBar visibly shorter/compact ONLY when the phone is in landscape orientation; portrait mode unchanged.
+3) Fix the FlatMap “planet texture alignment” issue: textures currently stay fixed while plot dots move when rotating (dragging) the globe. Terrain/night/cloud layers must scroll with camera.centerLng/centerLat.
+
+HARD RULES
+- Do NOT change gameplay logic, player state logic, wallet connect behavior, or the bottom sheet panel.
+- Keep diffs minimal and localized to the specified files.
+- No new dependencies.
+- Prefer “gating off” UI over removing logic/state.
+- All changes must compile and run.
+
+========================================================
+T001 — HIDE ResourceHUD (GameLayout.tsx)
+========================================================
+FILE: client/src/components/game/GameLayout.tsx
+
+IMPLEMENTATION
+- Locate the ResourceHUD render block (around line ~571).
+- Change the guard from:
+    {player && ( ...ResourceHUD... )}
+  to:
+    {false && player && ( ...ResourceHUD... )}
+- Do NOT remove imports, state, timers, or any derived values used by ResourceHUD.
+- Do NOT touch TopBar.
+- Outcome: resource bar is gone visually, but all underlying data/logic remains intact.
+
+ACCEPTANCE CHECK
+- ResourceHUD bar does not appear anywhere.
+- TopBar remains visible and unchanged by this task.
+
+========================================================
+T002 — COMPACT TopBar IN LANDSCAPE (TopBar.tsx)
+========================================================
+FILE: client/src/components/game/TopBar.tsx
+
+IMPLEMENTATION
+- Apply Tailwind `landscape:` variants ONLY to reduce height in landscape orientation.
+- Do not change markup structure unless strictly necessary.
+- Add the following class tweaks exactly:
+
+1) Header container:
+   - Add `landscape:py-0.5` (currently `py-2`)
+   - Add `landscape:px-2` alongside existing `px-4`
+
+2) F logo square:
+   - Add `landscape:w-7 landscape:h-7` (currently `w-10 h-10`)
+
+3) F logo letter:
+   - Add `landscape:text-base` (currently `text-xl`)
+
+4) FRONTIER title text:
+   - Add `landscape:text-base` (currently `text-xl`)
+
+IMPORTANT: VERIFY Tailwind supports `landscape:` in this repo.
+- Check tailwind config for something like:
+  screens: { landscape: { raw: '(orientation: landscape)' } }
+If it DOES NOT exist, add it ONLY if required and only in tailwind config (minimal change). Otherwise proceed.
+
+ACCEPTANCE CHECK
+- On mobile landscape: TopBar height is visibly shorter.
+- On portrait: TopBar looks exactly as before.
+
+========================================================
+T003 — FIX FlatMap TEXTURE SCROLLING (FlatMap.tsx)
+========================================================
+FILE: client/src/components/game/FlatMap.tsx
+TARGET: the drawImage block around lines ~355–376 where textures are drawn like:
+  ctx.drawImage(img, cx - R, cy - R, R * 2, R * 2)
+
+ROOT CAUSE
+- The equirectangular texture is always drawn at the same pixel center, so it never reacts to camera.centerLng/centerLat.
+- Plots are recomputed based on camera center, so plots “move” but texture remains static.
+
+IMPLEMENTATION GOAL
+- Before drawing EACH texture layer (terrain, night, clouds), apply an offset derived from camera center.
+- Draw wrapped copies to handle dateline seam (texture repeats horizontally).
+
+MATH (use these)
+- Let W = R * 2, H = R * 2.
+- Longitude scroll:
+    xOff = -(cameraRef.current.centerLng / 360) * W
+  Then wrap xOff to keep it bounded:
+    xOff = ((xOff % W) + W) % W
+    xOff = xOff - W
+- Latitude scroll (approximation):
+    yOff = (cameraRef.current.centerLat / 180) * (R * 1.0)
+  Keep it subtle; do NOT over-shift vertically.
+
+RENDERING PATTERN (USE THIS EXACT APPROACH)
+- Create a small helper inside the render/draw scope:
+
+  const lng = cameraRef.current.centerLng;
+  const lat = cameraRef.current.centerLat;
+  const W = R * 2;
+  const H = R * 2;
+
+  let xOff = -(lng / 360) * W;
+  xOff = ((xOff % W) + W) % W;
+  xOff = xOff - W;
+
+  const yOff = (lat / 180) * (R * 1.0);
+
+  const drawWrapped = (img: HTMLImageElement, extraX = 0, extraY = 0) => {
+    const x0 = cx - R + xOff + extraX;
+    const y0 = cy - R + yOff + extraY;
+
+    ctx.drawImage(img, x0, y0, W, H);
+    ctx.drawImage(img, x0 + W, y0, W, H);
+    ctx.drawImage(img, x0 - W, y0, W, H);
+  };
+
+- Replace each layer’s fixed drawImage call with drawWrapped:
+  - Terrain: drawWrapped(mapImageRef.current)
+  - Night: drawWrapped(nightImageRef.current)
+  - Clouds: drawWrapped(cloudsImageRef.current, W * 0.02, 0)  // slight parallax
+
+- Preserve existing alpha and composite operations.
+- Do NOT change plot math in this task — only texture drawing.
+
+ACCEPTANCE CHECK
+- Dragging left/right: terrain texture scrolls with plots (no longer “stuck”).
+- Seam at dateline does not visibly tear (wrapped draws cover it).
+- Clouds move similarly, slightly offset for depth.
+
+========================================================
+VALIDATION STEPS
+========================================================
+1) Build + run client.
+2) Confirm:
+   - ResourceHUD no longer visible
+   - TopBar shorter ONLY in landscape
+   - FlatMap textures visibly scroll with rotation, matching plot movement
+3) Ensure no TypeScript errors and no runtime canvas exceptions.
+
+DELIVERABLE
+- Provide the final code edits in-place (minimal diffs).
+- If you must change tailwind config for `landscape:`, do it as a tiny isolated commit and mention it explicitly.
