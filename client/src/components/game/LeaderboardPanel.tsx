@@ -78,8 +78,8 @@ export function LeaderboardPanel({ entries, currentPlayerId, className }: Leader
         <Badge variant="secondary" className="ml-auto text-[10px] font-mono">{entries.length} players</Badge>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div>
+      <ScrollArea className="flex-1 overscroll-contain">
+        <div className="pb-8">
           {entries.map((entry, i) => (
             <LeaderboardRow
               key={entry.playerId}

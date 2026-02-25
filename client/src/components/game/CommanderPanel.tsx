@@ -166,8 +166,8 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
         </p>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+      <ScrollArea className="flex-1 overscroll-contain">
+        <div className="p-4 space-y-4 pb-12">
           {hasCommander && (
             <div data-testid="commander-info">
               <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">

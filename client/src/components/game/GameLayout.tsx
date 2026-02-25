@@ -441,24 +441,32 @@ export function GameLayout() {
           </button>
 
           {selectedParcelId && activeTab === "map" && (
-            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-md px-4 pointer-events-auto">
-              <LandSheet
-                parcel={selectedParcel!}
-                player={player}
-                onMine={handleMine}
-                onUpgrade={handleUpgrade}
-                onAttack={() => setAttackModalOpen(true)}
-                onBuild={handleBuild}
-                onPurchase={handlePurchase}
-                onDeployDrone={handleDeployDrone}
-                onDeploySatellite={handleDeploySatellite}
-                isMining={mineMutation.isPending || miningParcelIds.has(selectedParcelId)}
-                isUpgrading={upgradeMutation.isPending}
-                isBuilding={buildMutation.isPending}
-                isPurchasing={purchaseMutation.isPending}
-                isDeployingDrone={deployDroneMutation.isPending}
-                isLaunchingSatellite={deploySatelliteMutation.isPending}
-              />
+            <div 
+              className="absolute inset-0 z-20 pointer-events-none" 
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedParcelId(null);
+              }}
+            >
+              <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-md px-4 pointer-events-auto">
+                <LandSheet
+                  parcel={selectedParcel!}
+                  player={player}
+                  onMine={handleMine}
+                  onUpgrade={handleUpgrade}
+                  onAttack={() => setAttackModalOpen(true)}
+                  onBuild={handleBuild}
+                  onPurchase={handlePurchase}
+                  onDeployDrone={handleDeployDrone}
+                  onDeploySatellite={handleDeploySatellite}
+                  onClose={() => setSelectedParcelId(null)}
+                  isMining={mineMutation.isPending || miningParcelIds.has(selectedParcelId)}
+                  isUpgrading={upgradeMutation.isPending}
+                  isBuilding={buildMutation.isPending}
+                  isPurchasing={purchaseMutation.isPending}
+                  isDeployingDrone={deployDroneMutation.isPending}
+                  isLaunchingSatellite={deploySatelliteMutation.isPending}
+                />
+              </div>
             </div>
           )}
 

@@ -131,8 +131,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-5">
+      <ScrollArea className="flex-1 overscroll-contain">
+        <div className="p-4 space-y-5 pb-12">
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 6 }).map((_, i) => (

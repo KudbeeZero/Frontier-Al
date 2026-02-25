@@ -306,8 +306,8 @@ export function InventoryPanel({
       </div>
 
       {/* ── Territory list ── */}
-      <ScrollArea className="flex-1 px-4 pb-4">
-        <div className="space-y-2">
+      <ScrollArea className="flex-1 px-4 pb-4 overscroll-contain">
+        <div className="space-y-2 pb-6">
           {ownedParcels.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <MapPin className="w-8 h-8 mx-auto mb-2 opacity-30" />
