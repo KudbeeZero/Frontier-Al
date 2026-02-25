@@ -349,25 +349,44 @@ export function FlatMap({
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.clip();
 
-      // Map image as the globe face (flat image stretched into the circle —
-      // not a pixel-perfect warp, but gives the correct visual impression of
-      // a globe with a visible surface texture).
+      // Map image as the globe face — equirectangular textures scroll with
+      // camera rotation by offsetting by the camera's lng/lat position.
+      // Each texture is drawn twice (offset ± texW) to handle dateline wrap.
       if (mapImageLoaded.current && mapImageRef.current) {
-        ctx.globalAlpha = 0.9;
-        ctx.drawImage(mapImageRef.current, cx - R, cy - R, R * 2, R * 2);
-        ctx.globalAlpha = 1.0;
+        const texW = R * 2;
+        const texH = R * 2;
+        // Longitude scrolls the texture horizontally: centre of the visible
+        // hemisphere should map to the texture's horizontal mid-point.
+        const lngFrac = ((cameraRef.current.centerLng + 180) / 360); // [0,1]
+        const latFrac = ((90 - cameraRef.current.centerLat) / 180);  // [0,1]
+        const xOff = cx - R - lngFrac * texW + texW / 2;
+        const yOff = cy - R - latFrac * texH + texH / 2;
 
-        if (nightImageLoaded.current && nightImageRef.current) {
-          ctx.globalCompositeOperation = "screen";
-          ctx.globalAlpha = 0.5;
-          ctx.drawImage(nightImageRef.current, cx - R, cy - R, R * 2, R * 2);
+        const drawWrapped = (img: HTMLImageElement, alpha: number, op: string = "source-over") => {
+          ctx.globalCompositeOperation = op;
+          ctx.globalAlpha = alpha;
+          // Draw at offset, and a copy one full texture-width to each side for seamless wrap
+          for (const dx of [-texW, 0, texW]) {
+            ctx.drawImage(img, xOff + dx, yOff, texW, texH);
+          }
           ctx.globalCompositeOperation = "source-over";
           ctx.globalAlpha = 1.0;
+        };
+
+        drawWrapped(mapImageRef.current, 0.9);
+
+        if (nightImageLoaded.current && nightImageRef.current) {
+          drawWrapped(nightImageRef.current, 0.5, "screen");
         }
 
         if (cloudsImageLoaded.current && cloudsImageRef.current) {
+          // Clouds drift slightly slower than the surface for depth effect
+          const cloudXOff = cx - R - (lngFrac * 0.97) * texW + texW / 2;
+          const cloudYOff = cy - R - (latFrac * 0.97) * texH + texH / 2;
           ctx.globalAlpha = 0.25;
-          ctx.drawImage(cloudsImageRef.current, cx - R, cy - R, R * 2, R * 2);
+          for (const dx of [-texW, 0, texW]) {
+            ctx.drawImage(cloudsImageRef.current, cloudXOff + dx, cloudYOff, texW, texH);
+          }
           ctx.globalAlpha = 1.0;
         }
       } else {

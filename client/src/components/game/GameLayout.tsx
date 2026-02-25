@@ -565,7 +565,7 @@ export function GameLayout() {
         </div>
       )}
 
-      {player && (
+      {false && player && (
         <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
           <ResourceHUD
             iron={player.iron}

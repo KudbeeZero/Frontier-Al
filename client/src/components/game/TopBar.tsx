@@ -20,7 +20,7 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex items-center justify-between gap-4 px-4 py-2 backdrop-blur-md bg-black/50 border-b border-white/10",
+        "sticky top-0 z-40 flex items-center justify-between gap-2 landscape:gap-1 px-4 landscape:px-2 py-2 landscape:py-0.5 backdrop-blur-md bg-black/50 border-b border-white/10",
         className
       )}
       data-testid="top-bar"
@@ -43,15 +43,15 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
           </Sheet>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 landscape:gap-1.5">
           <div className="relative">
-            <div className="w-10 h-10 rounded-md bg-primary/20 flex items-center justify-center border border-primary/30">
-              <span className="font-display text-xl font-bold text-primary">F</span>
+            <div className="w-10 h-10 landscape:w-7 landscape:h-7 rounded-md bg-primary/20 flex items-center justify-center border border-primary/30">
+              <span className="font-display text-xl landscape:text-base font-bold text-primary">F</span>
             </div>
-            <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 landscape:w-2 landscape:h-2 rounded-full bg-success border-2 border-background animate-pulse" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="font-display text-xl font-bold uppercase tracking-wider">FRONTIER</h1>
+            <h1 className="font-display text-xl landscape:text-base font-bold uppercase tracking-wider">FRONTIER</h1>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-[10px] py-0 px-1 font-mono">
                 TESTNET
