@@ -597,25 +597,25 @@ export function GameLayout() {
       {false && player && (
         <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
           <ResourceHUD
-            iron={player.iron}
-            fuel={player.fuel}
-            crystal={player.crystal}
-            frontier={player.frontier}
+            iron={player?.iron || 0}
+            fuel={player?.fuel || 0}
+            crystal={player?.crystal || 0}
+            frontier={player?.frontier || 0}
             algoBalance={balance}
             frontierDailyRate={
-              gameState?.parcels
-                ? gameState.parcels
-                    .filter(p => player && p.ownerId === player.id)
-                    .reduce((s, p) => s + p.frontierPerDay, 0)
+              (gameState?.parcels && player)
+                ? (gameState as any).parcels
+                    .filter((p: any) => p.ownerId === (player as any).id)
+                    .reduce((s: number, p: any) => s + (p.frontierPerDay || 0), 0)
                 : undefined
             }
             frontierPending={
-              gameState?.parcels
-                ? gameState.parcels
-                    .filter(p => player && p.ownerId === player.id)
-                    .reduce((s, p) => {
-                      const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
-                      return s + p.frontierAccumulated + days * p.frontierPerDay;
+              (gameState?.parcels && player)
+                ? (gameState as any).parcels
+                    .filter((p: any) => p.ownerId === (player as any).id)
+                    .reduce((s: number, p: any) => {
+                      const days = Math.max(0, (now - (p as any).lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
+                      return s + ((p as any).frontierAccumulated || 0) + days * ((p as any).frontierPerDay || 0);
                     }, 0)
                 : undefined
             }

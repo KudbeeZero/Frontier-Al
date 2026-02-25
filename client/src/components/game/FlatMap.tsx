@@ -431,7 +431,7 @@ export function FlatMap({
       ctx.shadowBlur = 0;
       ctx.shadowColor = "transparent";
       
-      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : null;
+      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : undefined;
 
       for (let i = 0; i < parcels.length; i++) {
         const p = parcels[i];
@@ -809,26 +809,27 @@ export function FlatMap({
       />
 
       {false && selectedParcelId && selectedScreenPos && (() => {
-        const plot = plotIndex.get(selectedParcelId);
-        if (!plot) return null;
-        const containerRect = containerRef.current?.getBoundingClientRect();
-        if (!containerRect) return null;
+        const plot = (selectedParcelId && plotIndex) ? plotIndex.get(selectedParcelId as string) : undefined;
+        const cRect = containerRef.current?.getBoundingClientRect();
+        if (!plot || !selectedScreenPos || !cRect) return null;
         const popupW = 200;
         const popupH = 140;
-        let px = selectedScreenPos.x + 20;
-        let py = selectedScreenPos.y - popupH / 2;
-        if (px + popupW > containerRect.width  - 10) px = selectedScreenPos.x - popupW - 20;
-        if (py < 10)                                  py = 10;
-        if (py + popupH > containerRect.height - 10)  py = containerRect.height - popupH - 10;
-        const sectorKey  = getSector(plot.lat, plot.lng);
+        const sPos = selectedScreenPos as { x: number; y: number };
+        let px = sPos.x + 20;
+        let py = sPos.y - popupH / 2;
+        if (px + popupW > cRect.width - 10) px = sPos.x - popupW - 20;
+        if (py < 10) py = 10;
+        if (py + popupH > cRect.height - 10) py = cRect.height - popupH - 10;
+        const sectorKey = getSector(plot.lat, plot.lng);
         const sectorName = SECTOR_NAMES[sectorKey] || "Unknown Sector";
-        const plotName   = getPlotName(plot.plotId, plot.biome as BiomeType);
-        const ownerName  = plot.ownerId ? (playerMap.get(plot.ownerId) || "Unknown") : "Unclaimed";
-        const isPlayer   = plot.ownerId === currentPlayerId;
-        const isEnemy    = plot.ownerId && !isPlayer;
+        const plotName = getPlotName(plot.plotId, plot.biome as BiomeType);
+        const ownerIdVal = plot.ownerId as string | null;
+        const ownerName = ownerIdVal ? (playerMap.get(ownerIdVal) || "Unknown") : "Unclaimed";
+        const isPlayer = !!(currentPlayerId && ownerIdVal === currentPlayerId);
+        const isEnemy = !!(ownerIdVal && !isPlayer);
         const statusColor = isPlayer ? "#00ff44" : isEnemy ? "#ff2222" : "#888";
-        const statusText  = isPlayer ? "YOUR BASE" : isEnemy ? "HOSTILE" : "UNCLAIMED";
-        const biomeColor  = biomeColors[plot.biome as BiomeType] || "#666";
+        const statusText = isPlayer ? "YOUR BASE" : isEnemy ? "HOSTILE" : "UNCLAIMED";
+        const biomeColor = biomeColors[plot.biome as BiomeType] || "#666";
 
         return (
           <div
