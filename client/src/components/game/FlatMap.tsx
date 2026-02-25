@@ -292,9 +292,7 @@ export function FlatMap({
         const twinkle = Math.sin(pulseRef.current * star.twinkleSpeed) * 0.3 + 0.7;
         const alpha   = star.brightness * twinkle;
         ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
-        ctx.beginPath();
-        ctx.arc(star.x * w, star.y * h, star.size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(star.x * w, star.y * h, star.size, star.size);
       }
 
       // ── Shooting stars ────────────────────────────────────────────────────
@@ -426,16 +424,19 @@ export function FlatMap({
       }
 
       // ── Plots ─────────────────────────────────────────────────────────────
-      const plotSize   = getPlotSize(w, h);
+      const plotSize = getPlotSize(w, h);
       pulseRef.current += 0.02;
-      const playerPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
 
+      // OPTIMIZATION: Disable expensive shadows during plot loop
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = "transparent";
+      
       const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : null;
 
       for (let i = 0; i < parcels.length; i++) {
-        const p         = parcels[i];
+        const p = parcels[i];
         const screenPos = latLngToScreen(p.lat, p.lng, w, h);
-        if (!screenPos) continue; // back hemisphere — not visible
+        if (!screenPos) continue; 
         const { x, y } = screenPos;
 
         const isPlayerOwned = p.ownerId && currentPlayerId && p.ownerId === currentPlayerId;
@@ -443,53 +444,30 @@ export function FlatMap({
         const isSelected    = p.id === selectedParcelId;
         const isHovered     = p.id === hoveredPlotId;
 
-        let size  = plotSize;
-        if (isPlayerOwned) size = plotSize * 1.4;
-        else if (isEnemyOwned) size = plotSize * 1.2;
-
+        let size = plotSize;
+        let plotAlpha = 0.3;
         let color = COLORS.unclaimed;
-        let plotAlpha = 0.3; // Default low opacity for unclaimed plots
-        
+
         if (isSelected) {
           color = COLORS.selected;
-          size  = plotSize * 1.8;
+          size = plotSize * 1.8;
           plotAlpha = 0.9;
         } else if (isHovered) {
           color = isPlayerOwned ? COLORS.playerGlow : isEnemyOwned ? COLORS.enemyGlow : COLORS.hover;
-          size  = plotSize * 1.5;
+          size = plotSize * 1.5;
           plotAlpha = 0.8;
         } else if (isPlayerOwned) {
-          const r  = parseInt(COLORS.player.slice(1, 3), 16);
-          const g  = parseInt(COLORS.player.slice(3, 5), 16);
-          const b  = parseInt(COLORS.player.slice(5, 7), 16);
-          const pr = Math.min(255, Math.round(r * (playerPulse + 0.15)));
-          const pg = Math.min(255, Math.round(g * (playerPulse + 0.15)));
-          const pb = Math.min(255, Math.round(b * (playerPulse + 0.15)));
-          color = `rgb(${pr},${pg},${pb})`;
+          color = COLORS.player;
           plotAlpha = 0.6;
         } else if (isEnemyOwned) {
           color = COLORS.enemy;
           plotAlpha = 0.6;
         }
 
-        if (isSelected) {
-          // Subtle cyan glow — NOT white, NOT oversized
-          ctx.shadowColor = COLORS.selectedGlow;
-          ctx.shadowBlur  = plotSize * 0.8;
-        } else if (isPlayerOwned && !isHovered) {
-          ctx.shadowColor = COLORS.playerGlow;
-          ctx.shadowBlur  = plotSize * 0.8;
-        } else {
-          ctx.shadowColor = "transparent";
-          ctx.shadowBlur  = 0;
-        }
-
         ctx.globalAlpha = plotAlpha;
         if (isSelected) {
-          // Draw a thin arc ring — no filled square, no white background.
-          // The radius is half of `size` so it scales correctly with zoom.
-          ctx.strokeStyle = "#00e5ff";
-          ctx.lineWidth   = 2;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(x, y, size / 2, 0, Math.PI * 2);
           ctx.stroke();
@@ -498,9 +476,6 @@ export function FlatMap({
           ctx.fillRect(x - size / 2, y - size / 2, size, size);
         }
         ctx.globalAlpha = 1.0;
-
-        ctx.shadowColor = "transparent";
-        ctx.shadowBlur  = 0;
       }
 
       // Selected plot rings — cyan, not white
@@ -525,21 +500,15 @@ export function FlatMap({
 
           selectedScreenPosRef.current = { x, y };
           const now = Date.now();
-          if (now - lastPosUpdateRef.current > 50) {
+          if (now - lastPosUpdateRef.current > 100) {
             lastPosUpdateRef.current = now;
             setSelectedScreenPos({ x, y });
           }
         } else {
-          if (selectedScreenPosRef.current) {
-            selectedScreenPosRef.current = null;
-            setSelectedScreenPos(null);
-          }
-        }
-      } else {
-        if (selectedScreenPosRef.current) {
-          selectedScreenPosRef.current = null;
           setSelectedScreenPos(null);
         }
+      } else {
+        setSelectedScreenPos(null);
       }
 
       // ── Limb darkening — sphere shading applied on top of everything ───────

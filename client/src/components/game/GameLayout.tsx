@@ -603,16 +603,16 @@ export function GameLayout() {
             frontier={player.frontier}
             algoBalance={balance}
             frontierDailyRate={
-              gameState
+              gameState?.parcels
                 ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
+                    .filter(p => player && p.ownerId === player.id)
                     .reduce((s, p) => s + p.frontierPerDay, 0)
                 : undefined
             }
             frontierPending={
-              gameState
+              gameState?.parcels
                 ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
+                    .filter(p => player && p.ownerId === player.id)
                     .reduce((s, p) => {
                       const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
                       return s + p.frontierAccumulated + days * p.frontierPerDay;

@@ -139,28 +139,28 @@ function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, globeGroupRef, 
       if (intersects.length === 0) return;
 
       const hit = intersects[0];
-      const worldPoint = hit.point.clone();
-      const localPoint = globeGroupRef.current.worldToLocal(worldPoint);
+      const localPoint = globeGroupRef.current.worldToLocal(hit.point.clone());
       const { lat, lng } = vec3ToLatLng(localPoint);
 
       let bestDist = Infinity;
-      let bestPlotId = -1;
-      for (const coord of plotCoords) {
-        const dLat = coord.lat - lat;
-        const dLng = coord.lng - lng;
+      let bestParcelId = null;
+
+      // OPTIMIZATION: Check parcels directly for spatial proximity instead of coord loop
+      for (const p of parcels) {
+        const dLat = p.lat - lat;
+        const dLng = p.lng - lng;
         const dist = dLat * dLat + dLng * dLng;
         if (dist < bestDist) {
           bestDist = dist;
-          bestPlotId = coord.plotId;
+          bestParcelId = p.id;
         }
       }
 
-      if (bestPlotId > 0) {
-        const parcel = plotIdToParcel.get(bestPlotId);
-        if (parcel) onPlotSelect(parcel.id);
+      if (bestParcelId && bestDist < 100) { // Max 10 degree radius for hit
+        onPlotSelect(bestParcelId);
       }
     },
-    [raycaster, globeGroupRef, plotCoords, plotIdToParcel, onPlotSelect]
+    [raycaster, globeGroupRef, parcels, onPlotSelect]
   );
 
   return (

@@ -20,7 +20,7 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex items-center justify-between gap-2 landscape:gap-1 px-4 landscape:px-2 py-2 landscape:py-0.5 backdrop-blur-md bg-black/50 border-b border-white/10",
+        "fixed top-0 left-0 right-0 z-40 flex items-center justify-between gap-2 landscape:gap-1 px-4 landscape:px-2 py-2 landscape:py-0.5 backdrop-blur-md bg-black/50 border-b border-white/10",
         className
       )}
       data-testid="top-bar"
