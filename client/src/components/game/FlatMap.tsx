@@ -357,13 +357,11 @@ export function FlatMap({
         const H = R * 2;
 
         // Horizontal scroll: wrap longitude so dateline never causes a gap
-        let xOff = -(lng / 360) * W;
-        xOff = ((xOff % W) + W) % W;
-        xOff = xOff - W;
+        let xOff = ((-(lng / 360) * W % W) + W) % W - W;
 
         // Vertical scroll: subtle + clamped to prevent polar banding
-        let yOff = (lat / 180) * (R * 0.35);
-        yOff = Math.max(-R * 0.35, Math.min(R * 0.35, yOff));
+        let yOff = (lat / 180) * R;
+        yOff = Math.max(-R * 0.5, Math.min(R * 0.5, yOff));
 
         // Draw img three times horizontally to cover the dateline seam
         const drawWrapped = (img: HTMLImageElement, alpha: number, op = "source-over", extraX = 0, extraY = 0) => {

@@ -97,8 +97,16 @@ interface EconomicsPanelProps {
 export function EconomicsPanel({ className }: EconomicsPanelProps) {
   const { data, isLoading, error, refetch, isFetching } = useQuery<EconomicsData>({
     queryKey: ["/api/economics"],
-    queryFn: () => fetch("/api/economics").then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch("/api/economics");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server Error: ${res.status}`);
+      }
+      return res.json();
+    },
     refetchInterval: 30_000,
+    retry: 1,
   });
 
   const algoExplorerUrl = data?.asaId
@@ -140,9 +148,21 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
               ))}
             </div>
           ) : error || !data ? (
-            <div className="text-center py-12 text-muted-foreground">
+            <div className="text-center py-12 px-6 text-muted-foreground bg-card/20 rounded-xl border border-border/40 mx-4">
               <BarChart3 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Failed to load economics data</p>
+              <p className="text-sm font-medium text-foreground/80 mb-1">Economics Data Unavailable</p>
+              <p className="text-[11px] leading-relaxed mb-4">
+                {error instanceof Error ? error.message : "The economics dashboard is currently synchronizing with the Algorand testnet. Please check back in a moment."}
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => refetch()}
+                className="gap-2"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+                Retry Sync
+              </Button>
             </div>
           ) : (
             <>

@@ -427,7 +427,7 @@ export function GameLayout() {
             <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 w-full max-w-lg px-4 pointer-events-none">
               <ResourceHUD iron={player.iron} fuel={player.fuel} crystal={player.crystal} frontier={player.frontier} algoBalance={balance} />
             </div>
-          ) }
+          )}
 
           {/* Pulsing frame disabled per request */}
           {/* <OrbitalCanvas events={orbitalEvents} /> */}
@@ -518,7 +518,7 @@ export function GameLayout() {
 
           {activeTab === "economics" && (
             <div className="absolute inset-0 z-40 bg-black/95 pt-20 pb-24 overflow-y-auto px-4">
-              <EconomicsPanel player={player} parcels={gameState.parcels} onClaimFrontier={handleClaimFrontier} isClaiming={claimFrontierMutation.isPending} />
+              <EconomicsPanel className="h-full" />
             </div>
           )}
 
