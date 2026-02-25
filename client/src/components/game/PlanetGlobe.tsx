@@ -362,7 +362,8 @@ export default function PlanetGlobe({
   selectedParcelId,
   onParcelSelect,
   className,
-}: PlanetGlobeProps) {
+  showWarp = true,
+}: PlanetGlobeProps & { showWarp?: boolean }) {
   const controlsRef = useRef<OrbitControlsImpl>(null!);
 
   const handleNorthReset = useCallback(() => {

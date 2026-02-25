@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
+import PlanetGlobe from "./PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
@@ -383,7 +384,14 @@ export function GameLayout() {
     setActiveTab("map");
   };
 
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+
+  const toggleViewMode = () => {
+    setViewMode(prev => (prev === "2d" ? "3d" : "2d"));
+  };
+
   const handleLocateTerritory = () => {
+    setViewMode("2d");
     if (!player || !gameState) return;
     const ownedPlots = gameState.parcels.filter(p => p.ownerId === player.id);
     if (ownedPlots.length > 0) {
@@ -529,19 +537,40 @@ export function GameLayout() {
         </div>
       ) : gameState ? (
         <>
-          <FlatMap
-            parcels={gameState.parcels}
-            selectedParcelId={selectedParcelId}
-            currentPlayerId={player?.id || null}
-            onParcelSelect={setSelectedParcelId}
-            className="absolute inset-0 w-full h-full"
-            onLocateTerritory={handleLocateTerritory}
-            onFindEnemyTarget={handleFindEnemyTarget}
-            hasOwnedPlots={playerHasOwnedPlots}
-            players={gameState.players}
-          />
+          {viewMode === "2d" ? (
+            <FlatMap
+              parcels={gameState.parcels}
+              selectedParcelId={selectedParcelId}
+              currentPlayerId={player?.id || null}
+              onParcelSelect={setSelectedParcelId}
+              className="absolute inset-0 w-full h-full"
+              onLocateTerritory={handleLocateTerritory}
+              onFindEnemyTarget={handleFindEnemyTarget}
+              hasOwnedPlots={playerHasOwnedPlots}
+              players={gameState.players}
+            />
+          ) : (
+            <div className="absolute inset-0 w-full h-full">
+              <PlanetGlobe
+                parcels={gameState.parcels}
+                currentPlayerId={player?.id || null}
+                selectedParcelId={selectedParcelId}
+                onParcelSelect={setSelectedParcelId}
+                showWarp={true}
+              />
+            </div>
+          )}
           {/* Orbital streaks canvas overlay — pointer-events: none, doesn't affect map interaction */}
           <OrbitalCanvas events={orbitalEvents} />
+          
+          <button
+            onClick={toggleViewMode}
+            className="absolute top-16 right-4 z-40 px-4 py-2 rounded-md bg-black/60 border border-primary/40 text-primary font-display uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-primary/20 transition-all backdrop-blur-md"
+            data-testid="view-toggle"
+          >
+            <Globe className="w-4 h-4" />
+            {viewMode === "2d" ? "3D Globe" : "2D Map"}
+          </button>
         </>
       ) : null}
 
