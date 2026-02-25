@@ -222,7 +222,7 @@ interface SatelliteProps {
 
 function Satellite({ orbitRadius }: SatelliteProps) {
   const spriteRef = useRef<THREE.Sprite>(null!);
-  const tex = useLoader(THREE.TextureLoader, "/images/satellite.png");
+  const tex = useLoader(THREE.TextureLoader, "/assets/space_station.png");
   const material = useMemo(
     () =>
       new THREE.SpriteMaterial({

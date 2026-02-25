@@ -1,0 +1,70 @@
+You are running in Replit. DO NOT scan the whole repo and DO NOT list files.
+
+ONLY TOUCH THIS FILE:
+- client/src/components/game/PlanetGlobe.tsx
+
+DO NOT TOUCH:
+- server/, shared/, script/, dist/, node_modules/
+- any database/drizzle files
+- package.json, package-lock.json, vite.config.ts, tsconfig.json
+- any other UI files unless absolutely required (it is not required)
+
+ASSET CONFIRMED:
+- The satellite image exists at: public/assets/space_station.png
+- You must load it with the URL path: /assets/space_station.png
+
+GOAL:
+You previously claimed all 5 tasks were implemented in PlanetGlobe.tsx. Now verify they are REAL and correct, and fix ONLY what’s missing or wrong. Keep changes minimal.
+
+VERIFY (and only fix if incorrect):
+
+1) Plot overlay opacity (~20% visible)
+- Overlay material must have:
+  - transparent = true
+  - opacity = 0.2
+  - depthWrite = false
+- Must remain raycastable/selectable (do NOT disable pointer events / raycasting)
+- Preserve vertexColors if used
+
+2) Single rotation authority (globeGroupRef)
+- Earth terrain, plot overlay, and satellite must all be children of:
+  <group ref={globeGroupRef}>
+- No other rotations should fight this (no separate refs rotating independently)
+
+3) North button reset
+- North reset must restore canonical orientation reliably:
+  - globeGroupRef.current.rotation.set(0,0,0) OR globeGroupRef.current.quaternion.identity()
+- If OrbitControls is used:
+  - controls.reset()
+  - controls.target.set(0,0,0)
+  - controls.update()
+- Must not cause camera jump/snap
+
+4) Picking under rotation (critical)
+- Raycast intersection point is WORLD space.
+- Must convert to LOCAL space before lat/lon conversion:
+  const localPoint = globeGroupRef.current.worldToLocal(intersection.point.clone())
+- lat/lon and plotId selection must be computed from localPoint
+- Must stay deterministic even for ocean plots after rotation + after North reset
+
+5) Animated satellite
+- Must use texture path EXACTLY:
+  '/assets/space_station.png'
+- Must be memoized (texture/material not recreated per frame)
+- Must be parented under globeGroupRef
+- Must animate using useFrame with:
+  - orbit radius ~ GLOBE_RADIUS * 1.2–1.25
+  - subtle bobbing + slight yaw
+- No new objects allocated each frame (no new Vector3 inside useFrame)
+
+PERFORMANCE HARDENING (only if needed)
+- Ensure useMemo/useLoader is used properly
+- Ensure no per-frame geometry/material creation
+
+DELIVERABLE:
+- If everything is already correct: say “Verified — no changes needed” and point to the exact key lines.
+- If anything is wrong: make the smallest possible edits to PlanetGlobe.tsx only.
+- Then output:
+  1) What changed (1–5 bullets)
+  2) Exact line ranges edited
+  3) Git commands to commit + push
