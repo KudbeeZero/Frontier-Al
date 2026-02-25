@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["nano", "emacsclient-commands", "lsof", "gt"]
+packages = ["nano", "emacsclient-commands", "lsof", "gt", "nix-output-monitor"]
 
 [env]
 PORT = "5000"
