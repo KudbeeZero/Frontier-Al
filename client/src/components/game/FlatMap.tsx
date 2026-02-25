@@ -411,6 +411,7 @@ export function FlatMap({
       };
 
       // Latitude parallels (every 30°)
+      /* Grid rendering disabled per request
       for (let lat = -60; lat <= 60; lat += 30) {
         const pts: { lat: number; lng: number }[] = [];
         for (let lng = -180; lng <= 180; lng += 3) pts.push({ lat, lng });
@@ -422,6 +423,7 @@ export function FlatMap({
         for (let lat = -90; lat <= 90; lat += 3) pts.push({ lat, lng });
         drawGlobeGridLine(pts);
       }
+      */
 
       // ── Plots ─────────────────────────────────────────────────────────────
       const plotSize = getPlotSize(w, h);
@@ -435,13 +437,18 @@ export function FlatMap({
 
       for (let i = 0; i < parcels.length; i++) {
         const p = parcels[i];
+        
+        const isPlayerOwned = p.ownerId && currentPlayerId && p.ownerId === currentPlayerId;
+        const isSelected    = p.id === selectedParcelId;
+        
+        // Only render owned plots or the selected plot
+        if (!isPlayerOwned && !isSelected) continue;
+
         const screenPos = latLngToScreen(p.lat, p.lng, w, h);
         if (!screenPos) continue; 
         const { x, y } = screenPos;
 
-        const isPlayerOwned = p.ownerId && currentPlayerId && p.ownerId === currentPlayerId;
         const isEnemyOwned  = p.ownerId && !isPlayerOwned;
-        const isSelected    = p.id === selectedParcelId;
         const isHovered     = p.id === hoveredPlotId;
 
         let size = plotSize;
