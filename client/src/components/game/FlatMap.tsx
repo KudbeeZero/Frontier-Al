@@ -353,22 +353,29 @@ export function FlatMap({
       // camera rotation by offsetting by the camera's lng/lat position.
       // Each texture is drawn twice (offset ± texW) to handle dateline wrap.
       if (mapImageLoaded.current && mapImageRef.current) {
-        const texW = R * 2;
-        const texH = R * 2;
-        // Longitude scrolls the texture horizontally: centre of the visible
-        // hemisphere should map to the texture's horizontal mid-point.
-        const lngFrac = ((cameraRef.current.centerLng + 180) / 360); // [0,1]
-        const latFrac = ((90 - cameraRef.current.centerLat) / 180);  // [0,1]
-        const xOff = cx - R - lngFrac * texW + texW / 2;
-        const yOff = cy - R - latFrac * texH + texH / 2;
+        const lng = cameraRef.current.centerLng;
+        const lat = cameraRef.current.centerLat;
+        const W = R * 2;
+        const H = R * 2;
 
-        const drawWrapped = (img: HTMLImageElement, alpha: number, op: string = "source-over") => {
-          ctx.globalCompositeOperation = op;
+        // Horizontal scroll: wrap longitude so dateline never causes a gap
+        let xOff = -(lng / 360) * W;
+        xOff = ((xOff % W) + W) % W;
+        xOff = xOff - W;
+
+        // Vertical scroll: subtle + clamped to prevent polar banding
+        let yOff = (lat / 180) * (R * 0.35);
+        yOff = Math.max(-R * 0.35, Math.min(R * 0.35, yOff));
+
+        // Draw img three times horizontally to cover the dateline seam
+        const drawWrapped = (img: HTMLImageElement, alpha: number, op = "source-over", extraX = 0, extraY = 0) => {
+          ctx.globalCompositeOperation = op as GlobalCompositeOperation;
           ctx.globalAlpha = alpha;
-          // Draw at offset, and a copy one full texture-width to each side for seamless wrap
-          for (const dx of [-texW, 0, texW]) {
-            ctx.drawImage(img, xOff + dx, yOff, texW, texH);
-          }
+          const x0 = cx - R + xOff + extraX;
+          const y0 = cy - R + yOff + extraY;
+          ctx.drawImage(img, x0,      y0, W, H);
+          ctx.drawImage(img, x0 + W,  y0, W, H);
+          ctx.drawImage(img, x0 - W,  y0, W, H);
           ctx.globalCompositeOperation = "source-over";
           ctx.globalAlpha = 1.0;
         };
@@ -380,14 +387,8 @@ export function FlatMap({
         }
 
         if (cloudsImageLoaded.current && cloudsImageRef.current) {
-          // Clouds drift slightly slower than the surface for depth effect
-          const cloudXOff = cx - R - (lngFrac * 0.97) * texW + texW / 2;
-          const cloudYOff = cy - R - (latFrac * 0.97) * texH + texH / 2;
-          ctx.globalAlpha = 0.25;
-          for (const dx of [-texW, 0, texW]) {
-            ctx.drawImage(cloudsImageRef.current, cloudXOff + dx, cloudYOff, texW, texH);
-          }
-          ctx.globalAlpha = 1.0;
+          // Clouds drift at slightly different rate for subtle parallax
+          drawWrapped(cloudsImageRef.current, 0.25, "source-over", W * 0.02, 0);
         }
       } else {
         ctx.fillStyle = "#0a1628";
