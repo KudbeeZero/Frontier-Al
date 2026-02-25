@@ -819,7 +819,7 @@ export function FlatMap({
         data-testid="map-canvas"
       />
 
-      {selectedParcelId && selectedScreenPos && (() => {
+      {false && selectedParcelId && selectedScreenPos && (() => {
         const plot = plotIndex.get(selectedParcelId);
         if (!plot) return null;
         const containerRect = containerRef.current?.getBoundingClientRect();

@@ -545,9 +545,9 @@ export function GameLayout() {
         </>
       ) : null}
 
-      <div className="absolute top-0 left-0 right-0 z-40">
+      {false && <div className="absolute top-0 left-0 right-0 z-40">
         <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
-      </div>
+      </div>}
 
       {/* Orbital impact event notifications */}
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
@@ -565,7 +565,7 @@ export function GameLayout() {
         </div>
       )}
 
-      {player && (
+      {false && player && (
         <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
           <ResourceHUD
             iron={player.iron}
