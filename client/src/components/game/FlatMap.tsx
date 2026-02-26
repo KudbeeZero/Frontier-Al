@@ -292,7 +292,9 @@ export function FlatMap({
         const twinkle = Math.sin(pulseRef.current * star.twinkleSpeed) * 0.3 + 0.7;
         const alpha   = star.brightness * twinkle;
         ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
-        ctx.fillRect(star.x * w, star.y * h, star.size, star.size);
+        ctx.beginPath();
+        ctx.arc(star.x * w, star.y * h, star.size, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // ── Shooting stars ────────────────────────────────────────────────────
@@ -347,44 +349,26 @@ export function FlatMap({
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.clip();
 
-      // Map image as the globe face — equirectangular textures scroll with
-      // camera rotation by offsetting by the camera's lng/lat position.
-      // Each texture is drawn twice (offset ± texW) to handle dateline wrap.
+      // Map image as the globe face (flat image stretched into the circle —
+      // not a pixel-perfect warp, but gives the correct visual impression of
+      // a globe with a visible surface texture).
       if (mapImageLoaded.current && mapImageRef.current) {
-        const lng = cameraRef.current.centerLng;
-        const lat = cameraRef.current.centerLat;
-        const W = R * 2;
-        const H = R * 2;
-
-        // Horizontal scroll: wrap longitude so dateline never causes a gap
-        let xOff = ((-(lng / 360) * W % W) + W) % W - W;
-
-        // Vertical scroll: subtle + clamped to prevent polar banding
-        let yOff = (lat / 180) * R * 0.45;
-        yOff = Math.max(-R * 0.4, Math.min(R * 0.4, yOff));
-
-        // Draw img three times horizontally to cover the dateline seam
-        const drawWrapped = (img: HTMLImageElement, alpha: number, op = "source-over", extraX = 0, extraY = 0) => {
-          ctx.globalCompositeOperation = op as GlobalCompositeOperation;
-          ctx.globalAlpha = alpha;
-          const x0 = cx - R + xOff + extraX;
-          const y0 = cy - R + yOff + extraY;
-          ctx.drawImage(img, x0,      y0, W, H);
-          ctx.drawImage(img, x0 + W,  y0, W, H);
-          ctx.drawImage(img, x0 - W,  y0, W, H);
-          ctx.globalCompositeOperation = "source-over";
-          ctx.globalAlpha = 1.0;
-        };
-
-        drawWrapped(mapImageRef.current, 0.9);
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(mapImageRef.current, cx - R, cy - R, R * 2, R * 2);
+        ctx.globalAlpha = 1.0;
 
         if (nightImageLoaded.current && nightImageRef.current) {
-          drawWrapped(nightImageRef.current, 0.5, "screen");
+          ctx.globalCompositeOperation = "screen";
+          ctx.globalAlpha = 0.5;
+          ctx.drawImage(nightImageRef.current, cx - R, cy - R, R * 2, R * 2);
+          ctx.globalCompositeOperation = "source-over";
+          ctx.globalAlpha = 1.0;
         }
 
         if (cloudsImageLoaded.current && cloudsImageRef.current) {
-          // Clouds drift at slightly different rate for subtle parallax
-          drawWrapped(cloudsImageRef.current, 0.25, "source-over", W * 0.02, 0);
+          ctx.globalAlpha = 0.25;
+          ctx.drawImage(cloudsImageRef.current, cx - R, cy - R, R * 2, R * 2);
+          ctx.globalAlpha = 1.0;
         }
       } else {
         ctx.fillStyle = "#0a1628";
@@ -409,7 +393,6 @@ export function FlatMap({
       };
 
       // Latitude parallels (every 30°)
-      /* Grid rendering disabled per request
       for (let lat = -60; lat <= 60; lat += 30) {
         const pts: { lat: number; lng: number }[] = [];
         for (let lng = -180; lng <= 180; lng += 3) pts.push({ lat, lng });
@@ -421,58 +404,72 @@ export function FlatMap({
         for (let lat = -90; lat <= 90; lat += 3) pts.push({ lat, lng });
         drawGlobeGridLine(pts);
       }
-      */
 
       // ── Plots ─────────────────────────────────────────────────────────────
-      const plotSize = getPlotSize(w, h);
+      const plotSize   = getPlotSize(w, h);
       pulseRef.current += 0.02;
+      const playerPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
 
-      // OPTIMIZATION: Disable expensive shadows during plot loop
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = "transparent";
-      
-      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : undefined;
+      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : null;
 
       for (let i = 0; i < parcels.length; i++) {
-        const p = parcels[i];
-        
-        const isPlayerOwned = p.ownerId && currentPlayerId && p.ownerId === currentPlayerId;
-        const isSelected    = p.id === selectedParcelId;
-        
-        // Only render owned plots or the selected plot
-        if (!isPlayerOwned && !isSelected) continue;
-
+        const p         = parcels[i];
         const screenPos = latLngToScreen(p.lat, p.lng, w, h);
-        if (!screenPos) continue; 
+        if (!screenPos) continue; // back hemisphere — not visible
         const { x, y } = screenPos;
 
+        const isPlayerOwned = p.ownerId && currentPlayerId && p.ownerId === currentPlayerId;
         const isEnemyOwned  = p.ownerId && !isPlayerOwned;
+        const isSelected    = p.id === selectedParcelId;
         const isHovered     = p.id === hoveredPlotId;
 
-        let size = plotSize;
-        let plotAlpha = 0.3;
-        let color = COLORS.unclaimed;
+        let size  = plotSize;
+        if (isPlayerOwned) size = plotSize * 1.4;
+        else if (isEnemyOwned) size = plotSize * 1.2;
 
+        let color = COLORS.unclaimed;
+        let plotAlpha = 0.3; // Default low opacity for unclaimed plots
+        
         if (isSelected) {
           color = COLORS.selected;
-          size = plotSize * 1.8;
+          size  = plotSize * 1.8;
           plotAlpha = 0.9;
         } else if (isHovered) {
           color = isPlayerOwned ? COLORS.playerGlow : isEnemyOwned ? COLORS.enemyGlow : COLORS.hover;
-          size = plotSize * 1.5;
+          size  = plotSize * 1.5;
           plotAlpha = 0.8;
         } else if (isPlayerOwned) {
-          color = COLORS.player;
+          const r  = parseInt(COLORS.player.slice(1, 3), 16);
+          const g  = parseInt(COLORS.player.slice(3, 5), 16);
+          const b  = parseInt(COLORS.player.slice(5, 7), 16);
+          const pr = Math.min(255, Math.round(r * (playerPulse + 0.15)));
+          const pg = Math.min(255, Math.round(g * (playerPulse + 0.15)));
+          const pb = Math.min(255, Math.round(b * (playerPulse + 0.15)));
+          color = `rgb(${pr},${pg},${pb})`;
           plotAlpha = 0.6;
         } else if (isEnemyOwned) {
           color = COLORS.enemy;
           plotAlpha = 0.6;
         }
 
+        if (isSelected) {
+          // Subtle cyan glow — NOT white, NOT oversized
+          ctx.shadowColor = COLORS.selectedGlow;
+          ctx.shadowBlur  = plotSize * 0.8;
+        } else if (isPlayerOwned && !isHovered) {
+          ctx.shadowColor = COLORS.playerGlow;
+          ctx.shadowBlur  = plotSize * 0.8;
+        } else {
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur  = 0;
+        }
+
         ctx.globalAlpha = plotAlpha;
         if (isSelected) {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
+          // Draw a thin arc ring — no filled square, no white background.
+          // The radius is half of `size` so it scales correctly with zoom.
+          ctx.strokeStyle = "#00e5ff";
+          ctx.lineWidth   = 2;
           ctx.beginPath();
           ctx.arc(x, y, size / 2, 0, Math.PI * 2);
           ctx.stroke();
@@ -481,6 +478,9 @@ export function FlatMap({
           ctx.fillRect(x - size / 2, y - size / 2, size, size);
         }
         ctx.globalAlpha = 1.0;
+
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur  = 0;
       }
 
       // Selected plot rings — cyan, not white
@@ -505,15 +505,21 @@ export function FlatMap({
 
           selectedScreenPosRef.current = { x, y };
           const now = Date.now();
-          if (now - lastPosUpdateRef.current > 100) {
+          if (now - lastPosUpdateRef.current > 50) {
             lastPosUpdateRef.current = now;
             setSelectedScreenPos({ x, y });
           }
         } else {
-          setSelectedScreenPos(null);
+          if (selectedScreenPosRef.current) {
+            selectedScreenPosRef.current = null;
+            setSelectedScreenPos(null);
+          }
         }
       } else {
-        setSelectedScreenPos(null);
+        if (selectedScreenPosRef.current) {
+          selectedScreenPosRef.current = null;
+          setSelectedScreenPos(null);
+        }
       }
 
       // ── Limb darkening — sphere shading applied on top of everything ───────
@@ -813,28 +819,27 @@ export function FlatMap({
         data-testid="map-canvas"
       />
 
-      {false && selectedParcelId && selectedScreenPos && (() => {
-        const plot = (selectedParcelId && plotIndex) ? plotIndex.get(selectedParcelId as string) : undefined;
-        const cRect = containerRef.current?.getBoundingClientRect();
-        if (!plot || !selectedScreenPos || !cRect) return null;
+      {selectedParcelId && selectedScreenPos && (() => {
+        const plot = plotIndex.get(selectedParcelId);
+        if (!plot) return null;
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        if (!containerRect) return null;
         const popupW = 200;
         const popupH = 140;
-        const sPos = selectedScreenPos as { x: number; y: number };
-        let px = sPos.x + 20;
-        let py = sPos.y - popupH / 2;
-        if (px + popupW > cRect.width - 10) px = sPos.x - popupW - 20;
-        if (py < 10) py = 10;
-        if (py + popupH > cRect.height - 10) py = cRect.height - popupH - 10;
-        const sectorKey = getSector(plot.lat, plot.lng);
+        let px = selectedScreenPos.x + 20;
+        let py = selectedScreenPos.y - popupH / 2;
+        if (px + popupW > containerRect.width  - 10) px = selectedScreenPos.x - popupW - 20;
+        if (py < 10)                                  py = 10;
+        if (py + popupH > containerRect.height - 10)  py = containerRect.height - popupH - 10;
+        const sectorKey  = getSector(plot.lat, plot.lng);
         const sectorName = SECTOR_NAMES[sectorKey] || "Unknown Sector";
-        const plotName = getPlotName(plot.plotId, plot.biome as BiomeType);
-        const ownerIdVal = plot.ownerId as string | null;
-        const ownerName = ownerIdVal ? (playerMap.get(ownerIdVal) || "Unknown") : "Unclaimed";
-        const isPlayer = !!(currentPlayerId && ownerIdVal === currentPlayerId);
-        const isEnemy = !!(ownerIdVal && !isPlayer);
+        const plotName   = getPlotName(plot.plotId, plot.biome as BiomeType);
+        const ownerName  = plot.ownerId ? (playerMap.get(plot.ownerId) || "Unknown") : "Unclaimed";
+        const isPlayer   = plot.ownerId === currentPlayerId;
+        const isEnemy    = plot.ownerId && !isPlayer;
         const statusColor = isPlayer ? "#00ff44" : isEnemy ? "#ff2222" : "#888";
-        const statusText = isPlayer ? "YOUR BASE" : isEnemy ? "HOSTILE" : "UNCLAIMED";
-        const biomeColor = biomeColors[plot.biome as BiomeType] || "#666";
+        const statusText  = isPlayer ? "YOUR BASE" : isEnemy ? "HOSTILE" : "UNCLAIMED";
+        const biomeColor  = biomeColors[plot.biome as BiomeType] || "#666";
 
         return (
           <div

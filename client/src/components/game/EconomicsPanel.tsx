@@ -97,16 +97,8 @@ interface EconomicsPanelProps {
 export function EconomicsPanel({ className }: EconomicsPanelProps) {
   const { data, isLoading, error, refetch, isFetching } = useQuery<EconomicsData>({
     queryKey: ["/api/economics"],
-    queryFn: async () => {
-      const res = await fetch("/api/economics");
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Server Error: ${res.status}`);
-      }
-      return res.json();
-    },
+    queryFn: () => fetch("/api/economics").then(r => r.json()),
     refetchInterval: 30_000,
-    retry: 1,
   });
 
   const algoExplorerUrl = data?.asaId
@@ -139,8 +131,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 overscroll-contain">
-        <div className="p-4 space-y-5 pb-12">
+      <ScrollArea className="flex-1">
+        <div className="p-4 space-y-5">
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -148,27 +140,9 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
               ))}
             </div>
           ) : error || !data ? (
-            <div className="text-center py-12 px-6 text-muted-foreground bg-card/20 rounded-xl border border-border/40 mx-4">
+            <div className="text-center py-12 text-muted-foreground">
               <BarChart3 className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-medium text-foreground/80 mb-1 text-primary">Data Connection Lost</p>
-              <div className="text-[11px] leading-relaxed mb-6 space-y-2">
-                <p>
-                  {error instanceof Error ? error.message : "The economics server is temporarily unreachable. This usually happens during network synchronization."}
-                </p>
-                <p className="text-muted-foreground/60 italic">
-                  Attempting to reconnect automatically...
-                </p>
-              </div>
-              <Button 
-                variant="default" 
-                size="sm" 
-                onClick={() => refetch()}
-                className="gap-2 px-6 shadow-lg shadow-primary/20"
-                disabled={isFetching}
-              >
-                <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-                {isFetching ? "Reconnecting..." : "Force Reconnect"}
-              </Button>
+              <p className="text-sm">Failed to load economics data</p>
             </div>
           ) : (
             <>

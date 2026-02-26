@@ -60,48 +60,44 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  try {
-    await registerRoutes(httpServer, app);
+  await registerRoutes(httpServer, app);
 
-    app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
 
-      console.error("Internal Server Error:", err);
+    console.error("Internal Server Error:", err);
 
-      if (res.headersSent) {
-        return next(err);
-      }
-
-      return res.status(status).json({ message });
-    });
-
-    if (process.env.NODE_ENV === "production") {
-      serveStatic(app);
-    } else {
-      const { setupVite } = await import("./vite");
-      await setupVite(httpServer, app);
+    if (res.headersSent) {
+      return next(err);
     }
 
-    const port = parseInt(process.env.PORT || "5000", 10);
-    httpServer.listen(
-      {
-        port,
-        host: "0.0.0.0",
-      },
-      () => {
-        log(`serving on port ${port}`);
-        if (process.env.NODE_ENV === "production") {
-          if (!process.env.PUBLIC_BASE_URL) {
-            log("WARNING: PUBLIC_BASE_URL is not set — NFT image/metadata URLs will use the request host as a per-request fallback. Set PUBLIC_BASE_URL to the canonical public URL of this deployment.");
-          } else {
-            log(`PUBLIC_BASE_URL = ${process.env.PUBLIC_BASE_URL}`);
-          }
-        }
-      },
-    );
-  } catch (err) {
-    console.error("FATAL: Server failed to start:", err);
-    process.exit(1);
+    return res.status(status).json({ message });
+  });
+
+  if (process.env.NODE_ENV === "production") {
+    serveStatic(app);
+  } else {
+    const { setupVite } = await import("./vite");
+    await setupVite(httpServer, app);
   }
+
+  const port = parseInt(process.env.PORT || "5000", 10);
+  httpServer.listen(
+    {
+      port,
+      host: "0.0.0.0",
+      reusePort: true,
+    },
+    () => {
+      log(`serving on port ${port}`);
+      if (process.env.NODE_ENV === "production") {
+        if (!process.env.PUBLIC_BASE_URL) {
+          log("WARNING: PUBLIC_BASE_URL is not set — NFT image/metadata URLs will use the request host as a per-request fallback. Set PUBLIC_BASE_URL to the canonical public URL of this deployment.");
+        } else {
+          log(`PUBLIC_BASE_URL = ${process.env.PUBLIC_BASE_URL}`);
+        }
+      }
+    },
+  );
 })();
