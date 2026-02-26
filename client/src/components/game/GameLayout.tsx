@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
+import PlanetGlobe from "./PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
@@ -26,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe } from "lucide-react";
+import { Coins, Shield, Globe, Map, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -81,6 +82,8 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
+  const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
+  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings">("warroom");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
@@ -529,19 +532,60 @@ export function GameLayout() {
         </div>
       ) : gameState ? (
         <>
-          <FlatMap
-            parcels={gameState.parcels}
-            selectedParcelId={selectedParcelId}
-            currentPlayerId={player?.id || null}
-            onParcelSelect={setSelectedParcelId}
-            className="absolute inset-0 w-full h-full"
-            onLocateTerritory={handleLocateTerritory}
-            onFindEnemyTarget={handleFindEnemyTarget}
-            hasOwnedPlots={playerHasOwnedPlots}
-            players={gameState.players}
-          />
-          {/* Orbital streaks canvas overlay — pointer-events: none, doesn't affect map interaction */}
-          <OrbitalCanvas events={orbitalEvents} />
+          {mapMode === "2d" ? (
+            <>
+              <FlatMap
+                parcels={gameState.parcels}
+                selectedParcelId={selectedParcelId}
+                currentPlayerId={player?.id || null}
+                onParcelSelect={setSelectedParcelId}
+                className="absolute inset-0 w-full h-full"
+                onLocateTerritory={handleLocateTerritory}
+                onFindEnemyTarget={handleFindEnemyTarget}
+                hasOwnedPlots={playerHasOwnedPlots}
+                players={gameState.players}
+              />
+              <OrbitalCanvas events={orbitalEvents} />
+            </>
+          ) : (
+            <PlanetGlobe
+              parcels={gameState.parcels}
+              currentPlayerId={player?.id || null}
+              selectedParcelId={selectedParcelId}
+              onParcelSelect={setSelectedParcelId}
+              className="absolute inset-0 w-full h-full"
+            />
+          )}
+
+          {/* 2D / 3D map toggle — bottom-left corner, above bottom nav */}
+          {activeTab === "map" && (
+            <div className="absolute bottom-20 left-4 z-20 flex gap-1 bg-card/80 backdrop-blur border border-border rounded-lg p-1">
+              <button
+                onClick={() => setMapMode("2d")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
+                  mapMode === "2d"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Map className="w-3.5 h-3.5" />
+                2D
+              </button>
+              <button
+                onClick={() => setMapMode("3d")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
+                  mapMode === "3d"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                3D
+              </button>
+            </div>
+          )}
         </>
       ) : null}
 
@@ -606,21 +650,55 @@ export function GameLayout() {
         )}
       </aside>
 
-      <aside className="hidden lg:flex flex-col w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-auto">
+      <aside className="hidden lg:flex flex-col w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-hidden">
+        <div className="flex border-b border-border shrink-0">
+          <button
+            onClick={() => setDesktopRightTab("warroom")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
+              desktopRightTab === "warroom"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            War Room
+          </button>
+          <button
+            onClick={() => setDesktopRightTab("rankings")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
+              desktopRightTab === "rankings"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            Rankings
+          </button>
+        </div>
         {isLoading ? (
           <div className="p-4 space-y-4">
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-48 w-full" />
           </div>
         ) : gameState ? (
-          <WarRoomPanel
-            battles={gameState.battles}
-            events={gameState.events}
-            players={gameState.players}
-            onWatchBattle={setWatchingBattleId}
-            onViewOnGlobe={handleViewOnGlobe}
-            className="h-full border-0 rounded-none"
-          />
+          desktopRightTab === "warroom" ? (
+            <WarRoomPanel
+              battles={gameState.battles}
+              events={gameState.events}
+              players={gameState.players}
+              onWatchBattle={setWatchingBattleId}
+              onViewOnGlobe={handleViewOnGlobe}
+              className="flex-1 border-0 rounded-none overflow-auto"
+            />
+          ) : (
+            <LeaderboardPanel
+              entries={gameState.leaderboard}
+              currentPlayerId={player?.id || null}
+              className="flex-1 border-0 rounded-none overflow-auto"
+            />
+          )
         ) : null}
       </aside>
 
