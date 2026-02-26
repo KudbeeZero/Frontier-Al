@@ -79,6 +79,7 @@ export const players = pgTable("players", {
   /** Running count of consecutive territory losses; resets on a successful defence. */
   consecutiveLosses:    integer("consecutive_losses").notNull().default(0),
   testnetProgress:      jsonb("testnet_progress").$type<string[]>().notNull().default([]),
+  treasury:             real("treasury").notNull().default(1000.0),
 });
 
 // ─── parcels ──────────────────────────────────────────────────────────────────

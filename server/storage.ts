@@ -2952,7 +2952,73 @@ export class DbStorage implements IStorage {
         }
       }
 
-      // Expand
+      // Special KRONOS logic: Expansion toward NEXUS-7
+      if (ai.name === "KRONOS") {
+        const nexus = allAiPlayers.find(p => p.name === "NEXUS-7");
+        const nexusPlots = nexus ? ownerMap.get(nexus.id) ?? [] : [];
+        const isSuppression = nexusPlots.length > 1500;
+
+        if (isSuppression) {
+          const MAX_PURCHASES = 2;
+          let purchased = 0;
+          const range = 0.08 * 1.25;
+
+          let targetPlot: LandParcel | undefined;
+          if (nexusPlots.length > 0) {
+            const firstNexus = parcelById.get(nexusPlots[0]);
+            if (firstNexus) targetPlot = rowToParcel(firstNexus);
+          }
+
+          for (const parcel of ownedParcels) {
+            if (purchased >= MAX_PURCHASES) break;
+            const nearby = allParcels.filter((p) => {
+              if (p.ownerId || p.purchasePriceAlgo === null || p.biome === "water") return false;
+              return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < range;
+            });
+
+            if (nearby.length > 0) {
+              const sorted = nearby.map(p => {
+                let score = sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng);
+                if (targetPlot) {
+                  const vToNexus = { lat: targetPlot.lat - parcel.lat, lng: targetPlot.lng - parcel.lng };
+                  const vToPlot = { lat: p.lat - parcel.lat, lng: p.lng - parcel.lng };
+                  const dot = vToNexus.lat * vToPlot.lat + vToNexus.lng * vToPlot.lng;
+                  const mag1 = Math.sqrt(vToNexus.lat ** 2 + vToNexus.lng ** 2);
+                  const mag2 = Math.sqrt(vToPlot.lat ** 2 + vToPlot.lng ** 2);
+                  const cosTheta = dot / (mag1 * mag2 || 1);
+                  if (cosTheta > Math.cos((35 * Math.PI) / 180)) score -= 0.1;
+                }
+                return { p, score };
+              }).sort((a, b) => a.score - b.score);
+
+              for (const entry of sorted) {
+                if (purchased >= MAX_PURCHASES) break;
+                const cost = entry.p.purchasePriceAlgo ?? 0.5;
+                if ((ai.treasury ?? 0) < cost) break;
+
+                try {
+                  await this.purchaseLand({ playerId: ai.id, parcelId: entry.p.id });
+                  purchased++;
+                  
+                  // Deduct from treasury
+                  await this.db.update(playersTable)
+                    .set({ treasury: sql`${playersTable.treasury} - ${cost}` })
+                    .where(eq(playersTable.id, ai.id));
+
+                  const evt: GameEvent = {
+                    id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: entry.p.id,
+                    description: `${ai.name} expanded toward NEXUS-7 territory (Cost: ${cost} ALGO)`, timestamp: now,
+                  };
+                  await this.addEvent(evt);
+                  newEvents.push(evt);
+                } catch {}
+              }
+            }
+          }
+        }
+      }
+
+      // Normal Expand
       if (ai.aiBehavior === "expansionist" || ai.aiBehavior === "economic") {
         if (Math.random() > 0.5) {
           for (const parcel of ownedParcels) {
@@ -2965,12 +3031,10 @@ export class DbStorage implements IStorage {
               try {
                 await this.purchaseLand({ playerId: ai.id, parcelId: target.id });
                 const desc = `${ai.name} purchased new territory`;
-                console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/purchase | player: ${ai.name} (${ai.id}) | parcel: ${target.id} | ts: ${now}`);
                 const evt: GameEvent = {
                   id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: target.id,
                   description: desc, timestamp: now,
                 };
-                // Persist AI event to DB so it shows in the activity feed
                 await this.addEvent(evt);
                 newEvents.push(evt);
               } catch {}
@@ -2980,40 +3044,75 @@ export class DbStorage implements IStorage {
         }
       }
 
-      // Attack (skip if under post-defeat cooldown)
+      // Attack
       if (ai.aiBehavior === "expansionist" || ai.aiBehavior === "raider") {
         const inCooldown = ai.attackCooldownUntil && now < ai.attackCooldownUntil;
         if (!inCooldown) {
+          let range = 0.08;
+          let priorityTargetId: string | undefined;
+
+          if (ai.name === "KRONOS") {
+            const nexus = allAiPlayers.find(p => p.name === "NEXUS-7");
+            const nexusPlots = nexus ? ownerMap.get(nexus.id) ?? [] : [];
+            if (nexusPlots.length > 1500) {
+              range *= 1.25;
+              for (const parcel of ownedParcels) {
+                const inRangeNexus = nexusPlots.find(nid => {
+                  const np = parcelById.get(nid);
+                  return np && sphereDistance(parcel.lat, parcel.lng, np.lat, np.lng) < range;
+                });
+                if (inRangeNexus) {
+                  priorityTargetId = inRangeNexus;
+                  break;
+                }
+              }
+            }
+          }
+
           const canAttack = ai.iron >= ATTACK_BASE_COST.iron && ai.fuel >= ATTACK_BASE_COST.fuel;
-          // Raise threshold when morale-debuffed so the AI attacks less often
           const moraleDebuffed = ai.moraleDebuffUntil && now < ai.moraleDebuffUntil;
           const attackThreshold = moraleDebuffed ? 0.85 : 0.7;
           if (canAttack && Math.random() > attackThreshold) {
-            for (const parcel of ownedParcels) {
-              const targets = allParcels.filter((p) => {
-                if (!p.ownerId || p.ownerId === ai.id || p.activeBattleId || p.biome === "water") return false;
-                return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < 0.08;
-              });
-              if (targets.length > 0) {
-                const attackTarget = targets[Math.floor(Math.random() * targets.length)];
-                try {
-                  await this.deployAttack({
-                    attackerId: ai.id, targetParcelId: attackTarget.id,
-                    troopsCommitted: 1,
-                    resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
-                  });
-                  const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
-                  const desc = `${ai.name} deployed troops${statusMsg}`;
-                  console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/attack | player: ${ai.name} (${ai.id}) | target: ${attackTarget.id} | morale_debuffed: ${!!moraleDebuffed} | ts: ${now}`);
-                  const evt: GameEvent = {
-                    id: randomUUID(), type: "ai_action", playerId: ai.id,
-                    description: desc, timestamp: now,
-                  };
-                  // Persist AI event to DB so it shows in the activity feed
-                  await this.addEvent(evt);
-                  newEvents.push(evt);
-                } catch {}
-                break;
+            if (priorityTargetId) {
+              try {
+                await this.deployAttack({
+                  attackerId: ai.id, targetParcelId: priorityTargetId,
+                  troopsCommitted: 1,
+                  resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                });
+                const desc = `${ai.name} launched suppression strike on NEXUS-7`;
+                const evt: GameEvent = {
+                  id: randomUUID(), type: "ai_action", playerId: ai.id,
+                  description: desc, timestamp: now,
+                };
+                await this.addEvent(evt);
+                newEvents.push(evt);
+              } catch {}
+            } else {
+              for (const parcel of ownedParcels) {
+                const targets = allParcels.filter((p) => {
+                  if (!p.ownerId || p.ownerId === ai.id || p.activeBattleId || p.biome === "water") return false;
+                  return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < range;
+                });
+                if (targets.length > 0) {
+                  const attackTarget = targets[Math.floor(Math.random() * targets.length)];
+                  try {
+                    await this.deployAttack({
+                      attackerId: ai.id, targetParcelId: attackTarget.id,
+                      troopsCommitted: 1,
+                      resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                    });
+                    const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
+                    const desc = `${ai.name} deployed troops${statusMsg}`;
+                    const evt: GameEvent = {
+                      id: randomUUID(), type: "ai_action", playerId: ai.id,
+                      description: desc, timestamp: now,
+                    };
+                    await this.addEvent(evt);
+                    newEvents.push(evt);
+                  } catch {}
+                  break;
+                }
               }
             }
           }
@@ -3026,7 +3125,6 @@ export class DbStorage implements IStorage {
           if (parcel.defenseLevel < 5 && ai.iron >= UPGRADE_COSTS.defense.iron && ai.fuel >= UPGRADE_COSTS.defense.fuel) {
             try {
               await this.upgradeBase({ playerId: ai.id, parcelId: parcel.id, upgradeType: "defense" });
-              console.log(`[ACTION-DEBUG] AI action enqueued | type: ai_action/upgrade | player: ${ai.name} (${ai.id}) | parcel: ${parcel.id} | ts: ${now}`);
             } catch {}
             break;
           }

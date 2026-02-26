@@ -164,6 +164,8 @@ export interface Player {
   /** Running count of consecutive territory losses; resets on a successful defence */
   consecutiveLosses?: number;
   testnetProgress: string[];
+  /** AI-only: virtual treasury for land purchases and operations */
+  treasury?: number;
 }
 
 export interface Battle {
