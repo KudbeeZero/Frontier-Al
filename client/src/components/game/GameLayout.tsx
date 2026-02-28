@@ -429,7 +429,7 @@ export function GameLayout() {
             onClick={toggleViewMode}
             className="absolute top-16 right-4 z-40 px-4 py-2 rounded-md bg-black/60 border border-primary/40 text-primary font-display uppercase tracking-widest text-xs flex items-center gap-2 hover:bg-primary/20 transition-all backdrop-blur-md"
           >
-            {viewMode === "2d" ? <Globe className="w-4 h-4" /> : <Globe className="w-4 h-4 text-primary animate-pulse" />}
+            {viewMode === "2d" ? <Globe className="w-4 h-4" /> : <Globe className="w-4 h-4 text-primary" />}
             {viewMode === "2d" ? "Switch to 3D" : "Switch to 2D"}
           </button>
 

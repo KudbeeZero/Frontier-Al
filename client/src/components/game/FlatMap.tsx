@@ -102,7 +102,7 @@ export function FlatMap({
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const lastPinchDist = useRef(0);
-  const pulseRef = useRef(0);
+  // const pulseRef = useRef(0); // removed — no pulsing animations
 
   const starsRef = useRef<{ x: number; y: number; size: number; brightness: number; twinkleSpeed: number }[]>([]);
   const shootingStarsRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; length: number }[]>([]);
@@ -289,7 +289,7 @@ export function FlatMap({
 
       // ── Stars ─────────────────────────────────────────────────────────────
       for (const star of stars) {
-        const twinkle = Math.sin(pulseRef.current * star.twinkleSpeed) * 0.3 + 0.7;
+        const twinkle = 1;
         const alpha   = star.brightness * twinkle;
         ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
         ctx.fillRect(star.x * w, star.y * h, star.size, star.size);
@@ -427,8 +427,6 @@ export function FlatMap({
 
       // ── Plots ─────────────────────────────────────────────────────────────
       const plotSize = getPlotSize(w, h);
-      pulseRef.current += 0.02;
-
       // OPTIMIZATION: Disable expensive shadows during plot loop
       ctx.shadowBlur = 0;
       ctx.shadowColor = "transparent";
@@ -490,8 +488,7 @@ export function FlatMap({
         const screenPos = latLngToScreen(selectedPlot.lat, selectedPlot.lng, w, h);
         if (screenPos) {
           const { x, y } = screenPos;
-          // Pulse driven by pulseRef so the ring animates
-          const ringPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
+          const ringPulse = 1;
           const ringSize  = plotSize * 2.2;
           ctx.strokeStyle = `rgba(0,229,255,${(ringPulse * 0.85).toFixed(2)})`;
           ctx.lineWidth   = 1.5;
@@ -583,7 +580,7 @@ export function FlatMap({
           ctx.lineTo(scanEndX, scanEndY);
           ctx.stroke();
 
-          ctx.fillStyle = `rgba(0, 200, 255, ${0.15 + Math.sin(pulseRef.current * 4) * 0.1})`;
+          ctx.fillStyle = "rgba(0, 200, 255, 0.8)";
           ctx.beginPath();
           ctx.arc(sx, sy, sat.size * 0.7, 0, Math.PI * 2);
           ctx.fill();
@@ -605,7 +602,7 @@ export function FlatMap({
         }
 
         if (!isBehind) {
-          ctx.fillStyle = `rgba(255, 80, 80, ${0.6 + Math.sin(pulseRef.current * 6) * 0.4})`;
+          ctx.fillStyle = "rgba(255, 80, 80, 0.8)";
           ctx.beginPath();
           ctx.arc(sx + sat.size * 0.2, sy - sat.size * 0.2, 1.2, 0, Math.PI * 2);
           ctx.fill();
