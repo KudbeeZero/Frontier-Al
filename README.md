@@ -1,51 +1,101 @@
-# FRONTIER V1.2
+# FRONTIER-AL — VERSION 3.0
 
 **A persistent globe-based strategy game powered by the Algorand blockchain.**
 
-Players and AI factions compete for control of 21,000 land plots on a 3D rotating planet. Mine resources, build defenses, launch attacks, mint Commander avatars, and earn FRONTIER tokens on Algorand TestNet.
+Players and AI factions compete for control of a shared 21,000-plot world map rendered as a 3D rotating planet. Mine resources, build defenses, launch attacks, mint Commander avatars, and earn FRONTIER tokens on Algorand TestNet. Every plot purchase is recorded as a real Algorand ASA NFT. Every FRONTIER token claim triggers a live on-chain transfer.
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTIER-AL v3.0                         │
+├──────────────┬──────────────────────┬───────────────────────┤
+│   Frontend   │       Backend        │      Blockchain       │
+│  React/Vite  │  Express / Node.js   │  Algorand TestNet     │
+│  Three.js    │  Drizzle / Postgres  │  AlgoSDK v3           │
+│  AlgoSDK     │  storage.ts engine   │  Pera + LUTE wallets  │
+└──────────────┴──────────────────────┴───────────────────────┘
+```
+
+### Shared Global World
+- One canonical 21,000-plot map shared across all connected players
+- Plot positions generated via Fibonacci sphere distribution — deterministic, reproducible
+- 8 biomes assigned by latitude + plot-index noise: Forest, Desert, Mountain, Plains, Water, Tundra, Volcanic, Swamp
+- Global AI factions (NEXUS-7, KRONOS, VANGUARD, SPECTRE) run server-side and are visible to all players
+
+### Wallet-Scoped Ownership
+- Each human player is identified by their Algorand wallet address
+- Plots purchased by a wallet are owned by that wallet; ownership is stored in the PostgreSQL database and backed by a real on-chain Algorand ASA (NFT) per plot
+- Player state (resources, commanders, drones, progress) is wallet-specific — no two wallets share a player record
+- Tester fallback: if no wallet is connected, a `PLAYER_WALLET` placeholder address is used so the UI renders
+
+### TestNet Operations
+- All blockchain activity runs on **Algorand TestNet** (chainId: 416002)
+- Each wallet's on-chain operations are independent: opt-in checks, ASA transfers, and NFT minting are all per-wallet
+- Admin wallet (server-side) manages the FRONTIER ASA and mints plot NFTs on purchase
+- Token minting supply is tied directly to the on-chain ASA total (1 billion units, 6 decimals)
+
+### Production vs Development Database
+| Mode | Storage | Persistence |
+|------|---------|-------------|
+| `DATABASE_URL` set | PostgreSQL via Drizzle ORM (`DbStorage`) | Persistent across restarts |
+| `DATABASE_URL` absent | In-memory (`MemStorage`) | Lost on restart — dev/demo only |
+
+Always provision a PostgreSQL database before any production deployment.
 
 ---
 
 ## Features
 
-### 3D Globe Warfare
-- 21,000 land plots distributed across a 3D rotating planet using Fibonacci sphere distribution
-- 8 biomes: Forest, Desert, Mountain, Plains, Water, Tundra, Volcanic, Swamp
-- Real-time territory control with color-coded ownership
-- Square plot rendering via InstancedMesh for high-performance GPU-accelerated display
+### 3D Globe & 2D Flat Map
+- 21,000 land plots on a 3D rotating planet — GPU-accelerated via Three.js `InstancedMesh`
+- Toggle between 3D globe view and 2D flat map (Pixi.js renderer)
+- Color-coded territory ownership; orbital satellite + drone layers
 
 ### Algorand Blockchain Integration
 - **Network**: Algorand TestNet (chainId: 416002)
-- **FRONTIER Token**: Real ASA on TestNet (Asset ID: 755818217), 1 billion total supply
-- **Dual Wallet Support**: Pera Wallet (mobile + web) and LUTE Wallet (browser-based)
-- **On-Chain Actions**: Territory purchases (ALGO), FRONTIER token claims (ASA transfers)
-- **Off-Chain Actions**: Mining, upgrades, builds, attacks (instant, no wallet signing required)
+- **FRONTIER Token**: ASA on TestNet — Asset ID `755818217`, 1 billion total supply (6 decimals)
+- **Dual Wallet Support**: Pera Wallet (mobile + web) and LUTE Wallet (browser extension)
+- **On-Chain Actions**: Territory purchases (ALGO payment), FRONTIER token claims (ASA transfer), Plot NFT minting
+- **Off-Chain Actions**: Mining, upgrades, improvements, attacks — instant, no wallet signing required
+- **Batched Transfers**: Up to 16 FRONTIER ASA transfers are grouped into Algorand atomic transaction groups, flushing on size (≥1 KB) or a 30-second timeout
 
-### Resource Economy
+### Token Economy
+- FRONTIER tokens accumulate passively per owned plot based on biome and facility improvements
+- Token minting supply derives directly from on-chain ASA total; treasury = admin balance
+- In-game balance tracked in `frntr_balance_micro` (µFRNTR) to avoid floating-point drift
+- Circulating supply = total supply − admin treasury; shown live in the Economics panel
+
 | Resource | Description |
 |----------|-------------|
-| Iron | Primary resource for upgrades and attacks |
-| Fuel | Secondary resource for operations |
-| Crystal | Rare resource from rich territories |
-| FRONTIER | ASA token earned passively per owned plot (0.5-1.5/hr based on biome) |
+| Iron | Primary resource — upgrades and attacks |
+| Fuel | Secondary resource — operations |
+| Crystal | Rare resource — rich territories |
+| FRONTIER (FRNTR) | ASA token — earned passively per owned plot |
 
-### Land Ownership
-- Purchase unclaimed land with ALGO (biome-based pricing: 0.4-0.8 ALGO)
-- Each plot generates passive FRONTIER tokens based on biome type and improvements
-- Improvement bonuses stack: Turret (+10%), Shield Generator (+15%), Mining Drill (+25%), Storage Depot (+5%), Radar (+10%), Fortress (+20%)
+### Land Ownership & Plot NFTs
+- Purchase unclaimed land with ALGO (biome-based pricing: 0.4–0.8 ALGO)
+- Each plot purchase mints a real Algorand ASA NFT (`PLOT` unit, total=1, decimals=0, ARC-3 metadata)
+- NFT metadata served at `GET /nft/metadata/:plotId` — includes biome, coordinates, richness
+- If the buyer is not yet opted in to the plot ASA, the admin wallet holds it until opt-in
+- Ownership record stored in `plot_nfts` table with `asset_id`, `minted_to_address`, `minted_at`
 
 ### Improvements System
 | Improvement | Max Level | Effect |
 |-------------|-----------|--------|
-| Turret | 3 | +3 defense/level, +10% FRONTIER/level |
-| Shield Generator | 2 | +5 defense/level, +15% FRONTIER/level |
-| Mining Drill | 3 | +25% yield/level, +25% FRONTIER/level |
-| Storage Depot | 3 | +100 capacity/level, +5% FRONTIER/level |
-| Radar Array | 1 | See incoming attacks, +10% FRONTIER |
-| Fortress | 1 | +8 defense, +50 capacity, +20% FRONTIER |
+| Turret | 3 | +3 defense/level |
+| Shield Generator | 2 | +5 defense/level |
+| Mining Drill | 3 | +25% yield/level |
+| Storage Depot | 3 | +100 capacity/level |
+| Radar Array | 1 | See incoming attacks |
+| Fortress | 1 | +8 defense, +50 capacity |
+
+Facility improvements (Electricity, Blockchain Node, Data Centre, AI Lab) generate additional FRONTIER/day.
 
 ### Commander Avatars
-Mint unique Commander NFTs by burning FRONTIER tokens:
+Mint Commander NFTs by burning FRONTIER tokens:
 | Tier | Cost | ATK Bonus | DEF Bonus |
 |------|------|-----------|-----------|
 | Sentinel | 50 FRNTR | Low | Medium |
@@ -58,13 +108,12 @@ Mint unique Commander NFTs by burning FRONTIER tokens:
 - **Siege Barrage**: Area damage to target and nearby plots (Reaper only)
 - **Sabotage**: Halves target mining yield (all tiers)
 
-### Recon Drones
-- Deploy drones to scout enemy territory
-- Cost: 20 FRONTIER each, max 5 per player
-- Scout duration: 15 minutes with resource discovery reports
+### Recon Drones & Orbital Satellites
+- Drones: Cost 20 FRONTIER, max 5 per player, 15-minute scout duration
+- Satellites: Cost FRONTIER to deploy, orbit for a fixed duration, provide yield bonuses
 
-### AI Factions
-Four AI factions compete alongside human players:
+### AI Factions (Shared Global)
+Four AI factions run on the server and are visible to all players simultaneously:
 | Faction | Strategy |
 |---------|----------|
 | NEXUS-7 | Expansionist |
@@ -72,11 +121,17 @@ Four AI factions compete alongside human players:
 | VANGUARD | Raider |
 | SPECTRE | Economic |
 
+AI turns run every 15 seconds via a server-side `setInterval`.
+
+### Orbital Events
+- Random impact events trigger every 5 minutes server-side
+- Events have gameplay effects (resource bursts, tile hazards) and are persisted in the `orbital_events` table
+- Cosmetic events are generated deterministically client-side — no database row required
+
 ### Mobile-First UI
-- Bottom navigation with Map, Inventory, Battles, Rankings, and Commander tabs
+- Bottom navigation: Map, Inventory, Battles, Rankings, Commander
 - Bottom-sheet land detail panels with contextual actions
-- Resource HUD overlay
-- Responsive design for all screen sizes
+- Resource HUD overlay with daily FRNTR rate + pending accumulation indicator
 
 ---
 
@@ -84,11 +139,14 @@ Four AI factions compete alongside human players:
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 18, TypeScript, Vite, TailwindCSS |
+| Frontend | React 18, TypeScript, Vite 7, TailwindCSS 3 |
 | 3D Rendering | Three.js, @react-three/fiber, @react-three/drei |
-| Backend | Node.js, Express |
-| Blockchain | Algorand TestNet (AlgoSDK, Pera Wallet, LUTE Wallet) |
-| Styling | Cyberpunk/Military sci-fi theme (Rajdhani + Inter fonts) |
+| 2D Rendering | Pixi.js 8 |
+| Backend | Node.js 20, Express 5 |
+| Database | PostgreSQL + Drizzle ORM (`drizzle-orm/node-postgres`) |
+| Blockchain | Algorand TestNet — AlgoSDK v3, Pera Wallet, LUTE Wallet |
+| Build | Vite (client), esbuild (server → `dist/index.cjs`) |
+| Styling | Cyberpunk / Military sci-fi — Rajdhani + Inter fonts |
 
 ---
 
@@ -96,50 +154,75 @@ Four AI factions compete alongside human players:
 
 ```
 client/src/
-  components/game/     Game UI components (Globe, LandSheet, Panels, etc.)
-  components/ui/       Shared UI components
-  contexts/            Wallet state context
-  hooks/               Game state, wallet, blockchain action hooks
-  lib/                 Algorand SDK setup, query client, utilities
-  pages/               Route pages
+  components/game/     Game UI components (Globe, Map, Panels, HUDs)
+  components/ui/       Shared Radix UI primitives (shadcn/ui)
+  contexts/            WalletContext — wallet connection state
+  hooks/               useGameState, useWallet, useBlockchainActions, useOrbitalEngine
+  lib/                 algorand.ts (client SDK), queryClient.ts, utils.ts
+  pages/               game.tsx (main), testnet.tsx, not-found.tsx
 
 server/
-  algorand.ts          Admin wallet, ASA management, token transfers
-  routes.ts            API endpoints for all game actions
-  sphereUtils.ts       Fibonacci sphere distribution, distance calculations
-  storage.ts           In-memory game state engine (21K plots, AI cycles)
+  index.ts             Express app entry — port binding, middleware, static serving
+  routes.ts            All API endpoints + background intervals
+  storage.ts           DbStorage (Postgres) + MemStorage (in-memory fallback)
+  algorand.ts          Admin wallet, ASA creation/transfer, NFT minting, batcher
+  db.ts                pg Pool + Drizzle client (null when DATABASE_URL absent)
+  db-schema.ts         Drizzle table definitions (parcels, players, battles, etc.)
+  static.ts            Production static file serving (SPA fallback)
+  sphereUtils.ts       Fibonacci sphere distribution, great-circle distance
 
 shared/
-  schema.ts            Types, schemas, game constants
+  schema.ts            Types, Zod schemas, game constants (shared client + server)
+  orbitalEngine.ts     Orbital event logic
+
+script/
+  build.ts             Build script: Vite (client) + esbuild (server)
+
+dist/                  Build output (gitignored)
+  public/              Vite client build
+  index.cjs            esbuild server bundle
 ```
 
 ---
 
-## API Reference
+## Environment Variables
 
-### Game State
-- `GET /api/game/state` - Full game state (polled every 5s)
-- `GET /api/game/parcel/:id` - Single parcel info
-- `GET /api/game/player/:id` - Player info
-- `GET /api/game/leaderboard` - Rankings
+Create a `.env` file in the project root (never commit it):
 
-### Actions
-- `POST /api/actions/mine` - Mine resources from owned territory
-- `POST /api/actions/upgrade` - Upgrade base defenses
-- `POST /api/actions/build` - Build improvements
-- `POST /api/actions/attack` - Deploy attack against target
-- `POST /api/actions/purchase` - Purchase land (requires ALGO)
-- `POST /api/actions/collect` - Collect all stored resources
-- `POST /api/actions/claim-frontier` - Claim accumulated FRONTIER tokens
+```env
+# ── Required ────────────────────────────────────────────────────────────────
 
-### Commander & Special
-- `POST /api/actions/mint-avatar` - Mint Commander avatar
-- `POST /api/actions/special-attack` - Execute special attack
-- `POST /api/actions/deploy-drone` - Deploy recon drone
+# PostgreSQL connection string (Neon, Railway Postgres, Supabase, etc.)
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 
-### Blockchain
-- `GET /api/blockchain/status` - Blockchain status, ASA ID, balances
-- `GET /api/blockchain/opt-in-check/:address` - Check FRONTIER ASA opt-in status
+# Algorand admin wallet — used server-side to manage FRONTIER ASA + mint NFTs
+ALGORAND_ADMIN_ADDRESS=YOUR_58_CHAR_ALGORAND_ADDRESS
+ALGORAND_ADMIN_MNEMONIC=word1 word2 ... word25
+
+# Canonical public URL of this deployment — baked into on-chain NFT metadata URLs
+# Must be set BEFORE any plot NFT is minted (URL is permanent on-chain)
+PUBLIC_BASE_URL=https://your-app.yourdomain.com
+
+# ── Optional overrides (default to Algorand TestNet via algonode.cloud) ─────
+
+# Server-side Algod node
+ALGOD_URL=https://testnet-api.algonode.cloud
+
+# Server-side Indexer node
+INDEXER_URL=https://testnet-idx.algonode.cloud
+
+# Network label embedded in on-chain transaction notes
+ALGORAND_NETWORK=testnet
+
+# Client-side Algod URL (baked into Vite bundle at build time)
+VITE_ALGOD_URL=https://testnet-api.algonode.cloud
+
+# Client-side Indexer URL (baked into Vite bundle at build time)
+VITE_INDEXER_URL=https://testnet-idx.algonode.cloud
+
+# Server port (defaults to 5000)
+PORT=5000
+```
 
 ---
 
@@ -147,78 +230,253 @@ shared/
 
 ### Prerequisites
 - Node.js 20+
-- Algorand TestNet wallet (Pera or LUTE)
-- TestNet ALGO for land purchases (available from [Algorand TestNet Faucet](https://bank.testnet.algorand.network/))
+- PostgreSQL database (local or hosted — see deployment section)
+- Algorand TestNet wallet: [Pera Wallet](https://perawallet.app) or [LUTE Wallet](https://lute.app)
+- TestNet ALGO from the [Algorand TestNet Faucet](https://bank.testnet.algorand.network/)
 
-### Environment Variables
+### Development
 
-**Required secrets:**
-- `ALGORAND_ADMIN_ADDRESS` - Admin wallet address for FRONTIER ASA management
-- `ALGORAND_ADMIN_MNEMONIC` - Admin wallet mnemonic (25-word phrase)
-- `DATABASE_URL` - PostgreSQL connection string (Neon or compatible)
-- `PUBLIC_BASE_URL` - Canonical public URL of this deployment (e.g. `https://yourapp.replit.app`). Required in production — baked into on-chain NFT metadata URLs at mint time.
-
-**Optional overrides (defaults to Algorand TestNet):**
-- `ALGOD_URL` - Algod node URL (server-side). Default: `https://testnet-api.algonode.cloud`
-- `INDEXER_URL` - Indexer node URL (server-side). Default: `https://testnet-idx.algonode.cloud`
-- `VITE_ALGOD_URL` - Algod node URL (client-side, baked at build time). Default: same as above
-- `VITE_INDEXER_URL` - Indexer node URL (client-side, baked at build time). Default: same as above
-
-### Run Development Server
 ```bash
+# Install dependencies
+npm install
+
+# Copy and fill in environment variables
+cp .env.example .env
+# Edit .env with your DATABASE_URL, admin mnemonic, etc.
+
+# Push database schema (first time or after schema changes)
+npm run db:push
+
+# Start development server (client + server on port 5000)
 npm run dev
 ```
-Server binds to port 5000. The frontend and backend are served from the same port.
+
+In development, the Express server and Vite dev server run together on port 5000 via `tsx server/index.ts`. Hot module replacement is active for the client.
+
+### Production Build
+
+```bash
+npm install
+npm run build   # Builds client (dist/public/) + server (dist/index.cjs)
+npm start       # NODE_ENV=production node dist/index.cjs
+```
+
+Server binds to `0.0.0.0:${PORT}` (default 5000). In production, Express serves the built client assets directly — no separate frontend server needed.
 
 ---
 
+## API Reference
+
+### Blockchain / Status
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/blockchain/status` | ASA ID, admin address, ALGO balance, readiness |
+| `GET` | `/api/blockchain/opt-in-check/:address` | Whether address has opted into FRONTIER ASA |
+| `GET` | `/api/economics` | Total supply, treasury, circulating, in-game metrics |
+
+### Game State
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/game/state` | Full game state (parcels, players, battles, events) — polled every 5s |
+| `GET` | `/api/game/parcel/:id` | Single parcel detail |
+| `GET` | `/api/game/player/:id` | Player record by internal ID |
+| `GET` | `/api/game/player-by-address/:address` | Wallet lookup / auto-create player |
+| `GET` | `/api/game/leaderboard` | Rankings |
+| `GET` | `/api/testnet/progress/:address` | Wallet's TestNet mission progress |
+
+### Player Actions
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/actions/connect-wallet` | Register wallet address to player; grant welcome bonus |
+| `POST` | `/api/actions/set-name` | Set gamer tag (validated against address) |
+| `POST` | `/api/actions/mine` | Mine resources from owned plot |
+| `POST` | `/api/actions/upgrade` | Upgrade base defense level |
+| `POST` | `/api/actions/build` | Build an improvement on a plot |
+| `POST` | `/api/actions/attack` | Deploy an attack against a target plot |
+| `POST` | `/api/actions/purchase` | Purchase unclaimed land (requires ALGO tx) |
+| `POST` | `/api/actions/collect` | Collect all stored plot resources |
+| `POST` | `/api/actions/claim-frontier` | Claim accumulated FRONTIER tokens (triggers ASA transfer) |
+| `POST` | `/api/actions/mint-avatar` | Mint Commander avatar (burns FRONTIER) |
+| `POST` | `/api/actions/switch-commander` | Set active Commander |
+| `POST` | `/api/actions/special-attack` | Execute a Commander special attack |
+| `POST` | `/api/actions/deploy-drone` | Deploy a recon drone |
+| `POST` | `/api/actions/deploy-satellite` | Deploy an orbital satellite |
+| `POST` | `/api/testnet/progress` | Save wallet's TestNet mission completions |
+
+### NFT Metadata
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/nft/metadata/:plotId` | ARC-3 JSON metadata for a plot NFT |
+| `GET` | `/api/nft/plot/:plotId` | On-chain record (assetId, holder, mintedAt) |
+
+### Server-Side Game Engine
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/game/resolve-battles` | Resolve pending battles (auto-called every 15s) |
+| `POST` | `/api/game/ai-turn` | Run one AI faction turn (auto-called every 15s) |
+| `GET` | `/api/orbital/active` | Active orbital impact events |
+| `POST` | `/api/orbital/trigger` | Roll for a new impact event (auto-called every 5min) |
+| `POST` | `/api/orbital/resolve/:id` | Mark an orbital event resolved + apply effects |
+
 ---
 
-## Plot NFTs — Verification Commands
+## Database Schema
 
-Each purchased plot is minted as an Algorand ASA (total=1, decimals=0) on TestNet.
+Managed via Drizzle ORM. Apply with `npm run db:push` or generate migrations with `drizzle-kit generate`.
 
-### Check NFT metadata (ARC-3 JSON)
+| Table | Purpose |
+|-------|---------|
+| `game_meta` | Singleton world state (initialized flag, turn counter) |
+| `players` | One row per human or AI player (keyed by UUID; wallet address in `address` column) |
+| `parcels` | One row per land plot (21,000 total; Fibonacci sphere coords, biome, owner, improvements) |
+| `battles` | One row per battle event (attacker, defender, resolve timestamp, outcome) |
+| `orbital_events` | Gameplay-affecting impact events with effects array |
+| `game_events` | Log of in-game actions (mining, attacks, purchases) — latest 50 shown in UI |
+| `plot_nfts` | Algorand ASA record per purchased plot (asset_id, holder, minted_at) |
+
+---
+
+## Wallet Connection Flow
+
+1. User opens the app — `WalletContext` checks `localStorage` for a saved `frontier_wallet_type`
+2. If saved, reconnection is attempted automatically (Pera: `reconnectSession`, LUTE: `connect`)
+3. On successful connect: address saved to `localStorage`, balance fetched from Algod
+4. Client calls `GET /api/game/player-by-address/:address` — creates a player record if first login, grants 500 FRONTIER welcome bonus
+5. Welcome bonus ASA transfer fires in the background if the address is opted into FRONTIER ASA
+6. If no wallet connected, a tester fallback player (`PLAYER_WALLET` address) is used so the UI is always functional
+
+---
+
+## Plot NFT Verification
+
+Each purchased plot is minted as an Algorand ASA (total=1, decimals=0, ARC-3 metadata).
+
+### Check NFT metadata
 ```bash
-curl https://frontier-al--kudbeex.replit.app/nft/metadata/1
+curl https://YOUR_DEPLOYMENT_URL/nft/metadata/1
 ```
-Returns JSON with `name`, `description`, `image` (biome SVG), `external_url`, and `properties`.
+Returns: `name`, `description`, `image` (biome SVG), `external_url`, `properties`.
 
-### Query the on-chain NFT record for a plot
+### Query on-chain NFT record
 ```bash
-curl https://frontier-al--kudbeex.replit.app/api/nft/plot/1
+curl https://YOUR_DEPLOYMENT_URL/api/nft/plot/1
 ```
-Returns `{ plotId, assetId, mintedToAddress, mintedAt, explorerUrl }`.
+Returns: `{ plotId, assetId, mintedToAddress, mintedAt, explorerUrl }`.
 
-### Query plot_nfts table directly (requires DB access)
-```sql
-SELECT plot_id, asset_id, minted_to_address, minted_at
-FROM plot_nfts
-WHERE plot_id = 1;
+### View in Algorand explorer
+```
+https://allo.info/asset/<assetId>
 ```
 
-### View the asset in Algorand TestNet explorer
-Once you have the `assetId` from the API:
+### Check asset in wallet
+1. Open Pera or LUTE connected to **Algorand TestNet**
+2. Opt in to the asset using the `assetId` from `/api/nft/plot/:plotId`
+3. Admin holds the NFT until opt-in is confirmed; after opt-in, a manual admin transfer delivers it
+
+---
+
+## Migration Audit — Replit → Production
+
+### Migration Blockers (Resolved in v3.0)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Hardcoded Replit URL in README | **Fixed** | All curl examples now use `YOUR_DEPLOYMENT_URL` placeholder |
+| Port handling | **Clean** | Uses `process.env.PORT \|\| "5000"`, binds `0.0.0.0` |
+| File system usage | **Clean** | Only `dist/` and `client/public/` path resolution — standard `process.cwd()` |
+| Hostname assumptions | **Clean** | No hardcoded hostnames anywhere in server code |
+| Replit-only config (`.replit`) | **Inert** | `.replit` file exists but is ignored outside Replit — safe to delete post-migration |
+| Database externalized | **Clean** | `DATABASE_URL` env var; `MemStorage` fallback for development |
+| Blockchain config externalized | **Clean** | All Algorand config via env vars with sensible defaults |
+| Build process | **Clean** | `npm install && npm run build && npm start` — fully portable |
+| Static serving | **Clean** | Express serves `dist/public/` in production — no platform-specific CDN needed |
+| Vite dev proxy | **Note** | Dev mode proxies `/api` to `127.0.0.1:5001` — harmless in production (Vite not used) |
+
+### Remaining Items Before Go-Live
+
+| Item | Action Required |
+|------|----------------|
+| `PUBLIC_BASE_URL` | Set to the final deployment URL **before** any plots are purchased — baked permanently into on-chain NFT ASA metadata |
+| PostgreSQL provisioned | Required for production; in-memory MemStorage does not persist |
+| Admin wallet funded | Minimum ~1 ALGO on TestNet for ASA ops; fund from [faucet](https://bank.testnet.algorand.network/) |
+| `.env.example` | Create for new contributors (never commit real `.env`) |
+
+### Replit-Specific Files (Safe to Delete Post-Migration)
 ```
-https://testnet.algoexplorer.io/asset/<assetId>
+.replit                  # Replit run/deploy config
+replit.md               # Replit project notes
 ```
 
-### Check the asset in a wallet
-1. Open Pera Wallet or LUTE Wallet connected to **Algorand TestNet**
-2. Opt in to the asset using the `assetId` returned by `/api/nft/plot/:plotId`
-3. The Plot NFT will appear in your wallet assets list
+---
 
-### Note on opt-in
-Algorand requires receivers to opt in to any ASA before they can hold it.
-Since the Plot NFT ASA is created at purchase time, the buyer must opt in
-after learning the `assetId`. The admin wallet holds the NFT until the buyer
-opts in. A future `/api/actions/claim-plot-nft` endpoint can automate the
-transfer once the buyer has opted in.
+## Deployment
+
+### Railway (Recommended — `railway.toml` included)
+
+```bash
+# railway.toml already configured:
+# build: npm install && npm run build
+# start: npm start
+```
+
+Set environment variables in the Railway dashboard. Provision a Railway PostgreSQL plugin for `DATABASE_URL`.
+
+### Render
+
+1. New Web Service → connect repo
+2. **Build command**: `npm install && npm run build`
+3. **Start command**: `npm start`
+4. **Environment**: Node 20, set all required env vars
+5. Add a Render PostgreSQL database, copy connection string to `DATABASE_URL`
+
+### DigitalOcean App Platform
+
+1. New App → connect repo
+2. Build command: `npm run build`
+3. Run command: `npm start`
+4. Add a DigitalOcean Managed PostgreSQL database
+
+### Vercel (Frontend Only — Not Recommended)
+
+The project is a unified Express + React server. Splitting frontend/backend for Vercel requires substantial refactoring and is not the recommended path. Use Railway or Render for the simplest migration.
+
+---
+
+## On-Chain Transaction Note Format (v1)
+
+All transactions sent to Algorand use the prefix `FRNTR:` followed by structured JSON.
+
+### FRONTIER Token Claim (server → chain)
+```json
+{
+  "game": "FRONTIER",
+  "v": 1,
+  "type": "batch_claim",
+  "amt": 33.47,
+  "to": "ABCDEFGHIJ...",
+  "batchIdx": 0,
+  "batchSize": 1,
+  "ts": 1740000000000,
+  "network": "testnet"
+}
+```
+
+### Game Action Batch (client → chain)
+```json
+{
+  "game": "FRONTIER",
+  "v": 1,
+  "network": "testnet",
+  "actions": [
+    { "a": "mine", "p": 42, "t": 1740000000000, "m": { "fe": 8, "fu": 4, "cr": 1 } }
+  ]
+}
+```
 
 ---
 
 ## License
 
-This is proprietary software. All rights reserved. See [LICENSE](LICENSE) for details.
+Proprietary software. All rights reserved. See [LICENSE](LICENSE) for details.
 
 No part of this software may be used, copied, modified, or distributed without prior written permission from KudbeeZero.
