@@ -661,6 +661,8 @@ export function GameLayout() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
+            {viewMode === "2d" ? <Globe className="w-4 h-4" /> : <Globe className="w-4 h-4 text-primary" />}
+            {viewMode === "2d" ? "Switch to 3D" : "Switch to 2D"}
             <Shield className="w-3.5 h-3.5" />
             War Room
           </button>
