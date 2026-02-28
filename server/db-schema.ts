@@ -28,6 +28,10 @@ export const plotNfts = pgTable("plot_nfts", {
   assetId:         bigint("asset_id", { mode: "number" }),          // NULL until minted on-chain
   mintedToAddress: text("minted_to_address"),                        // Algorand wallet address
   mintedAt:        bigint("minted_at", { mode: "number" }),          // Unix ms timestamp of mint
+  // Idempotency status: "pending" → tx in flight, "success" → on-chain, "failed" → tx failed.
+  // A row is inserted with mintStatus="pending" BEFORE any blockchain call is made so that
+  // concurrent duplicate requests are rejected at the DB level, not the application level.
+  mintStatus:      varchar("mint_status", { length: 20 }).notNull().default("pending"),
 });
 
 // ─── game_meta ────────────────────────────────────────────────────────────────

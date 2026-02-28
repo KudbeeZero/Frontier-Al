@@ -503,19 +503,26 @@ export async function registerRoutes(
         buyerAddress.length === 58;
 
       if (isHumanBuyer && db) {
-        // Check if already minted (idempotency guard)
+        // ── Idempotency guard: plotId + wallet ──────────────────────────────
+        // Reject BEFORE building any blockchain transaction if a mint is already
+        // pending or has already succeeded for this plot.
         const [existingNft] = await db
           .select()
           .from(plotNftsTable)
           .where(eq(plotNftsTable.plotId, parcel.plotId));
 
-        if (existingNft?.assetId) {
+        if (existingNft?.mintStatus === "success" && existingNft?.assetId) {
           nftAssetId = Number(existingNft.assetId);
           console.log(
-            `[purchase] plotId=${parcel.plotId} NFT already exists, assetId=${nftAssetId}`
+            `[purchase] plotId=${parcel.plotId} NFT already exists (success), assetId=${nftAssetId}`
           );
+        } else if (existingNft?.mintStatus === "pending") {
+          // A mint is already in flight — reject immediately, no blockchain tx.
+          return res.status(409).json({
+            error: "A mint is already in progress for this plot. Please wait for it to settle before retrying.",
+          });
         } else {
-          // Fire-and-forget: mint in background, don't block response
+          // No mint or previous mint failed — fire-and-forget background mint.
           mintPlotNftToAddress(parcel.plotId, buyerAddress)
             .then(({ assetId }) => {
               console.log(

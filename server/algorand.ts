@@ -416,17 +416,47 @@ export async function mintPlotNftToAddress(
   plotId: number,
   address: string
 ): Promise<{ assetId: number }> {
-  // Safety: if this plot has already been minted, return the existing assetId.
+  // ── Idempotency guard (plotId + wallet as composite key) ──────────────────
+  // Step A: Check current status before touching the blockchain at all.
   const [existing] = await db
     .select()
     .from(plotNfts)
     .where(eq(plotNfts.plotId, plotId));
 
-  if (existing?.assetId) {
+  if (existing?.mintStatus === "success" && existing?.assetId) {
     console.log(
       `[mintPlotNftToAddress] plotId=${plotId} already minted, assetId=${existing.assetId}`
     );
     return { assetId: Number(existing.assetId) };
+  }
+
+  if (existing?.mintStatus === "pending") {
+    throw new Error(
+      `Plot ${plotId} mint is already in progress. Please wait for the current transaction to settle.`
+    );
+  }
+
+  // Step B: Atomically claim the "pending" slot BEFORE building the blockchain
+  // transaction. If another process raced us here, onConflictDoNothing means
+  // the INSERT is a no-op and the RETURNING array will be empty.
+  const claimed = await db
+    .insert(plotNfts)
+    .values({ plotId, mintStatus: "pending" })
+    .onConflictDoNothing()
+    .returning();
+
+  if (claimed.length === 0) {
+    // Another concurrent request already claimed the slot — re-read status.
+    const [current] = await db
+      .select()
+      .from(plotNfts)
+      .where(eq(plotNfts.plotId, plotId));
+    if (current?.mintStatus === "success" && current?.assetId) {
+      return { assetId: Number(current.assetId) };
+    }
+    throw new Error(
+      `Plot ${plotId} mint is already in progress (concurrent request). Please wait.`
+    );
   }
 
   const account = getAdminAccount();
@@ -436,12 +466,20 @@ export async function mintPlotNftToAddress(
   // have already cached the URL).
   const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
   if (!PUBLIC_BASE_URL) {
+    // Mark failed so a retry is allowed after env is fixed.
+    await db
+      .update(plotNfts)
+      .set({ mintStatus: "failed" })
+      .where(eq(plotNfts.plotId, plotId));
     throw new Error(
       "[mintPlotNftToAddress] PUBLIC_BASE_URL env var is not set. " +
         "Set it to the canonical public URL of this deployment (e.g. https://your-app.example.com) " +
         "before minting any Plot NFTs, otherwise the on-chain metadata URL will be permanently wrong."
     );
   }
+
+  // Wrap all blockchain calls so we can reliably transition mintStatus on error.
+  try {
 
   // ── Step 1: Create the NFT ASA ────────────────────────────────────────────
   console.log(`[TXN-DEBUG-SERVER] mintPlotNftToAddress triggered | plotId: ${plotId} | txns: 2 (create+transfer, NOT grouped) | groupID: NO | ts: ${Date.now()} | to: ${address.slice(0,8)}...`);
@@ -523,15 +561,12 @@ export async function mintPlotNftToAddress(
     );
   }
 
-  // ── Step 3: Persist to plot_nfts (upsert on plotId) ──────────────────────
+  // ── Step 3: Persist to plot_nfts — mark success ──────────────────────────
   const mintedAt = Date.now();
   await db
-    .insert(plotNfts)
-    .values({ plotId, assetId, mintedToAddress, mintedAt })
-    .onConflictDoUpdate({
-      target: plotNfts.plotId,
-      set: { assetId, mintedToAddress, mintedAt },
-    });
+    .update(plotNfts)
+    .set({ assetId, mintedToAddress, mintedAt, mintStatus: "success" })
+    .where(eq(plotNfts.plotId, plotId));
 
   console.log(
     `[mintPlotNftToAddress] plotId=${plotId} recorded in plot_nfts,` +
@@ -539,4 +574,13 @@ export async function mintPlotNftToAddress(
   );
 
   return { assetId };
+
+  } catch (err) {
+    // Transition pending → failed so a future retry is allowed.
+    await db
+      .update(plotNfts)
+      .set({ mintStatus: "failed" })
+      .where(eq(plotNfts.plotId, plotId));
+    throw err;
+  }
 }

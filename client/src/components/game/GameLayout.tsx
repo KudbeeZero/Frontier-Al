@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
@@ -107,6 +107,9 @@ export function GameLayout() {
   const collectMutation = useCollectAll();
   const claimFrontierMutation = useClaimFrontier();
   const mintAvatarMutation = useMintAvatar();
+  // Ref guard prevents a second blockchain action from firing if the user
+  // double-clicks before React has a chance to re-render the disabled button.
+  const mintingRef = useRef(false);
   const specialAttackMutation = useSpecialAttack();
   const switchCommanderMutation = useSwitchCommander();
   const deployDroneMutation = useDeployDrone();
@@ -306,18 +309,26 @@ export function GameLayout() {
     });
   };
 
-  const handleMintAvatar = (tier: CommanderTier) => {
-    if (!player) return;
-    // Log commander mint to chain (batched)
-    queueMintAvatarAction(tier);
+  const handleMintAvatar = useCallback((tier: CommanderTier) => {
+    // Ref guard: block any second invocation that races before React re-renders
+    // the button as disabled. This ensures exactly one blockchain tx per mint.
+    if (!player || mintingRef.current) return;
+    mintingRef.current = true;
+
     mintAvatarMutation.mutate(
       { playerId: player.id, tier },
       {
-        onSuccess: (data: any) => toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` }),
+        onSuccess: (data: any) => {
+          // Only queue the blockchain action AFTER the server has confirmed the
+          // mint — this prevents wasted fees from duplicate on-chain transactions.
+          queueMintAvatarAction(tier);
+          toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` });
+        },
         onError: (error) => toast({ title: "Mint Failed", description: error.message, variant: "destructive" }),
+        onSettled: () => { mintingRef.current = false; },
       }
     );
-  };
+  }, [player, mintAvatarMutation, queueMintAvatarAction]);
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
