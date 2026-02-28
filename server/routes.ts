@@ -5,8 +5,8 @@ import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionS
 import { z } from "zod";
 import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA, mintPlotNftToAddress, algodClient, indexerClient } from "./algorand";
 import { db } from "./db";
-import { parcels as parcelsTable, plotNfts as plotNftsTable } from "./db-schema";
-import { eq } from "drizzle-orm";
+import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable } from "./db-schema";
+import { eq, sql } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -88,12 +88,32 @@ export async function registerRoutes(
 
       const circulating = Math.round((totalSupply - treasury) * 100) / 100;
 
+      // Query in-game token metrics from DB so the panel reflects actual
+      // player balances regardless of whether on-chain transfers have settled.
+      let totalBurned = 0;
+      let inGameCirculating = 0;
+      try {
+        const [metrics] = await db
+          .select({
+            burned:  sql<number>`COALESCE(SUM(${playersTable.totalFrontierBurned}), 0)`,
+            balanceMicro: sql<number>`COALESCE(SUM(${playersTable.frntrBalanceMicro}), 0)`,
+          })
+          .from(playersTable);
+        totalBurned       = Math.round(Number(metrics?.burned       ?? 0) * 100) / 100;
+        inGameCirculating = Math.round(Number(metrics?.balanceMicro ?? 0) / divisor * 100) / 100;
+      } catch (_dbErr) {
+        // Non-fatal — fall back to on-chain circulating
+        inGameCirculating = circulating;
+      }
+
       res.json({
         asaId,
         adminAddress: adminAddr,
         totalSupply,
         treasury: Math.round(treasury * 100) / 100,
         circulating,
+        totalBurned,
+        inGameCirculating,
         network: "Algorand TestNet",
         unitName: "FRNTR",
         assetName: "FRONTIER",
