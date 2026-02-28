@@ -20,6 +20,8 @@ interface EconomicsData {
   totalSupply: number;
   circulating: number;
   treasury: number;
+  totalBurned: number;
+  inGameCirculating: number;
   network: string;
   unitName: string;
   assetName: string;
@@ -200,8 +202,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                   <StatCard
                     icon={TrendingUp}
                     label="In Circulation"
-                    value={fmt(data.circulating)}
-                    sub={pct(data.circulating, data.totalSupply) + " of supply"}
+                    value={fmt(data.inGameCirculating)}
+                    sub={pct(data.inGameCirculating, data.totalSupply) + " of supply"}
                     accent="green"
                   />
                   <StatCard
@@ -213,10 +215,10 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                   />
                   <StatCard
                     icon={CircleDollarSign}
-                    label="Distributed"
-                    value={fmt(data.circulating)}
-                    sub="Tokens sent to players"
-                    accent="primary"
+                    label="Burned"
+                    value={fmt(data.totalBurned)}
+                    sub="Tokens spent in-game"
+                    accent="destructive"
                   />
                 </div>
               </div>
@@ -224,7 +226,8 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Distribution</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-3">
-                  <DistributionBar label="In Circulation" value={data.circulating} total={data.totalSupply} color="bg-emerald-500" />
+                  <DistributionBar label="In Circulation" value={data.inGameCirculating} total={data.totalSupply} color="bg-emerald-500" />
+                  <DistributionBar label="Burned" value={data.totalBurned} total={data.totalSupply} color="bg-red-500" />
                   <DistributionBar label="Treasury Reserve" value={data.treasury} total={data.totalSupply} color="bg-yellow-500" />
                 </div>
               </div>
