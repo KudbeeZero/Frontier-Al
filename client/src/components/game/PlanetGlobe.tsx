@@ -3,15 +3,12 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree, useLoader } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { LandParcel } from "@shared/schema";
+import type { LandParcel, BiomeType } from "@shared/schema";
+import { biomeColors } from "@shared/schema";
 
 const GLOBE_RADIUS = 2;
 const PLOT_COUNT = 21000;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
-// Tiers: Near (dist < 4.5), Tactical (4.5 <= dist < 8.0), DeepSpace (dist >= 8.0)
-const TIER_TACTICAL = 4.5;
-const TIER_DEEPSPACE = 8.0;
 
 interface PlotCoord {
   plotId: number;
@@ -57,93 +54,15 @@ function vec3ToLatLng(v: THREE.Vector3): { lat: number; lng: number } {
 
 const OWNER_COLORS = {
   player: new THREE.Color("#00ff44"),
+  ai: new THREE.Color("#ff2222"),
+  unclaimed: new THREE.Color("#1a1a1a"),
   selected: new THREE.Color("#00e5ff"),
 };
 
-function Starfield() {
-  const count = 5000;
-  const points = useMemo(() => {
-    const p = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const r = 50 + Math.random() * 50;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      p[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      p[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      p[i * 3 + 2] = r * Math.cos(phi);
-    }
-    return p;
-  }, []);
-
-  const starRef = useRef<THREE.Points>(null!);
-  const { camera } = useThree();
-
-  useFrame(() => {
-    if (starRef.current) {
-      starRef.current.position.copy(camera.position);
-      starRef.current.rotation.y += 0.0001;
-    }
-  });
-
-  return (
-    <points ref={starRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={points}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial size={0.15} color="#ffffff" transparent opacity={0.8} sizeAttenuation={true} depthWrite={false} />
-    </points>
-  );
-}
-
-function TacticalAssets({ visible }: { visible: boolean }) {
-  const group = useRef<THREE.Group>(null!);
-  useFrame(() => {
-    if (group.current && visible) {
-      group.current.rotation.y += 0.002;
-    }
-  });
-  return (
-    <group ref={group} visible={visible}>
-      {[0, 1, 2].map(i => (
-        <mesh key={i} position={[Math.cos(i * 2.1) * 3.5, Math.sin(i * 1.5) * 1, Math.sin(i * 2.1) * 3.5]}>
-          <boxGeometry args={[0.2, 0.05, 0.3]} />
-          <meshBasicMaterial color="#00e5ff" wireframe />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function DeepSpaceAssets({ visible }: { visible: boolean }) {
-  const group = useRef<THREE.Group>(null!);
-  useFrame(() => {
-    if (group.current && visible) {
-      group.current.rotation.y += 0.0005;
-    }
-  });
-  return (
-    <group ref={group} visible={visible}>
-      <mesh position={[0, 0, 0]}>
-        <torusGeometry args={[1, 0.05, 16, 100]} />
-        <meshBasicMaterial color="#00ff44" wireframe />
-      </mesh>
-      {Array.from({ length: 12 }).map((_, i) => (
-        <mesh key={i} position={[5 + Math.random() * 2, -2 + Math.random() * 4, 3 + Math.random() * 2]}>
-          <tetrahedronGeometry args={[0.1]} />
-          <meshBasicMaterial color="#ff2222" />
-        </mesh>
-      ))}
-      <mesh position={[-8, 4, -5]}>
-        <sphereGeometry args={[0.5, 8, 8]} />
-        <meshBasicMaterial color="#ffffff" wireframe />
-      </mesh>
-    </group>
-  );
+function getPlotColor(parcel: LandParcel | undefined, currentPlayerId: string | null): THREE.Color {
+  if (!parcel || !parcel.ownerId) return new THREE.Color(biomeColors[parcel?.biome ?? "plains"]).multiplyScalar(0.3);
+  if (parcel.ownerId === currentPlayerId) return OWNER_COLORS.player;
+  return OWNER_COLORS.ai;
 }
 
 interface PlotOverlayProps {
@@ -152,74 +71,95 @@ interface PlotOverlayProps {
   selectedPlotId: string | null;
   globeGroupRef: React.RefObject<THREE.Group>;
   onPlotSelect: (parcelId: string) => void;
-  visible: boolean;
 }
 
-function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, globeGroupRef, onPlotSelect, visible }: PlotOverlayProps) {
+function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, globeGroupRef, onPlotSelect }: PlotOverlayProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!);
-  const { raycaster } = useThree();
+  const { raycaster, camera } = useThree();
 
-  const ownedParcels = useMemo(() => 
-    parcels.filter(p => p.ownerId === currentPlayerId || p.id === selectedPlotId),
-    [parcels, currentPlayerId, selectedPlotId]
-  );
+  const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
+
+  const parcelMap = useMemo(() => {
+    const m = new Map<string, LandParcel>();
+    parcels.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [parcels]);
+
+  const plotIdToParcel = useMemo(() => {
+    const m = new Map<number, LandParcel>();
+    parcels.forEach((p) => m.set(p.plotId, p));
+    return m;
+  }, [parcels]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const plotSize = GLOBE_RADIUS * 0.015;
+  const plotSize = GLOBE_RADIUS * 0.012;
 
   useEffect(() => {
     if (!meshRef.current) return;
-    meshRef.current.count = visible ? ownedParcels.length : 0;
-    if (!visible) return;
-    for (let i = 0; i < ownedParcels.length; i++) {
-      const p = ownedParcels[i];
-      const pos = latLngToVec3(p.lat, p.lng, GLOBE_RADIUS * 1.002);
+    const color = new THREE.Color();
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().multiplyScalar(2));
-      dummy.scale.setScalar(1.5);
+      dummy.scale.setScalar(1);
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
-      const color = p.id === selectedPlotId ? OWNER_COLORS.selected : OWNER_COLORS.player;
-      meshRef.current.setColorAt(i, color);
+      const parcel = plotIdToParcel.get(coord.plotId);
+      const c = getPlotColor(parcel, currentPlayerId);
+      meshRef.current.setColorAt(i, c);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [ownedParcels, selectedPlotId, dummy, visible]);
+  }, [parcels, currentPlayerId, plotCoords, plotIdToParcel, dummy]);
+
+  useEffect(() => {
+    if (!meshRef.current || !meshRef.current.instanceColor) return;
+    const color = new THREE.Color();
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      if (parcel && parcel.id === selectedPlotId) {
+        meshRef.current.setColorAt(i, OWNER_COLORS.selected);
+      } else {
+        meshRef.current.setColorAt(i, getPlotColor(parcel, currentPlayerId));
+      }
+    }
+    meshRef.current.instanceColor!.needsUpdate = true;
+  }, [selectedPlotId, parcels, currentPlayerId, plotCoords, plotIdToParcel]);
 
   const handleClick = useCallback(
     (e: any) => {
-      if (!visible || !globeGroupRef.current) return;
+      if (!meshRef.current || !globeGroupRef.current) return;
       if (e.stopPropagation) e.stopPropagation();
 
-      const intersectMesh = globeGroupRef.current.children.find(c => c.type === "Mesh");
-      if (!intersectMesh) return;
-      
-      const intersects = raycaster.intersectObject(intersectMesh);
+      const intersects = raycaster.intersectObject(meshRef.current);
       if (intersects.length === 0) return;
 
       const hit = intersects[0];
-      const localPoint = globeGroupRef.current.worldToLocal(hit.point.clone());
+      const worldPoint = hit.point.clone();
+      const localPoint = globeGroupRef.current.worldToLocal(worldPoint);
       const { lat, lng } = vec3ToLatLng(localPoint);
 
       let bestDist = Infinity;
-      let bestParcelId = null;
-
-      for (const p of parcels) {
-        const dLat = p.lat - lat;
-        const dLng = p.lng - lng;
+      let bestPlotId = -1;
+      for (const coord of plotCoords) {
+        const dLat = coord.lat - lat;
+        const dLng = coord.lng - lng;
         const dist = dLat * dLat + dLng * dLng;
         if (dist < bestDist) {
           bestDist = dist;
-          bestParcelId = p.id;
+          bestPlotId = coord.plotId;
         }
       }
 
-      if (bestParcelId && bestDist < 100) {
-        onPlotSelect(bestParcelId);
+      if (bestPlotId > 0) {
+        const parcel = plotIdToParcel.get(bestPlotId);
+        if (parcel) onPlotSelect(parcel.id);
       }
     },
-    [raycaster, globeGroupRef, parcels, onPlotSelect, visible]
+    [raycaster, globeGroupRef, plotCoords, plotIdToParcel, onPlotSelect]
   );
 
   return (
@@ -227,12 +167,11 @@ function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, globeGroupRef, 
       ref={meshRef}
       args={[undefined, undefined, PLOT_COUNT]}
       onClick={handleClick}
-      visible={visible}
     >
       <planeGeometry args={[plotSize, plotSize]} />
       <meshBasicMaterial
         transparent
-        opacity={0.8}
+        opacity={0.2}
         depthWrite={false}
         vertexColors
         side={THREE.DoubleSide}
@@ -241,7 +180,7 @@ function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, globeGroupRef, 
   );
 }
 
-function GlobeTerrain({ visible, opacity = 1 }: { visible: boolean; opacity?: number }) {
+function GlobeTerrain() {
   const albedoTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_albedo.png");
   const nightTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_night_lights.png");
   const cloudsTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_clouds.png");
@@ -253,7 +192,7 @@ function GlobeTerrain({ visible, opacity = 1 }: { visible: boolean; opacity?: nu
   }, [albedoTex, nightTex, cloudsTex]);
 
   return (
-    <group visible={visible}>
+    <>
       <mesh>
         <sphereGeometry args={[GLOBE_RADIUS, 128, 64]} />
         <meshStandardMaterial
@@ -261,8 +200,6 @@ function GlobeTerrain({ visible, opacity = 1 }: { visible: boolean; opacity?: nu
           emissiveMap={nightTex}
           emissive={new THREE.Color(1, 1, 1)}
           emissiveIntensity={0.6}
-          transparent={opacity < 1}
-          opacity={opacity}
         />
       </mesh>
       <mesh>
@@ -270,34 +207,68 @@ function GlobeTerrain({ visible, opacity = 1 }: { visible: boolean; opacity?: nu
         <meshBasicMaterial
           map={cloudsTex}
           transparent
-          opacity={0.3 * opacity}
+          opacity={0.3}
           depthWrite={false}
           side={THREE.FrontSide}
         />
       </mesh>
-    </group>
+    </>
   );
 }
 
-function AtmosphereGlow({ visible, opacity = 1 }: { visible: boolean, opacity?: number }) {
+interface SatelliteProps {
+  orbitRadius: number;
+}
+
+function Satellite({ orbitRadius }: SatelliteProps) {
+  const spriteRef = useRef<THREE.Sprite>(null!);
+  const tex = useLoader(THREE.TextureLoader, "/assets/space_station.png");
+  const material = useMemo(
+    () =>
+      new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        sizeAttenuation: true,
+      }),
+    [tex]
+  );
+
+  const orbitOffset = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!spriteRef.current) return;
+    orbitOffset.current += delta * 0.15;
+    const angle = orbitOffset.current;
+    const inclination = 0.4;
+    const x = orbitRadius * Math.cos(angle);
+    const z = orbitRadius * Math.sin(angle);
+    const y = orbitRadius * Math.sin(angle * 0.7) * inclination + Math.sin(orbitOffset.current * 2.3) * 0.05;
+    spriteRef.current.position.set(x, y, z);
+    const scale = 0.25;
+    spriteRef.current.scale.set(scale, scale, 1);
+  });
+
+  return <sprite ref={spriteRef} material={material} />;
+}
+
+function AtmosphereGlow() {
+  const shaderRef = useRef<THREE.ShaderMaterial>(null!);
+
   const uniforms = useMemo(
     () => ({
       glowColor: { value: new THREE.Color(0.2, 0.5, 1.0) },
       coefficient: { value: 0.6 },
       power: { value: 3.5 },
-      opacity: { value: 1.0 }
     }),
     []
   );
-  
-  useEffect(() => {
-    uniforms.opacity.value = opacity;
-  }, [opacity]);
 
   return (
-    <mesh visible={visible}>
+    <mesh>
       <sphereGeometry args={[GLOBE_RADIUS * 1.12, 64, 32]} />
       <shaderMaterial
+        ref={shaderRef}
         uniforms={uniforms}
         vertexShader={`
           varying vec3 vNormal;
@@ -312,12 +283,11 @@ function AtmosphereGlow({ visible, opacity = 1 }: { visible: boolean, opacity?: 
           uniform vec3 glowColor;
           uniform float coefficient;
           uniform float power;
-          uniform float opacity;
           varying vec3 vNormal;
           varying vec3 vPositionNormal;
           void main() {
             float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-            gl_FragColor = vec4(glowColor, intensity * 0.4 * opacity);
+            gl_FragColor = vec4(glowColor, intensity * 0.4);
           }
         `}
         transparent
@@ -334,58 +304,37 @@ interface SceneProps {
   currentPlayerId: string | null;
   selectedPlotId: string | null;
   onPlotSelect: (parcelId: string) => void;
+  onNorthReset?: () => void;
   controlsRef: React.RefObject<OrbitControlsImpl>;
 }
 
 function Scene({ parcels, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
   const globeGroupRef = useRef<THREE.Group>(null!);
-  const [cameraDist, setCameraDist] = useState(0);
-
-  useFrame((state) => {
-    const dist = state.camera.position.length();
-    if (Math.abs(dist - cameraDist) > 0.01) {
-      setCameraDist(dist);
-    }
-  });
-
-  const planetOpacity = cameraDist < TIER_TACTICAL 
-    ? 1 
-    : cameraDist < TIER_DEEPSPACE 
-      ? 1 - (cameraDist - TIER_TACTICAL) / (TIER_DEEPSPACE - TIER_TACTICAL)
-      : 0;
-
-  const showPlanet = planetOpacity > 0.01;
-  const showTactical = cameraDist >= TIER_TACTICAL && cameraDist < TIER_DEEPSPACE;
-  const showDeepSpace = cameraDist >= TIER_TACTICAL;
 
   return (
     <>
       <ambientLight intensity={0.4} />
       <directionalLight position={[5, 3, 5]} intensity={1.2} />
-      <Starfield />
 
       <group ref={globeGroupRef}>
-        <GlobeTerrain visible={showPlanet} opacity={planetOpacity} />
+        <GlobeTerrain />
         <PlotOverlay
           parcels={parcels}
           currentPlayerId={currentPlayerId}
           selectedPlotId={selectedPlotId}
           globeGroupRef={globeGroupRef}
           onPlotSelect={onPlotSelect}
-          visible={showPlanet && cameraDist < TIER_TACTICAL + 1}
         />
+        <Satellite orbitRadius={GLOBE_RADIUS * 1.25} />
       </group>
 
-      <TacticalAssets visible={showTactical} />
-      <DeepSpaceAssets visible={showDeepSpace} />
-
-      <AtmosphereGlow visible={showPlanet} opacity={planetOpacity} />
+      <AtmosphereGlow />
 
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
         minDistance={GLOBE_RADIUS * 1.5}
-        maxDistance={25}
+        maxDistance={GLOBE_RADIUS * 5}
         rotateSpeed={0.5}
         zoomSpeed={0.8}
         enableDamping
