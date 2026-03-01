@@ -4,7 +4,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "concurrently -k \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "lsof -ti :5000 | xargs -r kill -9; NODE_ENV=development tsx server/index.ts",
+    "dev:client": "lsof -ti :3000 | xargs -r kill -9; vite --port 3000 --strictPort",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",

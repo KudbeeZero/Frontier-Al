@@ -55,11 +55,8 @@ export function GameLayout() {
     treasuryAddress,
   } = useBlockchainActions();
   const { data: gameState, isLoading, error } = useGameState();
-  // Find the player that belongs to the currently connected wallet address.
-  // useCurrentPlayer now accepts an address so each wallet sees its own data.
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
-  // Orbital event engine (cosmetic + impact events)
   const { events: orbitalEvents, impactEvents } = useOrbitalEngine();
 
   const initializedAddressRef = useRef<string | null>(null);
@@ -88,12 +85,10 @@ export function GameLayout() {
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // Per-parcel mining state — prevents double-clicks and rapid-fire clicking
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
   const lastLocatedOwnedId = useRef<string | null>(null);
   const lastLocatedEnemyId = useRef<string | null>(null);
 
-  // Tick every second for live FRNTR accumulation display in ResourceHUD.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -117,8 +112,6 @@ export function GameLayout() {
     if (!seen) setShowOnboarding(true);
   }, []);
 
-  // When a wallet connects (or changes), look up / create the player for that
-  // specific address so each wallet always starts with isolated, fresh data.
   useEffect(() => {
     if (!wallet.address || !wallet.isConnected) return;
     if (initializedAddressRef.current === wallet.address) return;
@@ -159,7 +152,6 @@ export function GameLayout() {
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(selectedParcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
@@ -189,7 +181,6 @@ export function GameLayout() {
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(parcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
@@ -210,7 +201,6 @@ export function GameLayout() {
 
   const handleUpgrade = async (type: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
     queueUpgradeAction(selectedParcel.plotId, type);
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
@@ -225,7 +215,6 @@ export function GameLayout() {
 
   const handleAttackConfirm = async (troops: number, iron: number, fuel: number, commanderId?: string) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
     queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
     attackMutation.mutate(
       { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, commanderId },
@@ -243,8 +232,6 @@ export function GameLayout() {
 
   const handleBuild = (type: ImprovementType) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget) — covers turrets, shield_gen,
-    // electricity, blockchain_node, data_centre, ai_lab, radar, fortress, etc.
     queueBuildAction(selectedParcel.plotId, type);
     buildMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, improvementType: type },
@@ -259,9 +246,7 @@ export function GameLayout() {
     if (!player || !selectedParcelId || !selectedParcel) return;
     if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
       const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
-      // "cancelled" = user explicitly rejected in wallet — abort entirely
       if (result === "cancelled") return;
-      // null = blockchain/network error — toast already shown, still proceed in-game
     }
     purchaseMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
@@ -308,7 +293,6 @@ export function GameLayout() {
 
   const handleMintAvatar = (tier: CommanderTier) => {
     if (!player) return;
-    // Log commander mint to chain (batched)
     queueMintAvatarAction(tier);
     mintAvatarMutation.mutate(
       { playerId: player.id, tier },
@@ -321,7 +305,6 @@ export function GameLayout() {
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log special attack to chain with target plot + attack type (batched)
     queueSpecialAttackAction(selectedParcel.plotId, attackType);
     specialAttackMutation.mutate(
       { playerId: player.id, attackType, targetParcelId: selectedParcelId },
@@ -337,7 +320,6 @@ export function GameLayout() {
 
   const handleSwitchCommander = (index: number) => {
     if (!player) return;
-    // Log commander selection to chain (batched)
     queueSwitchCommanderAction(index);
     switchCommanderMutation.mutate(
       { playerId: player.id, commanderIndex: index },
@@ -350,7 +332,6 @@ export function GameLayout() {
 
   const handleDeployDrone = (targetParcelId?: string) => {
     if (!player) return;
-    // Log drone deployment to chain (batched) — targetParcelId resolved to plotId below
     const targetParcel = targetParcelId
       ? gameState?.parcels.find((p) => p.id === targetParcelId)
       : null;
@@ -390,7 +371,6 @@ export function GameLayout() {
     if (!player || !gameState) return;
     const ownedPlots = gameState.parcels.filter(p => p.ownerId === player.id);
     if (ownedPlots.length > 0) {
-      // Pick a random plot that differs from the last one shown (if possible)
       let candidates = ownedPlots.filter(p => p.id !== lastLocatedOwnedId.current);
       if (candidates.length === 0) candidates = ownedPlots;
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
@@ -404,7 +384,6 @@ export function GameLayout() {
     if (!gameState) return;
     const enemyPlots = gameState.parcels.filter(p => p.ownerId && p.ownerId !== player?.id);
     if (enemyPlots.length > 0) {
-      // Pick a random enemy plot that differs from the last one shown (if possible)
       let candidates = enemyPlots.filter(p => p.id !== lastLocatedEnemyId.current);
       if (candidates.length === 0) candidates = enemyPlots;
       const randomEnemy = candidates[Math.floor(Math.random() * candidates.length)];
@@ -557,7 +536,6 @@ export function GameLayout() {
             />
           )}
 
-          {/* 2D / 3D map toggle — bottom-left corner, above bottom nav */}
           {activeTab === "map" && (
             <div className="absolute bottom-20 left-4 z-20 flex gap-1 bg-card/80 backdrop-blur border border-border rounded-lg p-1">
               <button
@@ -593,7 +571,6 @@ export function GameLayout() {
         <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
       </div>
 
-      {/* Orbital impact event notifications */}
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 
       {isConnected && frontierAsaId && isOptedInToFrontier === false && (
@@ -661,8 +638,6 @@ export function GameLayout() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            {viewMode === "2d" ? <Globe className="w-4 h-4" /> : <Globe className="w-4 h-4 text-primary" />}
-            {viewMode === "2d" ? "Switch to 3D" : "Switch to 2D"}
             <Shield className="w-3.5 h-3.5" />
             War Room
           </button>
