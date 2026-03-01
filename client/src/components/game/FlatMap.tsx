@@ -378,26 +378,27 @@ export function FlatMap({
       // ── Lat/Lng grid lines using the orthographic projection ───────────────
       const gridAlpha = Math.min(0.08, 0.02 + cameraRef.current.zoom * 0.005); // Reduced grid opacity
       ctx.strokeStyle = `rgba(100, 200, 255, ${gridAlpha})`;
-      ctx.lineWidth   = 0.5;
+      ctx.lineWidth = 0.5;
 
       const drawGlobeGridLine = (pts: { lat: number; lng: number }[]) => {
         let started = false;
         ctx.beginPath();
         for (const pt of pts) {
           const s = latLngToScreen(pt.lat, pt.lng, w, h);
-          if (!s) { started = false; continue; }
-          if (!started) { ctx.moveTo(s.x, s.y); started = true; }
-          else            ctx.lineTo(s.x, s.y);
+          if (!s) {
+            started = false;
+            continue;
+          }
+          if (!started) {
+            ctx.moveTo(s.x, s.y);
+            started = true;
+          } else {
+            ctx.lineTo(s.x, s.y);
+          }
         }
         ctx.stroke();
       };
 
-      // Latitude parallels (every 30°)
-      for (let lat = -60; lat <= 60; lat += 30) {
-        const pts: { lat: number; lng: number }[] = [];
-        for (let lng = -180; lng <= 180; lng += 3) pts.push({ lat, lng });
-        drawGlobeGridLine(pts);
-      }
       // Longitude meridians (every 30°)
       for (let lng = -150; lng <= 180; lng += 30) {
         const pts: { lat: number; lng: number }[] = [];
@@ -410,13 +411,6 @@ export function FlatMap({
       // OPTIMIZATION: Disable expensive shadows during plot loop
       ctx.shadowBlur = 0;
       ctx.shadowColor = "transparent";
-      
-      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : undefined;
-      const plotSize   = getPlotSize(w, h);
-      pulseRef.current += 0.02;
-      const playerPulse = Math.sin(pulseRef.current * 2) * 0.15 + 0.85;
-
-      const selectedPlot = selectedParcelId ? plotIndex.get(selectedParcelId) : null;
 
       for (let i = 0; i < parcels.length; i++) {
         const p         = parcels[i];
