@@ -8,7 +8,7 @@ import { plotNfts } from "./db-schema";
 // notes so transactions can be attributed to the correct network by indexers.
 const ALGOD_URL = process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud";
 const INDEXER_URL = process.env.INDEXER_URL ?? "https://testnet-idx.algonode.cloud";
-/** "testnet" | "mainnet" — embedded into transaction notes for traceability */
+/** "testnet" | "mainnet" -- embedded into transaction notes for traceability */
 const ALGORAND_NETWORK = process.env.ALGORAND_NETWORK ?? "testnet";
 
 export const algodClient = new algosdk.Algodv2("", ALGOD_URL, "");
@@ -382,7 +382,7 @@ export async function initializeBlockchain(): Promise<{ asaId: number | null; ad
 }
 
 // ---------------------------------------------------------------------------
-// Plot NFT minting — real Algorand ASA on TestNet
+// Plot NFT minting -- real Algorand ASA on TestNet
 // ---------------------------------------------------------------------------
 
 /**
@@ -392,7 +392,7 @@ export async function initializeBlockchain(): Promise<{ asaId: number | null; ad
  * ASA parameters (TestNet):
  *   assetName  = `Frontier Plot #<plotId>`
  *   unitName   = `PLOT`
- *   total      = 1  (true NFT — indivisible)
+ *   total      = 1  (true NFT -- indivisible)
  *   decimals   = 0
  *   manager    = admin (allows metadata URL updates in future)
  *   reserve    = admin (displayed as "reserve" in explorers)
@@ -405,12 +405,12 @@ export async function initializeBlockchain(): Promise<{ asaId: number | null; ad
  * Transfer step: After creation the 1 unit lives in the admin wallet.
  * We attempt to send it to `address`. If the buyer has not yet opted in to
  * this specific ASA (which is always the case for a freshly-minted NFT),
- * the transfer will fail gracefully — the assetId is still recorded and the
+ * the transfer will fail gracefully -- the assetId is still recorded and the
  * admin holds the NFT until the buyer opts in.
  *
  * @param plotId  - Integer plot identifier (primary key in `plot_nfts`).
  * @param address - Algorand wallet address that should receive the NFT.
- * @returns       `{ assetId }` — the real on-chain Algorand ASA asset ID.
+ * @returns       `{ assetId }` -- the real on-chain Algorand ASA asset ID.
  */
 export async function mintPlotNftToAddress(
   plotId: number,
@@ -490,7 +490,7 @@ export async function mintPlotNftToAddress(
   // The buyer must have opted in to this ASA before they can receive it.
   // For freshly-minted NFTs the buyer cannot have opted in yet, so the
   // transfer will typically fail on the first attempt. The assetId is still
-  // recorded — the buyer can opt in later and an admin transfer can follow.
+  // recorded -- the buyer can opt in later and an admin transfer can follow.
   let mintedToAddress = account.addr.toString(); // admin holds by default
 
   try {
@@ -517,7 +517,7 @@ export async function mintPlotNftToAddress(
     );
   } catch (err) {
     console.warn(
-      `[mintPlotNftToAddress] Transfer to ${address} failed — buyer likely not opted in to` +
+      `[mintPlotNftToAddress] Transfer to ${address} failed -- buyer likely not opted in to` +
         ` assetId=${assetId}. NFT held by admin until buyer opts in.`,
       err instanceof Error ? err.message : err
     );
