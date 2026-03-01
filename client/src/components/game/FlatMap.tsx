@@ -634,7 +634,7 @@ export function FlatMap({
       const sy        = clientY - rect.top;
       const w         = rect.width;
       const h         = rect.height;
-      const plotSize  = getPlotSize(w, h);
+  
       const hitRadius = Math.max(plotSize * 1.2, 8);
 
       let closest: LandParcel | null = null;
