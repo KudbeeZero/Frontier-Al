@@ -16,8 +16,13 @@ import * as schema from "./db-schema";
 
 // Only create the pool when DATABASE_URL is present.
 const pool = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, max: 10 })
-  : null;
+? new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 10,
+    ssl: { rejectUnauthorized: false },
+  })
+: null;
+
 
 // Cast to the full type so callers don't need null-checks everywhere.
 // DbStorage's constructor guards against using this when pool is null.
