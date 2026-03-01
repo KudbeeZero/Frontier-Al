@@ -3048,14 +3048,34 @@ export class DbStorage implements IStorage {
       if (ai.aiBehavior === "expansionist" || ai.aiBehavior === "raider") {
         const inCooldown = ai.attackCooldownUntil && now < ai.attackCooldownUntil;
         if (!inCooldown) {
-          let range = 0.08;
+          let range = 0.11;
           let priorityTargetId: string | undefined;
 
+          // KRONOS: Anti-Nexus scaler
           if (ai.name === "KRONOS") {
             const nexus = allAiPlayers.find(p => p.name === "NEXUS-7");
             const nexusPlots = nexus ? ownerMap.get(nexus.id) ?? [] : [];
-            if (nexusPlots.length > 1500) {
+            if (nexusPlots.length > 600) {
               range *= 1.25;
+              for (const parcel of ownedParcels) {
+                const inRangeNexus = nexusPlots.find(nid => {
+                  const np = parcelById.get(nid);
+                  return np && sphereDistance(parcel.lat, parcel.lng, np.lat, np.lng) < range;
+                });
+                if (inRangeNexus) {
+                  priorityTargetId = inRangeNexus;
+                  break;
+                }
+              }
+            }
+          }
+
+          // VANGUARD: Dedicated Nexus Hunter
+          if (ai.name === "VANGUARD") {
+            const nexus = allAiPlayers.find(p => p.name === "NEXUS-7");
+            const nexusPlots = nexus ? ownerMap.get(nexus.id) ?? [] : [];
+            if (nexusPlots.length > 250) {
+              range *= 1.4;
               for (const parcel of ownedParcels) {
                 const inRangeNexus = nexusPlots.find(nid => {
                   const np = parcelById.get(nid);
@@ -3071,20 +3091,37 @@ export class DbStorage implements IStorage {
 
           const canAttack = ai.iron >= ATTACK_BASE_COST.iron && ai.fuel >= ATTACK_BASE_COST.fuel;
           const moraleDebuffed = ai.moraleDebuffUntil && now < ai.moraleDebuffUntil;
-          const attackThreshold = moraleDebuffed ? 0.85 : 0.7;
+
+          // Vanguard is more aggressive
+          const attackThreshold =
+            ai.name === "VANGUARD"
+              ? (moraleDebuffed ? 0.45 : 0.25)
+              : (moraleDebuffed ? 0.6 : 0.4);
+
           if (canAttack && Math.random() > attackThreshold) {
             if (priorityTargetId) {
               try {
                 await this.deployAttack({
-                  attackerId: ai.id, targetParcelId: priorityTargetId,
-                  troopsCommitted: 1,
+                  attackerId: ai.id,
+                  targetParcelId: priorityTargetId,
+                  troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
                   resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
                 });
-                const desc = `${ai.name} launched suppression strike on NEXUS-7`;
+
+                const desc =
+                  ai.name === "VANGUARD"
+                    ? `${ai.name} executed Nexus strike`
+                    : `${ai.name} launched suppression strike`;
+
                 const evt: GameEvent = {
-                  id: randomUUID(), type: "ai_action", playerId: ai.id,
-                  description: desc, timestamp: now,
+                  id: randomUUID(),
+                  type: "ai_action",
+                  playerId: ai.id,
+                  parcelId: priorityTargetId!,   // ✅ add this
+                  description: desc,
+                  timestamp: now,
                 };
+
                 await this.addEvent(evt);
                 newEvents.push(evt);
               } catch {}
@@ -3094,20 +3131,31 @@ export class DbStorage implements IStorage {
                   if (!p.ownerId || p.ownerId === ai.id || p.activeBattleId || p.biome === "water") return false;
                   return sphereDistance(parcel.lat, parcel.lng, p.lat, p.lng) < range;
                 });
+
                 if (targets.length > 0) {
                   const attackTarget = targets[Math.floor(Math.random() * targets.length)];
                   try {
                     await this.deployAttack({
-                      attackerId: ai.id, targetParcelId: attackTarget.id,
-                      troopsCommitted: 1,
-                      resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                      attackerId: ai.id,
+                      targetParcelId: attackTarget.id,
+                      troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
+                      resourcesBurned: {
+                        iron: ATTACK_BASE_COST.iron,
+                        fuel: ATTACK_BASE_COST.fuel,
+                      },
                     });
-                    const statusMsg = moraleDebuffed ? " [morale debuffed]" : "";
-                    const desc = `${ai.name} deployed troops${statusMsg}`;
+
+                    const desc = `${ai.name} deployed troops`;
+
                     const evt: GameEvent = {
-                      id: randomUUID(), type: "ai_action", playerId: ai.id,
-                      description: desc, timestamp: now,
+                      id: randomUUID(),
+                      type: "ai_action",
+                      playerId: ai.id,
+                      parcelId: attackTarget.id,
+                      description: desc,
+                      timestamp: now,
                     };
+
                     await this.addEvent(evt);
                     newEvents.push(evt);
                   } catch {}
@@ -3149,6 +3197,4 @@ export class DbStorage implements IStorage {
 // Export: swap MemStorage → DbStorage here when DATABASE_URL is available.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const storage: IStorage = process.env.DATABASE_URL
-  ? new DbStorage()
-  : new MemStorage();
+export const storage: IStorage = new MemStorage();
