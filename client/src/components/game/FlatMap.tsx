@@ -178,18 +178,18 @@ export function FlatMap({
   const latLngToScreen = useCallback(
     (lat: number, lng: number, canvasW: number, canvasH: number): { x: number; y: number } | null => {
       const R = getGlobeRadius(canvasW, canvasH);
-      const \u03c6  = lat  * Math.PI / 180;
-      const \u03bb  = lng  * Math.PI / 180;
-      const \u03c60 = cameraRef.current.centerLat * Math.PI / 180;
-      const \u03bb0 = cameraRef.current.centerLng * Math.PI / 180;
+      const φ  = lat  * Math.PI / 180;
+      const λ  = lng  * Math.PI / 180;
+      const φ0 = cameraRef.current.centerLat * Math.PI / 180;
+      const λ0 = cameraRef.current.centerLng * Math.PI / 180;
 
       const cosC =
-        Math.sin(\u03c60) * Math.sin(\u03c6) +
-        Math.cos(\u03c60) * Math.cos(\u03c6) * Math.cos(\u03bb - \u03bb0);
+        Math.sin(φ0) * Math.sin(φ) +
+        Math.cos(φ0) * Math.cos(φ) * Math.cos(λ - λ0);
       if (cosC < 0) return null;
 
-      const x = R * Math.cos(\u03c6) * Math.sin(\u03bb - \u03bb0);
-      const y = -R * (Math.cos(\u03c60) * Math.sin(\u03c6) - Math.sin(\u03c60) * Math.cos(\u03c6) * Math.cos(\u03bb - \u03bb0));
+      const x = R * Math.cos(φ) * Math.sin(λ - λ0);
+      const y = -R * (Math.cos(φ0) * Math.sin(φ) - Math.sin(φ0) * Math.cos(φ) * Math.cos(λ - λ0));
 
       return { x: canvasW / 2 + x, y: canvasH / 2 + y };
     },
@@ -201,19 +201,19 @@ export function FlatMap({
       const R  = getGlobeRadius(canvasW, canvasH);
       const nx = (sx - canvasW / 2) / R;
       const ny = -(sy - canvasH / 2) / R;
-      const \u03c1  = Math.sqrt(nx * nx + ny * ny);
-      if (\u03c1 > 1) return null;
+      const ρ  = Math.sqrt(nx * nx + ny * ny);
+      if (ρ > 1) return null;
 
-      const c    = Math.asin(Math.min(1, \u03c1));
-      const \u03c60   = cameraRef.current.centerLat * Math.PI / 180;
-      const \u03bb0   = cameraRef.current.centerLng * Math.PI / 180;
+      const c    = Math.asin(Math.min(1, ρ));
+      const φ0   = cameraRef.current.centerLat * Math.PI / 180;
+      const λ0   = cameraRef.current.centerLng * Math.PI / 180;
       const sinC = Math.sin(c);
       const cosC = Math.cos(c);
 
-      const \u03c6 = Math.asin(cosC * Math.sin(\u03c60) + (\u03c1 > 0 ? ny * sinC * Math.cos(\u03c60) / \u03c1 : 0));
-      const \u03bb = \u03bb0 + Math.atan2(nx * sinC, \u03c1 * Math.cos(\u03c60) * cosC - ny * Math.sin(\u03c60) * sinC);
+      const φ = Math.asin(cosC * Math.sin(φ0) + (ρ > 0 ? ny * sinC * Math.cos(φ0) / ρ : 0));
+      const λ = λ0 + Math.atan2(nx * sinC, ρ * Math.cos(φ0) * cosC - ny * Math.sin(φ0) * sinC);
 
-      return { lat: \u03c6 * 180 / Math.PI, lng: \u03bb * 180 / Math.PI };
+      return { lat: φ * 180 / Math.PI, lng: λ * 180 / Math.PI };
     },
     [getGlobeRadius]
   );
@@ -221,7 +221,7 @@ export function FlatMap({
   const getPlotSize = useCallback(
     (canvasW: number, canvasH: number) => {
       const R = getGlobeRadius(canvasW, canvasH);
-      return Math.max(2, R / 78);
+      return Math.max(3, R / 55);
     },
     [getGlobeRadius]
   );
@@ -231,22 +231,26 @@ export function FlatMap({
       const container = containerRef.current;
       if (!container) return null;
       const rect = container.getBoundingClientRect();
+      
+      const localX = sx - rect.left;
+      const localY = sy - rect.top;
+      
       const w = rect.width;
       const h = rect.height;
 
-      const latLng = screenToLatLng(sx, sy, w, h);
+      const latLng = screenToLatLng(localX, localY, w, h);
       if (!latLng) return null;
 
       const plotSize = getPlotSize(w, h);
-      const hitRadiusSq = Math.pow(Math.max(plotSize * 1.6, 12), 2);
+      const hitRadiusSq = Math.pow(Math.max(plotSize * 2.2, 18), 2);
       let closest = null;
       let minDistSq = Infinity;
 
       for (const p of parcels) {
         const s = latLngToScreen(p.lat, p.lng, w, h);
         if (!s) continue;
-        const dx = sx - s.x;
-        const dy = sy - s.y;
+        const dx = localX - s.x;
+        const dy = localY - s.y;
         const distSq = dx * dx + dy * dy;
         if (distSq < hitRadiusSq && distSq < minDistSq) {
           minDistSq = distSq;
@@ -594,6 +598,54 @@ export function FlatMap({
 
   const selectedPlot = parcels.find(p => p.id === selectedParcelId);
 
+  const renderPopup = () => {
+    if (!selectedPlot || !selectedScreenPos) return null;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    const popupW = 160;
+    const popupH = 110;
+    const margin = 18;
+
+    let px;
+    let py;
+
+    if (selectedScreenPos.x > rect.width / 2) {
+      px = selectedScreenPos.x - popupW - margin;
+    } else {
+      px = selectedScreenPos.x + margin;
+    }
+
+    if (selectedScreenPos.y > rect.height / 2) {
+      py = selectedScreenPos.y - popupH - margin;
+    } else {
+      py = selectedScreenPos.y + margin;
+    }
+
+    px = Math.max(10, Math.min(px, rect.width - popupW - 10));
+    py = Math.max(10, Math.min(py, rect.height - popupH - 10));
+
+    return (
+      <div
+        className="absolute pointer-events-none z-20"
+        style={{ left: px, top: py }}
+      >
+        <div className="bg-card/90 backdrop-blur-md border border-primary/30 p-2.5 rounded shadow-2xl min-w-[160px]">
+          <div className="text-[10px] font-display uppercase tracking-widest text-primary/70 mb-0.5">
+            Sector {getSector(selectedPlot.lat, selectedPlot.lng)}
+          </div>
+          <div className="text-xs font-display uppercase tracking-wider text-foreground mb-1">
+            {getPlotName(selectedPlot.plotId, selectedPlot.biome)}
+          </div>
+          <div className="flex items-center gap-1.5 mt-2">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: biomeColors[selectedPlot.biome] }} />
+            <span className="text-[10px] uppercase text-muted-foreground">{selectedPlot.biome}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div ref={containerRef} className={`relative overflow-hidden cursor-crosshair ${className}`}>
       <canvas
@@ -604,25 +656,7 @@ export function FlatMap({
         onWheel={handleWheel}
         className="block"
       />
-      {selectedPlot && selectedScreenPos && (
-        <div
-          className="absolute pointer-events-none translate-x-3 translate-y-3 z-20"
-          style={{ left: selectedScreenPos.x, top: selectedScreenPos.y }}
-        >
-          <div className="bg-card/90 backdrop-blur-md border border-primary/30 p-2.5 rounded shadow-2xl min-w-[140px]">
-            <div className="text-[10px] font-display uppercase tracking-widest text-primary/70 mb-0.5">
-              Sector {getSector(selectedPlot.lat, selectedPlot.lng)}
-            </div>
-            <div className="text-xs font-display uppercase tracking-wider text-foreground mb-1">
-              {getPlotName(selectedPlot.plotId, selectedPlot.biome)}
-            </div>
-            <div className="flex items-center gap-1.5 mt-2">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: biomeColors[selectedPlot.biome] }} />
-              <span className="text-[10px] uppercase text-muted-foreground">{selectedPlot.biome}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderPopup()}
       <div className="absolute bottom-20 right-3 z-10 flex flex-col gap-2">
         <button
           onClick={handleResetView}
