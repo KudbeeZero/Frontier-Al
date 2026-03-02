@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import path from "path";
+import fs from "fs";
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,6 +62,24 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // 1. Healthcheck route (Task 1 & 2)
+  // Respond 200 to "/" and "/health" for Replit production healthchecks
+  app.get("/health", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
+  app.get("/", (req, res, next) => {
+    // Return a plain text response for healthcheck requests to "/"
+    // but only if it's not a browser request for the HTML app
+    if (process.env.NODE_ENV === "production") {
+      const isHtmlRequest = req.headers.accept?.includes("text/html");
+      if (!isHtmlRequest) {
+        return res.status(200).send("Frontier server running");
+      }
+    }
+    next();
+  });
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -82,7 +102,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // Use process.env.PORT for production compatibility
   const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
   httpServer.listen(
     {
@@ -92,13 +111,6 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
-      if (process.env.NODE_ENV === "production") {
-        if (!process.env.PUBLIC_BASE_URL) {
-          log("WARNING: PUBLIC_BASE_URL is not set — NFT image/metadata URLs will use the request host as a per-request fallback. Set PUBLIC_BASE_URL to the canonical public URL of this deployment.");
-        } else {
-          log(`PUBLIC_BASE_URL = ${process.env.PUBLIC_BASE_URL}`);
-        }
-      }
     },
   );
 })();
