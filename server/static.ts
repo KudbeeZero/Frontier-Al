@@ -3,7 +3,6 @@ import fs from "fs";
 import path from "path";
 
 export function serveStatic(app: Express) {
-  // Vite build output (Replit production)
   const distPath = path.resolve(process.cwd(), "dist", "public");
 
   if (!fs.existsSync(distPath)) {
@@ -12,17 +11,26 @@ export function serveStatic(app: Express) {
     );
   }
 
-  // Serve raw public assets too (SVGs/icons) if present
   const clientPublicPath = path.resolve(process.cwd(), "client", "public");
   if (fs.existsSync(clientPublicPath)) {
     app.use(express.static(clientPublicPath));
   }
 
-  // Serve built assets
   app.use(express.static(distPath));
 
-  // SPA fallback (must be last)
-  app.use("/{*splat}", (_req, res) => {
+  // Express 5 compatibility: Use a middleware for catch-all SPA fallback
+  // instead of a string pattern that triggers path-to-regexp errors.
+  app.get("*", (req, res, next) => {
+    const pathName = req.path;
+    // Skip fallback for API, faction metadata, NFT metadata, and files with extensions
+    if (
+      pathName.startsWith("/api") ||
+      pathName.startsWith("/faction") ||
+      pathName.startsWith("/nft") ||
+      pathName.split("/").pop()?.includes(".")
+    ) {
+      return next();
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

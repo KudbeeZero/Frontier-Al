@@ -82,7 +82,8 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  const port = 5000;
+  // Use process.env.PORT for production compatibility
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
   httpServer.listen(
     {
       port,
