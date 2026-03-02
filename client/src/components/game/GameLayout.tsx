@@ -532,6 +532,9 @@ export function GameLayout() {
               currentPlayerId={player?.id || null}
               selectedParcelId={selectedParcelId}
               onParcelSelect={setSelectedParcelId}
+              onAttack={handleAttackClick}
+              onMine={handleMine}
+              onBuild={() => setActiveTab("economics")} // Economics panel handles building
               className="absolute inset-0 w-full h-full"
             />
           )}
