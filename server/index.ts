@@ -73,7 +73,8 @@ app.use((req, res, next) => {
     // but only if it's not a browser request for the HTML app
     if (process.env.NODE_ENV === "production") {
       const isHtmlRequest = req.headers.accept?.includes("text/html");
-      const isReplitHealthcheck = !req.headers["user-agent"] || req.headers["user-agent"].includes("Replit");
+      const userAgent = req.headers["user-agent"] || "";
+      const isReplitHealthcheck = !userAgent || userAgent.includes("Replit") || userAgent.includes("HealthCheck");
 
       if (!isHtmlRequest || isReplitHealthcheck) {
         return res.status(200).send("Frontier server running");
