@@ -7,6 +7,14 @@ export function serveStatic(app: Express) {
 
   // Use a middleware to check if dist/public exists before trying to serve
   app.use((req, res, next) => {
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isHealthcheck = req.path === "/health" || (req.path === "/" && (!req.headers.accept?.includes("text/html") || !userAgent || userAgent.includes("replit") || userAgent.includes("healthcheck")));
+
+    // Always prioritize the healthcheck route defined in index.ts
+    if (isHealthcheck) {
+      return next();
+    }
+
     if (process.env.NODE_ENV === "production" && !fs.existsSync(distPath)) {
       if (req.path === "/") {
         return res.status(200).send("Frontier server running (Build in progress)");
