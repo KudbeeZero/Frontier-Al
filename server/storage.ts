@@ -1553,6 +1553,17 @@ export class DbStorage implements IStorage {
         resolved         BOOLEAN NOT NULL DEFAULT FALSE
       )
     `);
+
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mint_idempotency (
+        key         TEXT PRIMARY KEY,
+        status      VARCHAR(10) NOT NULL DEFAULT 'pending',
+        asset_id    BIGINT,
+        tx_id       TEXT,
+        created_at  BIGINT NOT NULL,
+        updated_at  BIGINT NOT NULL
+      )
+    `);
     await this.db.execute(sql`
       CREATE INDEX IF NOT EXISTS orbital_events_active_idx
         ON orbital_events (resolved, end_at)

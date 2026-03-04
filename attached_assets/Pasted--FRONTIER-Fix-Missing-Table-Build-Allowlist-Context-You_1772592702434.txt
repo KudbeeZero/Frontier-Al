@@ -1,0 +1,150 @@
+# FRONTIER — Fix Missing Table & Build Allowlist
+
+## Context
+
+You are working inside the **Frontier-Al** Replit project. This is a production MMO strategy game.
+
+**DO NOT** refactor, rename, restructure, or touch anything outside the two files listed below. Make only the exact changes described.
+
+-----
+
+## Problem 1 — `mint_idempotency` table is never auto-created
+
+`DbStorage._doInitialize()` in `server/storage.ts` manually creates safety-net tables on boot using `CREATE TABLE IF NOT EXISTS`. The `mint_idempotency` table is **missing from this list** but is actively used by the land purchase flow in `server/routes.ts`. If this table doesn’t exist, any land purchase attempt will crash the server with a relation-not-found error.
+
+## Problem 2 — `algosdk` and wallet packages missing from build allowlist
+
+In `script/build.ts`, the `allowlist` array controls which packages get **bundled** into the production binary. Any package NOT on the list is externalized — meaning it must exist as a `node_modules` entry at runtime. On Replit Autoscale deployments, externalized packages that aren’t explicitly installed at runtime will cause **module-not-found crashes** on any blockchain call. `algosdk`, `@perawallet/connect`, and `lute-connect` are all missing from the allowlist.
+
+-----
+
+## Fix 1 — `server/storage.ts`
+
+Find this block inside `_doInitialize()` (around line 1542):
+
+```typescript
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS orbital_events (
+        id               VARCHAR(36) PRIMARY KEY,
+        type             VARCHAR(30) NOT NULL,
+        cosmetic         BOOLEAN NOT NULL DEFAULT FALSE,
+        start_at         BIGINT NOT NULL,
+        end_at           BIGINT NOT NULL,
+        seed             INT NOT NULL DEFAULT 0,
+        intensity        REAL NOT NULL DEFAULT 0.5,
+        trajectory       JSONB NOT NULL DEFAULT '{}',
+        target_parcel_id VARCHAR(36),
+        effects          JSONB NOT NULL DEFAULT '[]',
+        resolved         BOOLEAN NOT NULL DEFAULT FALSE
+      )
+    `);
+```
+
+Add the following block **directly after** it (after the closing backtick and semicolon):
+
+```typescript
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS mint_idempotency (
+        key         TEXT PRIMARY KEY,
+        status      VARCHAR(10) NOT NULL DEFAULT 'pending',
+        asset_id    BIGINT,
+        tx_id       TEXT,
+        created_at  BIGINT NOT NULL,
+        updated_at  BIGINT NOT NULL
+      )
+    `);
+```
+
+-----
+
+## Fix 2 — `script/build.ts`
+
+Find the `allowlist` array. It currently looks like this:
+
+```typescript
+const allowlist = [
+  "@google/generative-ai",
+  "axios",
+  "connect-pg-simple",
+```
+
+Add the following three entries to the allowlist array. Insert them in alphabetical order with the `@` scoped packages grouped at the top:
+
+```typescript
+  "@perawallet/connect",
+  "algosdk",
+  "lute-connect",
+```
+
+The final top of the allowlist should look like this:
+
+```typescript
+const allowlist = [
+  "@google/generative-ai",
+  "@perawallet/connect",
+  "algosdk",
+  "axios",
+  "connect-pg-simple",
+  "cors",
+  "date-fns",
+  "drizzle-orm",
+  "drizzle-zod",
+  "express",
+  "express-rate-limit",
+  "express-session",
+  "jsonwebtoken",
+  "lute-connect",
+  "memorystore",
+  "multer",
+  "nanoid",
+  "nodemailer",
+  "openai",
+  "passport",
+  "passport-local",
+  "pg",
+  "stripe",
+  "uuid",
+  "ws",
+  "xlsx",
+  "zod",
+  "zod-validation-error",
+];
+```
+
+-----
+
+## After Making Both Changes
+
+Run in the Replit Shell:
+
+```bash
+npm run db:push
+```
+
+Then start the project normally.
+
+-----
+
+## Verification Checklist
+
+- [ ] `server/storage.ts` — `mint_idempotency` CREATE TABLE IF NOT EXISTS block exists directly after the `orbital_events` block in `_doInitialize()`
+- [ ] `script/build.ts` — `@perawallet/connect`, `algosdk`, and `lute-connect` are present in the `allowlist` array
+- [ ] `npm run db:push` completed without errors
+- [ ] Project boots without errors
+
+-----
+
+## DO NOT Touch
+
+- `server/db.ts`
+- `server/db-schema.ts`
+- `server/index.ts`
+- `server/routes.ts`
+- `server/algorand.ts`
+- Any frontend files
+- Any game logic
+- `.replit`
+- `drizzle.config.ts`
+- The `DbStorage` or `MemStorage` class logic (only `_doInitialize` internals are touched)
+
+These are the **only two files** that need changes. Do not interpret this as an invitation to refactor anything else.
