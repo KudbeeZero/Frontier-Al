@@ -3362,4 +3362,9 @@ export class DbStorage implements IStorage {
 // Export: swap MemStorage → DbStorage here when DATABASE_URL is available.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const storage: IStorage = new MemStorage();
+export const storage: IStorage = process.env.DATABASE_URL
+  ? new DbStorage()
+  : (() => {
+      console.warn("[STORAGE] No DATABASE_URL found — falling back to MemStorage. All game state is ephemeral and will reset on restart.");
+      return new MemStorage();
+    })();

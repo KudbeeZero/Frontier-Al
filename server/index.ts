@@ -80,6 +80,11 @@ app.use((req, res, next) => {
     next();
   });
 
+  if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+    console.error("[FATAL] DATABASE_URL is required in production. Provision a PostgreSQL database in Replit and ensure the secret is set. Exiting.");
+    process.exit(1);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
