@@ -115,6 +115,9 @@
   "overrides": {
     "drizzle-kit": {
       "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
+    },
+    "@walletconnect/socket-transport": {
+      "ws": "^7.5.10"
     }
   },
   "optionalDependencies": {
