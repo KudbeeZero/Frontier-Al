@@ -20,7 +20,7 @@ import {
   FACTION_DEFINITIONS,
 } from "./services/chain/factions.js";
 // Batcher remains in algorand.ts (Phase 2 will migrate it); imported for compatibility.
-import { batchedTransferFrontierASA, indexerClient } from "./algorand.js";
+import { batchedTransferFrontierASA, indexerClient, algodClient } from "./algorand.js";
 
 export async function registerRoutes(
   httpServer: Server,
