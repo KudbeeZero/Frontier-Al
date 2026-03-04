@@ -26,7 +26,7 @@ export function serveStatic(app: Express) {
   // Task 3: Production static serving
   app.use(express.static(distPath));
 
-  app.get("*", (req, res, next) => {
+  app.get("/{*path}", (req, res, next) => {
     const pathName = req.path;
     // Skip fallback for API and files with dots
     if (
