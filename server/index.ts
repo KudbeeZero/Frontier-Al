@@ -73,16 +73,29 @@ app.use((req, res, next) => {
     // but only if it's not a browser request for the HTML app
     if (process.env.NODE_ENV === "production") {
       const isHtmlRequest = req.headers.accept?.includes("text/html");
-      if (!isHtmlRequest) {
+      const isReplitHealthcheck = !req.headers["user-agent"] || req.headers["user-agent"].includes("Replit");
+
+      if (!isHtmlRequest || isReplitHealthcheck) {
         return res.status(200).send("Frontier server running");
       }
     }
     next();
   });
 
-  if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
-    console.error("[FATAL] DATABASE_URL is required in production. Provision a PostgreSQL database in Replit and ensure the secret is set. Exiting.");
-    process.exit(1);
+  if (process.env.NODE_ENV === "production") {
+    const requiredSecrets = [
+      "DATABASE_URL",
+      "SESSION_SECRET",
+      "ALGORAND_ADMIN_MNEMONIC",
+      "ALGORAND_ADMIN_ADDRESS",
+    ];
+    const missing = requiredSecrets.filter((s) => !process.env[s]);
+    if (missing.length > 0) {
+      console.error(
+        `[FATAL] Missing required secrets in production: ${missing.join(", ")}. Exiting.`,
+      );
+      process.exit(1);
+    }
   }
 
   await registerRoutes(httpServer, app);
