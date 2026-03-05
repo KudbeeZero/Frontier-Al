@@ -17,7 +17,7 @@ const GLOBE_RADIUS = 2;
 const PLOT_COUNT = 21000;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-export const FACTION_COLORS: Record<string, {
+const FACTION_COLORS: Record<string, {
   three: THREE.Color;
   hex: string;
   glow: string;
