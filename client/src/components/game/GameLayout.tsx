@@ -144,6 +144,10 @@ export function GameLayout() {
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
 
   const handleMine = async () => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
     if (miningParcelIds.has(selectedParcelId)) return;
     setMiningParcelIds((prev) => new Set([...prev, selectedParcelId]));
@@ -171,6 +175,10 @@ export function GameLayout() {
   };
 
   const handleMineParcel = async (parcelId: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player) return;
     if (miningParcelIds.has(parcelId)) return;
     const parcel = gameState?.parcels.find(p => p.id === parcelId);
@@ -200,6 +208,10 @@ export function GameLayout() {
   };
 
   const handleUpgrade = async (type: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
     queueUpgradeAction(selectedParcel.plotId, type);
     upgradeMutation.mutate(
@@ -214,6 +226,10 @@ export function GameLayout() {
   const handleAttackClick = () => setAttackModalOpen(true);
 
   const handleAttackConfirm = async (troops: number, iron: number, fuel: number, commanderId?: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
     queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
     attackMutation.mutate(
@@ -231,6 +247,10 @@ export function GameLayout() {
   };
 
   const handleBuild = (type: ImprovementType) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
     queueBuildAction(selectedParcel.plotId, type);
     buildMutation.mutate(
@@ -272,6 +292,10 @@ export function GameLayout() {
   };
 
   const handleCollectAll = () => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player) return;
     collectMutation.mutate(player.id, {
       onSuccess: (data: any) => {

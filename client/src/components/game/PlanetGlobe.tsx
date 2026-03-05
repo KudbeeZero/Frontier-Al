@@ -178,7 +178,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
       const color = isSelected
         ? COLOR_SELECTED
-        : COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1);
+        : parcel?.ownerId === currentPlayerId
+          ? COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1)
+          : getPlotColor(parcel, currentPlayerId, players);
       meshRef.current.setColorAt(i, color);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
