@@ -28,6 +28,7 @@ interface LandSheetProps {
   isUpgrading: boolean;
   isBuilding: boolean;
   isPurchasing: boolean;
+  isWalletConnected: boolean;
   isSpecialAttacking?: boolean;
 }
 
@@ -72,6 +73,7 @@ export function LandSheet({
   isUpgrading,
   isBuilding,
   isPurchasing,
+  isWalletConnected,
   isSpecialAttacking,
 }: LandSheetProps) {
   const [expanded, setExpanded] = useState(false);
@@ -227,7 +229,7 @@ export function LandSheet({
               <Button
                 size="sm"
                 onClick={onPurchase}
-                disabled={isPurchasing}
+                disabled={isPurchasing || !isWalletConnected}
                 className="flex-1 font-display uppercase tracking-wide text-xs"
                 data-testid="button-purchase"
               >

@@ -756,6 +756,7 @@ export function GameLayout() {
           isUpgrading={upgradeMutation.isPending}
           isBuilding={buildMutation.isPending}
           isPurchasing={purchaseMutation.isPending}
+          isWalletConnected={isWalletConnected}
           isSpecialAttacking={specialAttackMutation.isPending}
         />
       )}
