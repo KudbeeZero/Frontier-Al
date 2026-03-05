@@ -181,6 +181,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   });
 
   useEffect(() => {
+    console.log("[PlanetGlobe] players count:", players.length, "parcels with owners:", parcels.filter(p => p.ownerId).length);
     if (!meshRef.current) return;
     for (let i = 0; i < plotCoords.length; i++) {
       const coord = plotCoords[i];
