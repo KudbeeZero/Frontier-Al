@@ -244,10 +244,21 @@ export function GameLayout() {
 
   const handlePurchase = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
+
+    if (!isWalletConnected) {
+      toast({
+        title: "Wallet Required",
+        description: "Connect your Algorand wallet to purchase territory.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedParcel.purchasePriceAlgo !== null) {
       const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
       if (result === "cancelled") return;
     }
+
     purchaseMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {

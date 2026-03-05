@@ -572,14 +572,29 @@ export async function registerRoutes(
   app.post("/api/actions/purchase", async (req, res) => {
     try {
       const action = purchaseActionSchema.parse(req.body);
+
+      // Validate player and wallet BEFORE executing the purchase.
+      const player = await storage.getPlayer(action.playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+
+      // Reject purchases from placeholder/unconnected wallet addresses.
+      // This mirrors the client-side guard and cannot be bypassed by direct API calls.
+      if (
+        !player.address ||
+        player.address === "PLAYER_WALLET" ||
+        player.address.startsWith("AI_") ||
+        player.address.length !== 58
+      ) {
+        return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
+      }
+
       const parcel = await storage.purchaseLand(action);
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
       // AI purchases do not receive NFTs. Fire-and-forget so the HTTP
       // response is immediate; minting happens in the background.
       let nftAssetId: number | null = null;
-      const player = await storage.getPlayer(action.playerId);
-      const buyerAddress = player?.address;
+      const buyerAddress = player.address;
       const isHumanBuyer =
         buyerAddress &&
         !buyerAddress.startsWith("AI_") &&
