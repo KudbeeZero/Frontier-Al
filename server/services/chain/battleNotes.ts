@@ -34,8 +34,8 @@
  * }
  */
 
-import { getFactionAsaId } from "./factions.js";
-import { getNetwork }      from "./client.js";
+import { getFactionAsaId } from "./factions";
+import { getNetwork }      from "./client";
 
 export type BattleNoteType = "battle_reward" | "reconquest_loss" | "raid_bounty";
 

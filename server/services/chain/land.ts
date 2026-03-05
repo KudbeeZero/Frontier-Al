@@ -17,8 +17,8 @@
  */
 
 import algosdk from "algosdk";
-import { getAlgodClient, getAdminAccount, getNetwork } from "./client.js";
-import type { MintLandParams, TransferLandParams, MintResult, AssetId } from "./types.js";
+import { getAlgodClient, getAdminAccount, getNetwork } from "./client";
+import type { MintLandParams, TransferLandParams, MintResult, AssetId } from "./types";
 
 // ── Mint ──────────────────────────────────────────────────────────────────────
 

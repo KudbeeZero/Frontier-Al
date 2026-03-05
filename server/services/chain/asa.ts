@@ -9,8 +9,8 @@
  */
 
 import algosdk from "algosdk";
-import { getAlgodClient, getAdminAccount, getNetwork } from "./client.js";
-import type { AssetId, CreateAsaParams } from "./types.js";
+import { getAlgodClient, getAdminAccount, getNetwork } from "./client";
+import type { AssetId, CreateAsaParams } from "./types";
 
 const FRONTIER_ASA_TOTAL_SUPPLY = 1_000_000_000n;
 const FRONTIER_ASA_DECIMALS     = 6;

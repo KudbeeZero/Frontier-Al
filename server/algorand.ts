@@ -1,48 +1,14 @@
-import algosdk from "algosdk";
-import { eq } from "drizzle-orm";
-import { db } from "./db";
-import { plotNfts } from "./db-schema";
+import { getAlgodClient, getIndexerClient, getAdminAccount, getNetwork } from "./services/chain/client";
 
-// Override with ALGOD_URL / INDEXER_URL / ALGORAND_NETWORK env vars to switch
-// networks without code changes. ALGORAND_NETWORK is embedded into on-chain
-// notes so transactions can be attributed to the correct network by indexers.
-const ALGOD_URL = process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud";
-const INDEXER_URL = process.env.INDEXER_URL ?? "https://testnet-idx.algonode.cloud";
-/** "testnet" | "mainnet" -- embedded into transaction notes for traceability */
-const ALGORAND_NETWORK = process.env.ALGORAND_NETWORK ?? "testnet";
+// Export for compatibility with existing code
+export const algodClient = getAlgodClient();
+export const indexerClient = getIndexerClient();
 
-export const algodClient = new algosdk.Algodv2("", ALGOD_URL, "");
-export const indexerClient = new algosdk.Indexer("", INDEXER_URL, "");
+const ALGORAND_NETWORK = getNetwork();
 
-let adminAccount: algosdk.Account | null = null;
-let frontierAsaId: number | null = null;
+// ... existing code ...
 
-const FRONTIER_ASA_TOTAL_SUPPLY = 1_000_000_000;
-const FRONTIER_ASA_DECIMALS = 6;
-
-export function getAdminAccount(): algosdk.Account {
-  if (adminAccount) return adminAccount;
-
-  const mnemonic = process.env.ALGORAND_ADMIN_MNEMONIC;
-  if (!mnemonic) throw new Error("ALGORAND_ADMIN_MNEMONIC not set");
-
-  adminAccount = algosdk.mnemonicToSecretKey(mnemonic);
-
-  const expectedAddress = process.env.ALGORAND_ADMIN_ADDRESS;
-  if (expectedAddress && adminAccount.addr.toString() !== expectedAddress) {
-    console.warn(`Admin address mismatch: derived ${adminAccount.addr.toString()} vs expected ${expectedAddress}`);
-  }
-
-  return adminAccount;
-}
-
-export function getAdminAddress(): string {
-  try {
-    return getAdminAccount().addr.toString();
-  } catch {
-    return process.env.ALGORAND_ADMIN_ADDRESS || "";
-  }
-}
+export { getAdminAccount, getAdminAddress, getNetwork } from "./services/chain/client";
 
 export function getFrontierAsaId(): number | null {
   return frontierAsaId;

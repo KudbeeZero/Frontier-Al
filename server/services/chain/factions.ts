@@ -29,10 +29,10 @@
 
 import algosdk from "algosdk";
 import { eq } from "drizzle-orm";
-import { db } from "../../db.js";
-import { aiFactionIdentities } from "../../db-schema.js";
-import { getAlgodClient, getAdminAccount, getNetwork } from "./client.js";
-import type { AssetId } from "./types.js";
+import { db } from "../../db";
+import { aiFactionIdentities } from "../../db-schema";
+import { getAlgodClient, getAdminAccount, getNetwork } from "./client";
+import type { AssetId } from "./types";
 
 // ── Faction Definitions ───────────────────────────────────────────────────────
 

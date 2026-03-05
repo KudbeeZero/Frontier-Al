@@ -10,17 +10,16 @@ import { eq, sql } from "drizzle-orm";
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
 // Routes import ONLY from the service layer — never from algosdk directly.
-import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId } from "./services/chain/asa.js";
-import { getAdminAddress, getAdminBalance } from "./services/chain/client.js";
-import { mintLandNft } from "./services/chain/land.js";
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId } from "./services/chain/asa";
+import { getAdminAddress, getAdminBalance } from "./services/chain/client";
+import { mintLandNft } from "./services/chain/land";
 import {
   bootstrapFactionIdentities,
   getAllFactionAsaIds,
   getFactionAsaId,
   FACTION_DEFINITIONS,
-} from "./services/chain/factions.js";
-// Batcher remains in algorand.ts (Phase 2 will migrate it); imported for compatibility.
-import { batchedTransferFrontierASA, indexerClient, algodClient } from "./algorand.js";
+} from "./services/chain/factions";
+import { batchedTransferFrontierASA, indexerClient, algodClient } from "./algorand";
 
 export async function registerRoutes(
   httpServer: Server,

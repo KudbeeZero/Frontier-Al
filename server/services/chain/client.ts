@@ -7,7 +7,7 @@
  */
 
 import algosdk from "algosdk";
-import type { ChainNetwork } from "./types.js";
+import type { ChainNetwork } from "./types";
 
 // Override with env vars to switch networks without code changes.
 const ALGOD_URL     = process.env.ALGOD_URL     ?? "https://testnet-api.algonode.cloud";
