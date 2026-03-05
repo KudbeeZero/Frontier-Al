@@ -366,7 +366,15 @@ function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine, onBui
     : "UNCLAIMED";
 
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[125%] z-30 pointer-events-none" style={{ minWidth: 280 }}>
+  <div className="absolute z-30 pointer-events-none"
+    style={{
+      bottom: "calc(50% + 20px)",
+      left: "50%",
+      transform: "translateX(-50%)",
+      width: "min(320px, calc(100vw - 32px))",
+      maxWidth: "100%",
+    }}
+  >
       <div
         className="pointer-events-auto flex flex-col gap-3 rounded-2xl p-4 backdrop-blur-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         style={{
