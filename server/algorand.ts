@@ -222,7 +222,7 @@ class FrontierTransferBatcher {
   /** Algorand atomic group hard limit */
   private readonly maxBatchCount = 16;
   /** Maximum time to wait before flushing a partial batch (ms) */
-  private readonly flushDelayMs = 30_000;
+  private readonly flushDelayMs = 5_000;
 
   /** Queue a transfer and return a promise that resolves with its on-chain txId */
   async queue(toAddress: string, amount: number): Promise<string> {

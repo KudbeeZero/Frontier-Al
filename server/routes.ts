@@ -676,28 +676,37 @@ export async function registerRoutes(
       const player = await storage.getPlayer(action.playerId);
       if (!player) return res.status(404).json({ error: "Player not found" });
 
+      const walletAddress = player.address;
+      const asaId = getFrontierAsaId();
+      const isRealWallet =
+        walletAddress &&
+        walletAddress !== "PLAYER_WALLET" &&
+        !walletAddress.startsWith("AI_");
+
+      // Step 1: Check opt-in BEFORE crediting the DB balance.
+      // Real wallets that haven't opted in cannot receive on-chain tokens,
+      // so we refuse the claim entirely instead of silently crediting in-game
+      // balance that can never be settled on-chain.
+      if (asaId && isRealWallet) {
+        const optedIn = await isAddressOptedIn(walletAddress);
+        if (!optedIn) {
+          return res.json({ success: false, reason: "wallet_not_opted_in" });
+        }
+      }
+
+      // Step 2: Credit the DB balance only after confirming opt-in.
       const result = await storage.claimFrontier(action.playerId);
       let txId: string | undefined;
 
-      const walletAddress = player.address;
-      const asaId = getFrontierAsaId();
-      if (asaId && result.amount > 0 && walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
-        // Queue into the batcher (fire-and-forget) so the HTTP response is immediate.
-        // Multiple concurrent claims are grouped into Algorand atomic transaction
-        // batches that flush once 1 KB of combined data is accumulated (≤ 16 txns).
-        isAddressOptedIn(walletAddress).then((optedIn) => {
-          if (optedIn) {
-            batchedTransferFrontierASA(walletAddress, result.amount)
-              .then((batchTxId) =>
-                console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
-              )
-              .catch((err) =>
-                console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
-              );
-          } else {
-            console.log(`Player ${walletAddress} not opted into FRONTIER ASA, claim recorded in-game only`);
-          }
-        }).catch((err) => console.error("Opt-in check failed:", err));
+      // Step 3: Queue the on-chain transfer (fire-and-forget so response is immediate).
+      if (asaId && result.amount > 0 && isRealWallet) {
+        batchedTransferFrontierASA(walletAddress, result.amount)
+          .then((batchTxId) =>
+            console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
+          )
+          .catch((err) =>
+            console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
+          );
       }
 
       res.json({ success: true, claimed: result, txId, asaId });
