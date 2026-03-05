@@ -119,7 +119,6 @@ export async function getOrCreateFrontierAsa(
 ): Promise<AssetId> {
   // 1. Already resolved in this process run
   if (_frontierAsaId) {
-    console.log(`[chain/asa] Using in-memory FRONTIER ASA: ${_frontierAsaId}`);
     return _frontierAsaId;
   }
 
@@ -179,6 +178,102 @@ export async function isAddressOptedIn(address: string, assetId?: AssetId): Prom
     console.error(`[chain/asa] isAddressOptedIn failed for ${address}:`, err);
     return false;
   }
+}
+
+// ── Batched FRONTIER ASA Transfer ─────────────────────────────────────────────
+// Groups pending transfers into Algorand atomic transaction groups (max 16)
+// to reduce fees and confirm all transfers in a single round.
+
+interface PendingTransfer {
+  toAddress: string;
+  amount: number;
+  resolve: (txId: string) => void;
+  reject: (err: Error) => void;
+}
+
+class FrontierTransferBatcher {
+  private _pending: PendingTransfer[] = [];
+  private _flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly MAX_BATCH  = 16;
+  private readonly FLUSH_MS   = 5_000;
+
+  queue(toAddress: string, amount: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this._pending.push({ toAddress, amount, resolve, reject });
+      this._maybeFlush();
+    });
+  }
+
+  private _maybeFlush() {
+    if (this._pending.length >= this.MAX_BATCH) {
+      if (this._flushTimer) { clearTimeout(this._flushTimer); this._flushTimer = null; }
+      this._doFlush();
+    } else if (!this._flushTimer) {
+      this._flushTimer = setTimeout(() => { this._flushTimer = null; this._doFlush(); }, this.FLUSH_MS);
+    }
+  }
+
+  private async _doFlush() {
+    if (this._pending.length === 0) return;
+    const batch = this._pending.splice(0, this.MAX_BATCH);
+    try {
+      const txIds = await _sendAtomicTransfers(batch.map(b => ({ toAddress: b.toAddress, amount: b.amount })));
+      batch.forEach((item, i) => item.resolve(txIds[i] ?? txIds[0]));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      batch.forEach(item => item.reject(error));
+    }
+    if (this._pending.length > 0) this._maybeFlush();
+  }
+}
+
+async function _sendAtomicTransfers(
+  transfers: Array<{ toAddress: string; amount: number }>
+): Promise<string[]> {
+  const targetId = _frontierAsaId;
+  if (!targetId) throw new Error("[chain/asa] batchedTransferFrontierAsa: no ASA ID available");
+
+  const algod   = getAlgodClient();
+  const account = getAdminAccount();
+  const network = getNetwork();
+  const sp      = await algod.getTransactionParams().do();
+  const batchTs = Date.now();
+
+  const txns = transfers.map(({ toAddress, amount }, index) => {
+    const amountUnits = Math.floor(amount * Math.pow(10, FRONTIER_ASA_DECIMALS));
+    const note = JSON.stringify({
+      game: "FRONTIER", v: 1, type: "batch_claim",
+      amt: amount, to: toAddress, batchIdx: index,
+      batchSize: transfers.length, ts: batchTs, network,
+    });
+    return algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      sender: account.addr.toString(), receiver: toAddress,
+      amount: amountUnits, assetIndex: targetId, suggestedParams: sp,
+      note: new TextEncoder().encode(`FRNTR:${note}`),
+    });
+  });
+
+  if (txns.length > 1) algosdk.assignGroupID(txns);
+
+  const signedTxns = txns.map(txn => txn.signTxn(account.sk));
+  const response   = await algod.sendRawTransaction(signedTxns).do();
+  const firstTxId  = response.txid || txns[0].txID();
+  await algosdk.waitForConfirmation(algod, firstTxId, 2);
+
+  console.log(`[chain/asa] Atomic batch: ${txns.length} transfer(s) confirmed, firstTxId=${firstTxId}`);
+  return txns.map(txn => txn.txID());
+}
+
+/** Singleton — import and call .queue() from route handlers */
+const _batcher = new FrontierTransferBatcher();
+
+/**
+ * Queue a FRONTIER ASA transfer. Batches up to 16 transfers per Algorand
+ * atomic group; flushes after 5s of inactivity or when the group is full.
+ * Resolves with the on-chain txId once the batch confirms.
+ */
+export function batchedTransferFrontierAsa(toAddress: string, amount: number): Promise<string> {
+  return _batcher.queue(toAddress, amount);
 }
 
 // ── ASA Transfer ──────────────────────────────────────────────────────────────

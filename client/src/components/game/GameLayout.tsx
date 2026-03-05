@@ -22,6 +22,7 @@ import { OrbitalCanvas } from "./OrbitalCanvas";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
+import { useQuery } from "@tanstack/react-query";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -314,16 +315,81 @@ export function GameLayout() {
     }
     claimFrontierMutation.mutate(player.id, {
       onSuccess: (data: any) => {
+        if (!data.success && data.reason === "wallet_not_opted_in") {
+          toast({ title: "Opt-In Required", description: "Your wallet must opt into the FRONTIER ASA before tokens can be sent on-chain.", variant: "destructive" });
+          return;
+        }
         const amount = data.claimed?.amount || 0;
+        if (amount === 0) {
+          toast({ title: "Nothing to Claim", description: "Mine resources and own territory to earn FRONTIER tokens." });
+          return;
+        }
         const txId = data.txId;
         if (txId) {
           toast({ title: "FRONTIER Claimed On-Chain", description: `+${amount.toFixed(2)} FRONTIER tokens sent to your wallet. TX: ${txId.slice(0, 8)}...` });
         } else {
-          toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens` });
+          toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens credited` });
         }
       },
       onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" }),
     });
+  };
+
+  // NFT delivery: query status of selected plot's NFT when player owns it
+  const ownedSelectedPlotId = selectedParcel && player && selectedParcel.ownerId === player.id
+    ? selectedParcel.plotId
+    : null;
+
+  const { data: nftData, refetch: refetchNft } = useQuery<{
+    plotId: number; assetId: number | null; mintedToAddress: string | null;
+  } | null>({
+    queryKey: ["nft-plot", ownedSelectedPlotId],
+    queryFn: async () => {
+      if (!ownedSelectedPlotId) return null;
+      const res = await fetch(`/api/nft/plot/${ownedSelectedPlotId}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to fetch NFT status");
+      return res.json();
+    },
+    enabled: !!ownedSelectedPlotId,
+    staleTime: 30_000,
+  });
+
+  const adminAddr = ""; // server-side check handles admin; client just knows custody = mintedToAddress !== player address
+  const nftInfo = (() => {
+    if (!nftData || !nftData.assetId) return null;
+    const inCustody = !!nftData.mintedToAddress && nftData.mintedToAddress !== wallet.address;
+    return { assetId: nftData.assetId, inCustody };
+  })();
+
+  const [isDeliveringNft, setIsDeliveringNft] = useState(false);
+
+  const handleDeliverNft = async () => {
+    if (!ownedSelectedPlotId || !wallet.address || !nftInfo) return;
+    setIsDeliveringNft(true);
+    try {
+      const res = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
+      } else if (data.success) {
+        toast({ title: "NFT Delivered!", description: `Plot NFT (ASA ${nftInfo.assetId}) sent to your wallet. TX: ${data.txId?.slice(0, 8)}...` });
+        refetchNft();
+      } else if (data.reason === "not_opted_in") {
+        toast({ title: "Opt-In Required", description: `Opt into ASA ${nftInfo.assetId} in your wallet, then claim again.`, variant: "destructive" });
+      } else {
+        toast({ title: "Already Delivered", description: data.message || "NFT is already in your wallet." });
+        refetchNft();
+      }
+    } catch (err) {
+      toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsDeliveringNft(false);
+    }
   };
 
   const handleMintAvatar = (tier: CommanderTier) => {
@@ -783,6 +849,9 @@ export function GameLayout() {
           isPurchasing={purchaseMutation.isPending}
           isWalletConnected={isWalletConnected}
           isSpecialAttacking={specialAttackMutation.isPending}
+          nftInfo={nftInfo}
+          onDeliverNft={handleDeliverNft}
+          isDeliveringNft={isDeliveringNft}
         />
       )}
 

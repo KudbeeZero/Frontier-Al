@@ -31,9 +31,6 @@ export function useOrbitalEngine() {
       const active  = getActiveCosmeticEvents(now);
 
       if (epoch !== lastEpochRef.current) {
-        console.log(
-          `[ORBITAL-DEBUG] client epoch change | epoch: ${epoch} | cosmetic: ${active.length}`
-        );
         lastEpochRef.current = epoch;
       }
 

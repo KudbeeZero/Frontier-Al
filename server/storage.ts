@@ -1343,14 +1343,12 @@ export class MemStorage implements IStorage {
       targetParcelId, effects: [], resolved: false,
     };
     this._memOrbitalEvents.push(event);
-    console.log(`[ORBITAL-DEBUG] MemStorage createOrbitalImpactEvent | type: ${type}`);
     return event;
   }
 
   async resolveOrbitalEvent(eventId: string): Promise<void> {
     const evt = this._memOrbitalEvents.find((e) => e.id === eventId);
     if (evt) evt.resolved = true;
-    console.log(`[ORBITAL-DEBUG] MemStorage resolveOrbitalEvent | id: ${eventId}`);
   }
 
   async triggerOrbitalCheck(): Promise<OrbitalEvent | null> {
@@ -1826,10 +1824,6 @@ export class DbStorage implements IStorage {
       timestamp:   now,
     });
 
-    console.log(
-      `[ORBITAL-DEBUG] createOrbitalImpactEvent | id: ${id} | type: ${type} | parcel: ${targetParcelId ?? "global"} | effects: ${effects.length} | startAt: ${now}`
-    );
-
     const event: OrbitalEvent = {
       id, type, cosmetic: false,
       startAt: now, endAt: now + durationMs,
@@ -1869,8 +1863,6 @@ export class DbStorage implements IStorage {
     await this.db.update(orbitalEventsTable)
       .set({ resolved: true })
       .where(eq(orbitalEventsTable.id, eventId));
-
-    console.log(`[ORBITAL-DEBUG] resolveOrbitalEvent | id: ${eventId} | resolved at: ${now}`);
   }
 
   async triggerOrbitalCheck(): Promise<OrbitalEvent | null> {
@@ -1878,7 +1870,6 @@ export class DbStorage implements IStorage {
 
     // Roll for impact event
     if (Math.random() > ORBITAL_IMPACT_CHANCE) {
-      console.log(`[ORBITAL-DEBUG] triggerOrbitalCheck | no event this roll`);
       return null;
     }
 
@@ -3361,9 +3352,6 @@ export class DbStorage implements IStorage {
       .set({ currentTurn: sql`${gameMeta.currentTurn} + 1`, lastUpdateTs: now })
       .where(eq(gameMeta.id, 1));
 
-    if (newEvents.length > 0) {
-      console.log(`[ACTION-DEBUG] AI turn complete | events: ${newEvents.length} | persisted to DB | ts: ${now}`);
-    }
     return newEvents;
   }
 

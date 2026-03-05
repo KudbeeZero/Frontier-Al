@@ -10,16 +10,18 @@ import { eq, sql } from "drizzle-orm";
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
 // Routes import ONLY from the service layer — never from algosdk directly.
-import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId } from "./services/chain/asa";
-import { getAdminAddress, getAdminBalance } from "./services/chain/client";
-import { mintLandNft } from "./services/chain/land";
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa } from "./services/chain/asa";
+import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
+import { mintLandNft, transferLandNft } from "./services/chain/land";
 import {
   bootstrapFactionIdentities,
   getAllFactionAsaIds,
   getFactionAsaId,
   FACTION_DEFINITIONS,
 } from "./services/chain/factions";
-import { batchedTransferFrontierASA, indexerClient, algodClient } from "./algorand";
+
+const algodClient    = getAlgodClient();
+const indexerClient  = getIndexerClient();
 
 export async function registerRoutes(
   httpServer: Server,
@@ -303,6 +305,57 @@ export async function registerRoutes(
     }
   });
 
+  // Deliver a custody-held Plot NFT to its owner after they have opted in.
+  // POST /api/nft/deliver/:plotId  body: { address: string }
+  app.post("/api/nft/deliver/:plotId", async (req, res) => {
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId) || plotId < 1) {
+      return res.status(400).json({ error: "plotId must be a positive integer" });
+    }
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+
+    const { address } = req.body;
+    if (!address || typeof address !== "string" || address.length !== 58) {
+      return res.status(400).json({ error: "Valid Algorand address required in body.address" });
+    }
+
+    try {
+      const [row] = await db.select().from(plotNftsTable).where(eq(plotNftsTable.plotId, plotId));
+
+      if (!row) return res.status(404).json({ error: "No NFT record for this plot — not yet minted" });
+
+      const assetId = row.assetId ? Number(row.assetId) : null;
+      if (!assetId) return res.status(404).json({ error: "NFT not yet minted for this plot" });
+
+      const adminAddr = getAdminAddress();
+      if (row.mintedToAddress !== adminAddr) {
+        return res.json({ success: false, reason: "not_in_custody", message: "NFT already delivered to buyer", assetId });
+      }
+
+      // Verify the caller's wallet has opted into this specific plot NFT ASA
+      const optedIn = await isAddressOptedIn(address, assetId);
+      if (!optedIn) {
+        return res.json({ success: false, reason: "not_opted_in", message: `Opt into ASA ${assetId} in your wallet first`, assetId });
+      }
+
+      // Transfer the NFT from admin to the buyer
+      const { txId } = await transferLandNft({ assetId, toAddress: address });
+
+      // Update the holder address in plot_nfts
+      await db.update(plotNftsTable)
+        .set({ mintedToAddress: address })
+        .where(eq(plotNftsTable.plotId, plotId));
+
+      console.log(`[nft/deliver] plotId=${plotId} assetId=${assetId} delivered to ${address} txId=${txId}`);
+      res.json({ success: true, plotId, assetId, txId, explorerUrl: `https://allo.info/asset/${assetId}` });
+    } catch (error) {
+      console.error(`[nft/deliver] plotId=${plotId} error:`, error instanceof Error ? error.message : error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Delivery failed" });
+    }
+  });
+
   app.post("/api/actions/connect-wallet", async (req, res) => {
     try {
       const { playerId, address } = req.body;
@@ -327,7 +380,7 @@ export async function registerRoutes(
           try {
             const optedIn = await isAddressOptedIn(address);
             if (optedIn) {
-              welcomeBonusTxId = await batchedTransferFrontierASA(address, 500);
+              welcomeBonusTxId = await batchedTransferFrontierAsa(address, 500);
               console.log(`Welcome bonus ASA transfer: 500 FRONTIER to ${address}, TX: ${welcomeBonusTxId}`);
             }
           } catch (err) {
@@ -398,7 +451,7 @@ export async function registerRoutes(
           isAddressOptedIn(address)
             .then((optedIn) => {
               if (optedIn) {
-                batchedTransferFrontierASA(address, 500)
+                batchedTransferFrontierAsa(address, 500)
                   .then((txId) =>
                     console.log(`Welcome bonus: 500 FRONTIER → ${address}, TX: ${txId}`)
                   )
@@ -714,7 +767,7 @@ export async function registerRoutes(
 
       // Step 3: Queue the on-chain transfer (fire-and-forget so response is immediate).
       if (asaId && result.amount > 0 && isRealWallet) {
-        batchedTransferFrontierASA(walletAddress, result.amount)
+        batchedTransferFrontierAsa(walletAddress, result.amount)
           .then((batchTxId) =>
             console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
           )
@@ -809,7 +862,6 @@ export async function registerRoutes(
   app.get("/api/orbital/active", async (_req, res) => {
     try {
       const events = await storage.getActiveOrbitalEvents();
-      console.log(`[ORBITAL-DEBUG] GET /api/orbital/active | found: ${events.length} events`);
       res.json({ events });
     } catch (error) {
       console.error("[ORBITAL-DEBUG] getActiveOrbitalEvents error:", error);
@@ -835,7 +887,6 @@ export async function registerRoutes(
   app.post("/api/orbital/resolve/:id", async (req, res) => {
     try {
       await storage.resolveOrbitalEvent(req.params.id);
-      console.log(`[ORBITAL-DEBUG] POST /api/orbital/resolve/${req.params.id} | resolved`);
       res.json({ success: true });
     } catch (error) {
       console.error("[ORBITAL-DEBUG] resolveOrbitalEvent error:", error);

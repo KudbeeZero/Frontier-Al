@@ -9,7 +9,7 @@
 
 import { resolveBattle } from "./resolve.js";
 import { hashSeed } from "./random.js";
-import type { BattleInput } from "./types.js";
+import type { BattleInput, BattleResult } from "./types.js";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {

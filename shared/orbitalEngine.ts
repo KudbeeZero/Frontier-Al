@@ -133,10 +133,6 @@ export function generateCosmeticEvents(epochIndex: number): OrbitalEvent[] {
     });
   }
 
-  console.log(
-    `[ORBITAL-DEBUG] generateCosmeticEvents | epoch: ${epochIndex} | count: ${count} | types: [${events.map(e => e.type).join(",")}]`
-  );
-
   return events;
 }
 

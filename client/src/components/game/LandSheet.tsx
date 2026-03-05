@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull } from "lucide-react";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -30,6 +30,9 @@ interface LandSheetProps {
   isPurchasing: boolean;
   isWalletConnected: boolean;
   isSpecialAttacking?: boolean;
+  nftInfo?: { assetId: number; inCustody: boolean } | null;
+  onDeliverNft?: () => void;
+  isDeliveringNft?: boolean;
 }
 
 function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
@@ -75,6 +78,9 @@ export function LandSheet({
   isPurchasing,
   isWalletConnected,
   isSpecialAttacking,
+  nftInfo,
+  onDeliverNft,
+  isDeliveringNft,
 }: LandSheetProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -383,6 +389,42 @@ export function LandSheet({
             <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-2">
               <Swords className="w-3.5 h-3.5 text-destructive animate-pulse" />
               <span className="text-xs font-display uppercase tracking-wide text-destructive">Active Battle</span>
+            </div>
+          )}
+
+          {nftInfo && (
+            <div className="mt-2 p-2 bg-primary/5 border border-primary/20 rounded-md">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <PackageCheck className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs font-display uppercase tracking-wide text-primary">Plot NFT</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">ASA {nftInfo.assetId}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <a
+                    href={`https://allo.info/asset/${nftInfo.assetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  {nftInfo.inCustody && onDeliverNft && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onDeliverNft}
+                      disabled={isDeliveringNft}
+                      className="h-5 px-2 text-[10px] font-display uppercase"
+                    >
+                      {isDeliveringNft ? "Claiming..." : "Claim NFT"}
+                    </Button>
+                  )}
+                  {!nftInfo.inCustody && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">In Wallet</Badge>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
