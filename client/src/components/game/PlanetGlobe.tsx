@@ -242,7 +242,7 @@ function GlobeTerrain() {
           map={albedoTex}
           emissiveMap={nightTex}
           emissive={new THREE.Color(0.15, 0.3, 1.0)}
-          emissiveIntensity={0.5}
+          emissiveIntensity={0.35}
           roughness={0.85}
           metalness={0.05}
         />
@@ -252,7 +252,7 @@ function GlobeTerrain() {
         <meshBasicMaterial
           map={cloudsTex}
           transparent
-          opacity={0.28}
+          opacity={0.12}
           depthWrite={false}
           side={THREE.FrontSide}
           blending={THREE.AdditiveBlending}
