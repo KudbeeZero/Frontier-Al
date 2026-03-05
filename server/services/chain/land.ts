@@ -61,7 +61,7 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
   const createResponse = await algod.sendRawTransaction(signedCreate).do();
   const createTxId     = createResponse.txid || createTxn.txID();
 
-  const confirmedCreate = await algosdk.waitForConfirmation(algod, createTxId, 4);
+  const confirmedCreate = await algosdk.waitForConfirmation(algod, createTxId, 2);
   const assetId: AssetId = Number(
     (confirmedCreate as any).assetIndex ?? (confirmedCreate as any)["asset-index"]
   );
@@ -96,7 +96,7 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
     const transferResponse = await algod.sendRawTransaction(signedTransfer).do();
     transferTxId           = transferResponse.txid || transferTxn.txID();
 
-    await algosdk.waitForConfirmation(algod, transferTxId, 4);
+    await algosdk.waitForConfirmation(algod, transferTxId, 2);
 
     mintedToAddress = receiverAddress;
     custodyHeld     = false;
