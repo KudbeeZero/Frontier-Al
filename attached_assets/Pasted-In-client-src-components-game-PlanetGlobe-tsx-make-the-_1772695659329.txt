@@ -1,0 +1,152 @@
+In client/src/components/game/PlanetGlobe.tsx, make the following targeted replacements. Do not touch anything else.
+
+──────────────────────────────────────────
+CHANGE 1: Replace OWNER_COLORS block and getPlotColor function
+──────────────────────────────────────────
+
+Find this entire block (the OWNER_COLORS const and the getPlotColor function below it):
+
+const OWNER_COLORS = {
+  player: new THREE.Color("#00ff44"),
+  ai: new THREE.Color("#ff2222"),
+  selected: new THREE.Color("#00e5ff"),
+};
+
+function getPlotColor(parcel: LandParcel | undefined, currentPlayerId: string | null): THREE.Color {
+  if (!parcel) return new THREE.Color("#1a1a1a");
+  if (!parcel.ownerId) {
+    const baseColor = biomeColors[parcel.biome] || "#333333";
+    return new THREE.Color(baseColor).multiplyScalar(0.4);
+  }
+  if (parcel.ownerId === currentPlayerId) return OWNER_COLORS.player;
+  return OWNER_COLORS.ai;
+}
+
+Replace it with:
+
+const FACTION_COLORS: Record<string, string> = {
+  "NEXUS-7":  "#00e5ff",
+  "KRONOS":   "#ffb300",
+  "VANGUARD": "#ff1744",
+  "SPECTRE":  "#d500f9",
+};
+
+const COLOR_PLAYER   = new THREE.Color("#00ff6a");
+const COLOR_SELECTED = new THREE.Color("#ffffff");
+
+function getPlotColor(
+  parcel: LandParcel | undefined,
+  currentPlayerId: string | null,
+  players: Player[]
+): THREE.Color {
+  if (!parcel) return new THREE.Color("#0a0f1a");
+  if (!parcel.ownerId) {
+    const base = biomeColors[parcel.biome] || "#1a2035";
+    return new THREE.Color(base).multiplyScalar(0.22);
+  }
+  if (parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
+  // Find the owning player by id to get faction name
+  const owner = players.find(p => p.id === parcel.ownerId);
+  if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
+    return new THREE.Color(FACTION_COLORS[owner.name]).multiplyScalar(0.9);
+  }
+  // Other human player
+  return new THREE.Color("#ff6e40");
+}
+
+──────────────────────────────────────────
+CHANGE 2: Add players prop to PlotOverlayProps interface
+──────────────────────────────────────────
+
+Find:
+interface PlotOverlayProps {
+  parcels: LandParcel[];
+  currentPlayerId: string | null;
+  selectedPlotId: string | null;
+  onPlotSelect: (parcelId: string) => void;
+}
+
+Replace with:
+interface PlotOverlayProps {
+  parcels: LandParcel[];
+  players: Player[];
+  currentPlayerId: string | null;
+  selectedPlotId: string | null;
+  onPlotSelect: (parcelId: string) => void;
+}
+
+──────────────────────────────────────────
+CHANGE 3: Update PlotOverlay function signature and getPlotColor call
+──────────────────────────────────────────
+
+Find:
+function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
+
+Replace with:
+function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
+
+Then inside PlotOverlay, find the getPlotColor call:
+      const color = isSelected ? OWNER_COLORS.selected : getPlotColor(parcel, currentPlayerId);
+
+Replace with:
+      const color = isSelected ? COLOR_SELECTED : getPlotColor(parcel, currentPlayerId, players);
+
+──────────────────────────────────────────
+CHANGE 4: Pass players through Scene and into PlotOverlay
+──────────────────────────────────────────
+
+Find the SceneProps interface and add players to it:
+  parcels: LandParcel[];
+  currentPlayerId: string | null;
+
+Add players between them:
+  parcels: LandParcel[];
+  players: Player[];
+  currentPlayerId: string | null;
+
+Find the Scene function signature and add players:
+function Scene({ parcels, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
+
+Replace with:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
+
+Find the <PlotOverlay usage inside Scene and add players:
+        <PlotOverlay parcels={parcels} currentPlayerId={currentPlayerId} selectedPlotId={selectedPlotId} onPlotSelect={onPlotSelect} />
+
+Replace with:
+        <PlotOverlay parcels={parcels} players={players} currentPlayerId={currentPlayerId} selectedPlotId={selectedPlotId} onPlotSelect={onPlotSelect} />
+
+──────────────────────────────────────────
+CHANGE 5: Add players to PlanetGlobeProps and wire through
+──────────────────────────────────────────
+
+Find PlanetGlobeProps interface and add players:
+  parcels: LandParcel[];
+  currentPlayerId: string | null;
+
+Replace with:
+  parcels: LandParcel[];
+  players: Player[];
+  currentPlayerId: string | null;
+
+Find the PlanetGlobe function signature destructuring and add players:
+export default function PlanetGlobe({ parcels, currentPlayerId, selectedParcelId, onParcelSelect, onAttack, onMine, onBuild, className }: PlanetGlobeProps) {
+
+Replace with:
+export default function PlanetGlobe({ parcels, players, currentPlayerId, selectedParcelId, onParcelSelect, onAttack, onMine, onBuild, className }: PlanetGlobeProps) {
+
+Find the <Scene usage inside PlanetGlobe and add players:
+        <Scene parcels={parcels} currentPlayerId={currentPlayerId} selectedPlotId={selectedParcelId} onPlotSelect={onParcelSelect} controlsRef={controlsRef} />
+
+Replace with:
+        <Scene parcels={parcels} players={players} currentPlayerId={currentPlayerId} selectedPlotId={selectedParcelId} onPlotSelect={onParcelSelect} controlsRef={controlsRef} />
+
+──────────────────────────────────────────
+CHANGE 6: Add players prop in GameLayout.tsx
+──────────────────────────────────────────
+
+In client/src/components/game/GameLayout.tsx, find the <PlanetGlobe usage and add:
+  players={gameState?.players ?? []}
+
+Also add this import at the top of PlanetGlobe.tsx if Player is not already imported:
+import type { LandParcel, Player } from "@shared/schema";

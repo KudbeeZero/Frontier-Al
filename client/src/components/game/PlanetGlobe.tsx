@@ -31,7 +31,6 @@ export const FACTION_COLORS: Record<string, {
 
 const COLOR_PLAYER   = new THREE.Color("#00ff6a");
 const COLOR_SELECTED = new THREE.Color("#ffffff");
-const COLOR_UNOWNED  = new THREE.Color("#1a2035");
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
 
@@ -61,21 +60,19 @@ function latLngToVec3(lat: number, lng: number, r: number): THREE.Vector3 {
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
-  playerMap: Map<string, Player>
-): { color: THREE.Color; scale: number } {
-  if (!parcel) return { color: COLOR_UNOWNED, scale: 0.7 };
+  players: Player[]
+): THREE.Color {
+  if (!parcel) return new THREE.Color("#0a0f1a");
   if (!parcel.ownerId) {
     const base = biomeColors[parcel.biome] || "#1a2035";
-    return { color: new THREE.Color(base).multiplyScalar(0.25), scale: 0.75 };
+    return new THREE.Color(base).multiplyScalar(0.22);
   }
-  if (parcel.ownerId === currentPlayerId) {
-    return { color: COLOR_PLAYER, scale: 1.1 };
+  if (parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
+  const owner = players.find(p => p.id === parcel.ownerId);
+  if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
+    return FACTION_COLORS[owner.name].three.clone().multiplyScalar(0.9);
   }
-  const owner = playerMap.get(parcel.ownerId);
-  if (owner?.isAI && owner.name && FACTION_COLORS[owner.name]) {
-    return { color: FACTION_COLORS[owner.name].three.clone().multiplyScalar(0.85), scale: 1.0 };
-  }
-  return { color: new THREE.Color("#ff6e40").multiplyScalar(0.9), scale: 1.0 };
+  return new THREE.Color("#ff6e40");
 }
 
 function StarField() {
@@ -137,12 +134,6 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
 
-  const playerMap = useMemo(() => {
-    const m = new Map<string, Player>();
-    players.forEach(p => m.set(p.id, p));
-    return m;
-  }, [players]);
-
   const plotIdToParcel = useMemo(() => {
     const m = new Map<number, LandParcel>();
     parcels.forEach(p => m.set(p.plotId, p));
@@ -190,16 +181,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().multiplyScalar(2));
-      const { color, scale } = getPlotColor(parcel, currentPlayerId, playerMap);
-      dummy.scale.setScalar(plotSize * (isSelected ? 2.2 : scale));
+      const color = isSelected ? COLOR_SELECTED : getPlotColor(parcel, currentPlayerId, players);
+      dummy.scale.setScalar(plotSize * (isSelected ? 2.2 : 1.0));
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
-      const finalColor = isSelected ? COLOR_SELECTED : color;
-      meshRef.current.setColorAt(i, finalColor);
+      meshRef.current.setColorAt(i, color);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, playerMap, dummy, plotSize]);
+  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
 
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
