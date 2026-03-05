@@ -540,12 +540,13 @@ export function GameLayout() {
           ) : (
             <PlanetGlobe
               parcels={gameState.parcels}
+              players={gameState.players}
               currentPlayerId={player?.id || null}
               selectedParcelId={selectedParcelId}
               onParcelSelect={setSelectedParcelId}
               onAttack={handleAttackClick}
               onMine={handleMine}
-              onBuild={() => setActiveTab("economics")} // Economics panel handles building
+              onBuild={() => setActiveTab("economics")}
               className="absolute inset-0 w-full h-full"
             />
           )}

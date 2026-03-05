@@ -1,3 +1,5 @@
+Replace the entire contents of client/src/components/game/PlanetGlobe.tsx with the following code. Do not modify any other file.
+
 /**
  * PlanetGlobe.tsx — FRONTIER Tier 1 Globe
  */
