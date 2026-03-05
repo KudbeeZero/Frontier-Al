@@ -129,8 +129,9 @@ interface PlotOverlayProps {
 
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!);
-  const { raycaster } = useThree();
+  const { raycaster, mouse, camera } = useThree();
   const pulseRef = useRef(0);
+  const pointerDownState = useRef<{ mouse: THREE.Vector2 } | null>(null);
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
 
@@ -140,32 +141,45 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     return m;
   }, [parcels]);
 
+  const animatedIndices = useMemo(() => {
+    const indices: number[] = [];
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      if (parcel?.id === selectedPlotId || parcel?.ownerId === currentPlayerId) {
+        indices.push(i);
+      }
+    }
+    return indices;
+  }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
+
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const plotSize = GLOBE_RADIUS * 0.022;
 
   useFrame((_, delta) => {
     pulseRef.current += delta * 2.5;
-    if (!meshRef.current) return;
-    for (let i = 0; i < plotCoords.length; i++) {
+    if (!meshRef.current || animatedIndices.length === 0) return;
+
+    for (const i of animatedIndices) {
       const coord = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
-      const isOwned = parcel?.ownerId === currentPlayerId;
-      if (isSelected || isOwned) {
-        const pulse = isSelected
-          ? 1.8 + Math.sin(pulseRef.current * 2) * 0.6
-          : 1.1 + Math.sin(pulseRef.current + i * 0.1) * 0.08;
-        const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
-        dummy.position.copy(pos);
-        dummy.lookAt(pos.clone().multiplyScalar(2));
-        dummy.scale.setScalar(plotSize * pulse);
-        dummy.updateMatrix();
-        meshRef.current.setMatrixAt(i, dummy.matrix);
-        const color = isSelected
-          ? COLOR_SELECTED
-          : COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1);
-        meshRef.current.setColorAt(i, color);
-      }
+
+      const pulse = isSelected
+        ? 1.8 + Math.sin(pulseRef.current * 2) * 0.6
+        : 1.1 + Math.sin(pulseRef.current + i * 0.1) * 0.08;
+
+      const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
+      dummy.position.copy(pos);
+      dummy.lookAt(pos.clone().multiplyScalar(2));
+      dummy.scale.setScalar(plotSize * pulse);
+      dummy.updateMatrix();
+      meshRef.current.setMatrixAt(i, dummy.matrix);
+
+      const color = isSelected
+        ? COLOR_SELECTED
+        : COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1);
+      meshRef.current.setColorAt(i, color);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
@@ -191,19 +205,34 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
 
+  const handlePointerDown = useCallback(() => {
+    pointerDownState.current = { mouse: mouse.clone() };
+  }, [mouse]);
+
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
+    if (!pointerDownState.current) return;
+
+    // Use snapshotted mouse position to prevent drift during orbit damping
+    raycaster.setFromCamera(pointerDownState.current.mouse, camera);
     const intersects = raycaster.intersectObject(meshRef.current);
+    pointerDownState.current = null;
+
     if (!intersects.length) return;
     const instanceId = intersects[0].instanceId;
     if (instanceId === undefined) return;
     const coord = plotCoords[instanceId];
     const parcel = plotIdToParcel.get(coord.plotId);
     if (parcel) onPlotSelect(parcel.id);
-  }, [raycaster, plotCoords, plotIdToParcel, onPlotSelect]);
+  }, [raycaster, camera, plotCoords, plotIdToParcel, onPlotSelect]);
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, PLOT_COUNT]} onClick={handleClick}>
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, PLOT_COUNT]}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+    >
       <planeGeometry args={[1, 1]} />
       <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors side={THREE.DoubleSide} />
     </instancedMesh>
