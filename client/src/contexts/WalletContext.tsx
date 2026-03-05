@@ -109,19 +109,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;
     const savedAddress = localStorage.getItem("frontier_wallet_address");
 
-    // Force Lute if no wallet is saved or if Lute is explicitly saved
-    if (!savedType || savedType === "lute") {
+    if (savedType === "lute" && savedAddress) {
       luteWallet
         .connect(ALGORAND_TESTNET.genesisID)
         .then((accounts) => {
-          const addr = accounts.length > 0 ? accounts[0] : (savedAddress || "");
-          if (!addr) {
-             isReconnecting.current = false;
-             setState((prev) => ({ ...prev, walletStatus: "disconnected" }));
-             return;
-          }
+          const addr = accounts.length > 0 ? accounts[0] : savedAddress;
           setActiveWalletType("lute");
-          localStorage.setItem("frontier_wallet_type", "lute");
           localStorage.setItem("frontier_wallet_address", addr);
           setState((prev) => ({
             ...prev,
@@ -138,11 +131,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           updateBalance(addr);
         })
         .catch((err) => {
-          console.warn("LUTE connection/reconnection failed:", err);
-          if (savedType === "lute") {
-            localStorage.removeItem("frontier_wallet_type");
-            localStorage.removeItem("frontier_wallet_address");
-          }
+          console.warn("LUTE reconnection failed, clearing saved state:", err);
+          localStorage.removeItem("frontier_wallet_type");
+          localStorage.removeItem("frontier_wallet_address");
           setState((prev) => ({ ...prev, walletStatus: "disconnected" }));
         })
         .finally(() => {
