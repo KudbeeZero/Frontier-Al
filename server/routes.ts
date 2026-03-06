@@ -41,7 +41,7 @@ export async function registerRoutes(
       console.log(`[routes] Blockchain ready: ASA=${asaId}, Admin=${adminAddr}, ALGO=${balance.algo}`);
 
       // Bootstrap faction identity ASAs (idempotent — safe on every restart)
-      const factionBaseUrl = process.env.PUBLIC_BASE_URL ?? "https://frontier-al.app";
+      const factionBaseUrl = (process.env.PUBLIC_BASE_URL ?? "https://frontier-al.app").replace(/\/+$/, "");
       bootstrapFactionIdentities(factionBaseUrl).catch((err) =>
         console.error("[routes] Faction identity bootstrap failed:", err)
       );
@@ -222,7 +222,8 @@ export async function registerRoutes(
       // not running the server locally.
       const reqHost = req.get("host") || "";
       const isLocal = reqHost.includes("localhost") || reqHost.includes("127.0.0.1");
-      const baseUrl = process.env.PUBLIC_BASE_URL || (isLocal ? null : `${req.protocol}://${reqHost}`);
+      const rawBaseUrl = process.env.PUBLIC_BASE_URL || (isLocal ? null : `${req.protocol}://${reqHost}`);
+      const baseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, "") : null;
 
       if (!baseUrl) {
         // Metadata would contain localhost URLs — log and return a 503 so the
@@ -682,7 +683,14 @@ export async function registerRoutes(
             }).onConflictDoNothing();
           }
 
-          const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
+          // Resolve the public base URL, stripping any trailing slash.
+          // Falls back to REPLIT_DOMAINS (available in all Replit deployments) so
+          // NFT metadata is always hosted at a reachable URL.
+          const rawBase =
+            process.env.PUBLIC_BASE_URL ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "");
+          const PUBLIC_BASE_URL = rawBase.replace(/\/+$/, "");
+
           if (PUBLIC_BASE_URL) {
             // Fire-and-forget: mint in background, don't block response
             mintLandNft({ plotId: parcel.plotId, receiverAddress: buyerAddress, metadataBaseUrl: PUBLIC_BASE_URL })

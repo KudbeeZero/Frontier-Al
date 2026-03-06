@@ -3,15 +3,15 @@
  *
  * FRONTIER Land NFT (Plot ASA) mint and transfer service.
  *
- * Custodian mode: When a buyer has not yet opted into the freshly-minted ASA
- * (which is always the case — they can't opt in until the ASA exists),
- * the NFT is held by the admin (custodian) address until the buyer opts in
- * and an admin transfer completes the delivery.
+ * Custodian mode: A freshly-minted ASA can never be received by the buyer
+ * immediately — they would have had to opt-in before the ASA existed, which
+ * is impossible.  The NFT is therefore always held by the admin (custodian)
+ * address after minting.  The buyer calls POST /api/nft/deliver/:plotId after
+ * opting in (zero-amount self-transfer of the specific ASA) to receive it.
  *
  * DB columns required (handled by caller, not this module):
  *   plot_nfts.asset_id           — on-chain ASA ID
- *   plot_nfts.minted_to_address  — current on-chain holder
- *   players.custody_owner_player_id — (future) for full custody tracking
+ *   plot_nfts.minted_to_address  — current on-chain holder (admin until delivery)
  *
  * No UI imports. No route logic. No game state.
  */
@@ -23,9 +23,10 @@ import type { MintLandParams, TransferLandParams, MintResult, AssetId } from "./
 // ── Mint ──────────────────────────────────────────────────────────────────────
 
 /**
- * Mint a FRONTIER Plot NFT (1-of-1 Algorand ASA) and attempt to transfer
- * it to the buyer. If the buyer has not opted in yet, the NFT is held by
- * the admin (custodian) and `custodyHeld` is set to true.
+ * Mint a FRONTIER Plot NFT (1-of-1 Algorand ASA).
+ *
+ * The NFT is always held in admin custody after creation — the buyer cannot
+ * have opted into an ASA that did not exist before this call.
  *
  * Idempotency: caller must check the DB for an existing record BEFORE calling
  * this function. This function does NOT query the DB.
@@ -36,7 +37,10 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
   const account = getAdminAccount();
   const network = getNetwork();
 
-  // ── Step 1: Create the NFT ASA ────────────────────────────────────────────
+  // Strip trailing slash from metadata base URL to avoid double-slash in assetURL.
+  const baseUrl = metadataBaseUrl.replace(/\/+$/, "");
+
+  // ── Create the NFT ASA ─────────────────────────────────────────────────────
   const createSp = await algod.getTransactionParams().do();
 
   const createTxn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
@@ -46,7 +50,7 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
     defaultFrozen:  false,
     unitName:       "PLOT",
     assetName:      `Frontier Plot #${plotId}`,
-    assetURL:       `${metadataBaseUrl}/nft/metadata/${plotId}`,
+    assetURL:       `${baseUrl}/nft/metadata/${plotId}`,
     // On TestNet: all roles set to admin for recovery.
     // Production mainnet: freeze and clawback should be empty strings ("").
     manager:        account.addr.toString(),
@@ -70,52 +74,19 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
     throw new Error(`[chain/land] mintLandNft: no assetIndex in confirmed create tx ${createTxId} for plotId=${plotId}`);
   }
 
-  console.log(`[chain/land] plotId=${plotId} ASA created assetId=${assetId} txId=${createTxId}`);
+  console.log(
+    `[chain/land] plotId=${plotId} ASA created assetId=${assetId} txId=${createTxId}` +
+    ` | custody: admin holds until buyer opts in (receiverAddress=${receiverAddress})`
+  );
 
-  // ── Step 2: Attempt transfer to buyer ─────────────────────────────────────
-  // The buyer cannot have opted in to this ASA yet (it was just created),
-  // so this step will typically fail on the first purchase. The assetId is
-  // recorded regardless; buyer opts in later and admin delivers on-chain.
-
-  let transferTxId: string | undefined;
-  let mintedToAddress  = account.addr.toString(); // admin holds by default
-  let custodyHeld      = true;
-
-  try {
-    const transferSp  = await algod.getTransactionParams().do();
-    const transferTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-      sender:          account.addr.toString(),
-      receiver:        receiverAddress,
-      amount:          1,
-      assetIndex:      assetId,
-      suggestedParams: transferSp,
-      note:            new TextEncoder().encode(`FRONTIER Plot #${plotId} NFT to buyer`),
-    });
-
-    const signedTransfer   = transferTxn.signTxn(account.sk);
-    const transferResponse = await algod.sendRawTransaction(signedTransfer).do();
-    transferTxId           = transferResponse.txid || transferTxn.txID();
-
-    await algosdk.waitForConfirmation(algod, transferTxId, 2);
-
-    mintedToAddress = receiverAddress;
-    custodyHeld     = false;
-
-    console.log(`[chain/land] plotId=${plotId} NFT transferred to ${receiverAddress} txId=${transferTxId}`);
-  } catch (err) {
-    console.warn(
-      `[chain/land] plotId=${plotId} Transfer to ${receiverAddress} failed — ` +
-      `buyer likely not opted in to assetId=${assetId}. NFT held by admin (custodian mode).`,
-      err instanceof Error ? err.message : err
-    );
-  }
-
+  // NFT stays in admin custody. Buyer calls POST /api/nft/deliver/:plotId after
+  // opting into ASA ${assetId} in their wallet.
   return {
     assetId,
     createTxId,
-    transferTxId,
-    custodyHeld,
-    mintedToAddress,
+    transferTxId:   undefined,
+    custodyHeld:    true,
+    mintedToAddress: account.addr.toString(),
   };
 }
 
@@ -126,6 +97,8 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
  * Used when:
  *   - Buyer opts in after initial custody-held mint
  *   - Admin-initiated secondary delivery
+ *
+ * Caller must verify the receiver has opted into the ASA before calling this.
  */
 export async function transferLandNft(params: TransferLandParams): Promise<{ txId: string }> {
   const { assetId, toAddress, note } = params;
@@ -146,7 +119,7 @@ export async function transferLandNft(params: TransferLandParams): Promise<{ txI
   const response = await algod.sendRawTransaction(signed).do();
   const txId     = response.txid || txn.txID();
 
-  await algosdk.waitForConfirmation(algod, txId, 4);
+  await algosdk.waitForConfirmation(algod, txId, 2);
 
   console.log(`[chain/land] Transferred assetId=${assetId} to ${toAddress} txId=${txId}`);
   return { txId };

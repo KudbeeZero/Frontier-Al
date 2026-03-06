@@ -49,6 +49,8 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - **Claim pipeline**: opt-in check → credit DB balance → queue on-chain batch transfer (fire-and-forget for fast response).
 - **NFT minting**: idempotency-guarded, fire-and-forget; custodian mode (admin holds NFT if buyer not opted in).
 - **NFT delivery**: `POST /api/nft/deliver/:plotId` — checks buyer has opted into the specific plot ASA, then transfers from admin custody. UI in `LandSheet.tsx` shows "Claim NFT" button for in-custody plots, "In Wallet" badge once delivered. `GET /api/nft/plot/:plotId` returns current mint status and explorer link.
+- **NFT URL fix**: `PUBLIC_BASE_URL` is stripped of trailing slashes before use to prevent double-slash URLs (`//nft/metadata/1`). Falls back to `REPLIT_DOMAINS` env var so minting works even when `PUBLIC_BASE_URL` is not explicitly set.
+- **Minting simplification**: Removed the always-doomed immediate transfer attempt from `mintLandNft` — a freshly-created ASA can never have a buyer opt-in yet, so the transfer always failed. NFT now correctly goes straight to admin custody; buyer uses deliver endpoint after opting in.
 - **Batched transfers**: up to 16 transfers per Algorand atomic group, flushed every 5s or when group is full.
 - **`waitForConfirmation` rounds**: 2 (reduced from 4 for lower latency).
 - **TypeScript target**: ES2020 (supports BigInt literal syntax used in chain service).
