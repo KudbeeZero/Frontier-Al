@@ -24,6 +24,9 @@ try {
       connectionString,
       max: 10,
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 20000, // Increased to 20s for serverless cold starts
+      idleTimeoutMillis: 30000,       // 30s idle timeout
+      allowExitOnIdle: true,          // Allow the process to exit if the pool is idle
     });
     
     pool.on("error", (err) => {

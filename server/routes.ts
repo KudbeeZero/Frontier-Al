@@ -903,12 +903,17 @@ export async function registerRoutes(
   });
 
   // Background tasks: resolve battles, run AI turns, trigger orbital checks
+  // Tasks are run independently to prevent one failure from blocking others
   setInterval(async () => {
     try {
       await storage.resolveBattles();
+    } catch (error) {
+      console.error("Background task error (resolveBattles):", error);
+    }
+    try {
       await storage.runAITurn();
     } catch (error) {
-      console.error("Background task error:", error);
+      console.error("Background task error (runAITurn):", error);
     }
   }, 15000);
 
