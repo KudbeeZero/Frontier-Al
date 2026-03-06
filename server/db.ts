@@ -13,8 +13,15 @@ let pool: Pool | null = null;
 // Task 7: Prevent server crash if DB is unavailable
 try {
   if (process.env.DATABASE_URL) {
+    // pg v8.x warns when sslmode=require is used without uselibpqcompat=true.
+    // We append it here to silence the "SECURITY WARNING" about future breaking changes.
+    let connectionString = process.env.DATABASE_URL;
+    if (connectionString.includes("sslmode=require") && !connectionString.includes("uselibpqcompat=true")) {
+      connectionString += (connectionString.includes("?") ? "&" : "?") + "uselibpqcompat=true";
+    }
+
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: 10,
       ssl: { rejectUnauthorized: false },
     });
