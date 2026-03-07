@@ -2068,6 +2068,8 @@ export class DbStorage implements IStorage {
           .where(eq(playersTable.id, player.id)),
       ]);
 
+      console.log(`[mine] plotId=${parcel.plotId} iron=${finalIron} fuel=${finalFuel} crystal=${finalCrystal} stored`);
+
       await this.addEvent({
         type:        "mine",
         playerId:    player.id,
@@ -2107,6 +2109,8 @@ export class DbStorage implements IStorage {
             .set({ iron: playerRow.iron + totalIron, fuel: playerRow.fuel + totalFuel, crystal: playerRow.crystal + totalCrystal })
             .where(eq(playersTable.id, playerId)),
         ]);
+
+        console.log(`[collect] playerId=${playerId} iron=${totalIron} fuel=${totalFuel}`);
 
         const now = Date.now();
         await this.addEvent({
