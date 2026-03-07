@@ -143,7 +143,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   const readyRef = useRef(false);
   const { raycaster, mouse, camera } = useThree();
   const pulseRef = useRef(0);
-  const pointerDownState = useRef<{ mouse: THREE.Vector2 } | null>(null);
+  const pointerDownState = useRef<{ mouse: THREE.Vector2; cam: THREE.Camera } | null>(null);
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
 
@@ -228,15 +228,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
 
   const handlePointerDown = useCallback(() => {
-    pointerDownState.current = { mouse: mouse.clone() };
-  }, [mouse]);
+    pointerDownState.current = { mouse: mouse.clone(), cam: camera.clone() };
+  }, [mouse, camera]);
 
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
     if (!pointerDownState.current) return;
 
-    // Use snapshotted mouse position to prevent drift during orbit damping
-    raycaster.setFromCamera(pointerDownState.current.mouse, camera);
+    // Use snapshotted mouse position and camera to prevent drift during orbit damping
+    raycaster.setFromCamera(pointerDownState.current.mouse, pointerDownState.current.cam);
     const intersects = raycaster.intersectObject(meshRef.current);
     pointerDownState.current = null;
 
