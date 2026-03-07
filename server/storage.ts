@@ -1837,7 +1837,7 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
 
     // Duration: impact events last 8–15 minutes
-    const durationMs = (8 + Math.random() * 7) * 60 * 1000;
+    const durationMs = Math.floor((8 + Math.random() * 7) * 60 * 1000);
     const intensity = 0.5 + Math.random() * 0.5;
     const seed = Math.floor(Math.random() * 0x7fffffff);
 

@@ -1,0 +1,578 @@
+# 🚀 Replit Fix Prompt: PostgreSQL Bigint Timestamp Error
+
+## 📋 ERROR SUMMARY
+
+**Error:** `invalid input syntax for type bigint: "1772887910600.7717"`  
+**Location:** Orbital check background process  
+**Cause:** Decimal timestamp being inserted into bigint column  
+**Time to Fix:** 5-10 minutes
+
+---
+
+## 🎯 STEP-BY-STEP FIX GUIDE
+
+### STEP 1: Identify the Problem File
+
+**Run these commands in Replit terminal:**
+
+```bash
+# Find the orbital check code
+grep -r "triggerOrbitalCheck" .
+grep -r "ATMOSPHERIC_BURST" .
+grep -r "impact.*time" .
+grep -r "orbital.*check" .
+```
+
+**Expected Output:** Shows you the file(s) with the problematic code.
+
+**Common locations to check:**
+```bash
+# Try these paths:
+find . -name "*orbital*" -type f
+find . -name "*impact*" -type f
+find . -type f -name "*.js" | grep -i orbital
+ls -la src/
+ls -la services/
+ls -la routes/
+```
+
+---
+
+### STEP 2: Locate the Exact Problem Code
+
+**Once you find the file, look for:**
+
+```javascript
+// SEARCH FOR THESE PATTERNS:
+
+// Pattern 1: Direct database insert with decimal timestamp
+await db.query(`INSERT INTO orbital_impacts ... VALUES ($1)`, [orbitalTime])
+
+// Pattern 2: Calculation that produces decimal
+const impactTime = Date.now() + calculateOrbitalDelay();
+// Where calculateOrbitalDelay() returns a decimal
+
+// Pattern 3: Timestamp from division/multiplication
+const timestamp = totalTime / count;  // Results in decimal
+```
+
+---
+
+### STEP 3: Apply the Fix
+
+**Replace the problematic code with this:**
+
+```javascript
+// ========================================
+// BEFORE (WRONG) - Causes Error
+// ========================================
+async function triggerOrbitalCheck(parcelId) {
+  const orbitalTime = calculateOrbitalTime();
+  // Returns: 1772887910600.7717 ❌
+  
+  await db.query(
+    `INSERT INTO orbital_impacts (parcel_id, impact_time) 
+     VALUES ($1, $2)`,
+    [parcelId, orbitalTime]  // ERROR HERE!
+  );
+}
+
+// ========================================
+// AFTER (CORRECT) - Fixed
+// ========================================
+async function triggerOrbitalCheck(parcelId) {
+  const orbitalTime = calculateOrbitalTime();
+  // Returns: 1772887910600.7717
+  
+  // FIX: Round to integer
+  const roundedTime = Math.floor(orbitalTime);
+  // Returns: 1772887910600 ✅
+  
+  await db.query(
+    `INSERT INTO orbital_impacts (parcel_id, impact_time) 
+     VALUES ($1, $2)`,
+    [parcelId, roundedTime]  // FIXED!
+  );
+}
+```
+
+---
+
+### STEP 4: Find All Occurrences
+
+**Run in Replit terminal to find ALL places that need fixing:**
+
+```bash
+# Search for all timestamp insertions
+grep -n "Math.floor\|Math.round\|parseInt\|Math.trunc" src/**/*.js
+
+# Search for db.query patterns
+grep -n "db.query\|db.insert\|INSERT INTO" src/**/*.js | grep -i "time\|timestamp"
+
+# Search for orbital calculations
+grep -n "Date.now()" src/**/*.js
+```
+
+---
+
+### STEP 5: Complete Fix Template
+
+**Use this complete function as your template:**
+
+```javascript
+/**
+ * Trigger orbital check with fixed timestamp handling
+ * @param {string} parcelId - The parcel to check
+ * @returns {Promise<Object>} - Database result
+ */
+async function triggerOrbitalCheck(parcelId) {
+  const logger = getLogger('orbital');
+  
+  try {
+    // Step 1: Calculate orbital delay (in milliseconds)
+    const orbitalDelay = calculateOrbitalDelay();
+    console.log(`[DEBUG] Orbital delay: ${orbitalDelay}`);
+    
+    // Step 2: Calculate impact time
+    const impactTimeMs = Date.now() + orbitalDelay;
+    console.log(`[DEBUG] Raw impact time: ${impactTimeMs}`);
+    
+    // ===== CRITICAL FIX: Round to remove decimals =====
+    const impactTimeInt = Math.floor(impactTimeMs);
+    console.log(`[DEBUG] Rounded impact time: ${impactTimeInt}`);
+    
+    // Step 3: Validate timestamp is integer
+    if (!Number.isInteger(impactTimeInt)) {
+      throw new Error(`Impact time is not an integer: ${impactTimeInt}`);
+    }
+    
+    logger.debug(
+      `[ORBITAL-DEBUG] triggerOrbitalCheck | IMPACT triggered | ` +
+      `type: ATMOSPHERIC_BURST | parcel: ${parcelId}`
+    );
+    
+    // Step 4: Insert into database with rounded timestamp
+    const result = await db.query(
+      `INSERT INTO orbital_impacts 
+       (parcel_id, impact_time, impact_type, created_at) 
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [
+        parcelId,
+        impactTimeInt,           // ✅ Now an integer
+        'ATMOSPHERIC_BURST',
+        Math.floor(Date.now())   // ✅ Also rounded
+      ]
+    );
+    
+    logger.info(`✅ Orbital impact scheduled: ${parcelId}`);
+    return result.rows[0];
+    
+  } catch (error) {
+    logger.error('🔴 Background orbital check error:', {
+      message: error.message,
+      code: error.code,
+      parcelId: parcelId,
+      details: error
+    });
+    throw error;
+  }
+}
+```
+
+---
+
+## 🔍 FIND & REPLACE IN REPLIT
+
+### Option 1: Using Replit Search/Replace
+
+1. **Open Replit Editor**
+2. **Press `Ctrl+H` (or `Cmd+H` on Mac)** - Opens Find & Replace
+3. **Search for:**
+   ```
+   await db.query(`INSERT INTO orbital_impacts
+   ```
+4. **Replace with:** Use the fixed version above
+
+### Option 2: Manual Search
+
+1. **Open Replit File Explorer** (left sidebar)
+2. **Find files with `orbital` or `impact` in the name**
+3. **Open each file and search within** using `Ctrl+F`
+4. **Manually apply the fix to each occurrence**
+
+---
+
+## ✅ VERIFICATION STEPS
+
+### Step 1: Test Locally
+
+**Create a test file:** `test-fix.js`
+
+```javascript
+// test-fix.js - Verify the fix works
+
+// Test Case 1: Original problematic value
+const decimalTime = 1772887910600.7717;
+const fixedTime = Math.floor(decimalTime);
+
+console.log('Test Case 1: Decimal Timestamp');
+console.log('  Input:', decimalTime);
+console.log('  Output:', fixedTime);
+console.log('  Is Integer?', Number.isInteger(fixedTime));
+console.log('  Type:', typeof fixedTime);
+console.log('  Status:', Number.isInteger(fixedTime) ? '✅ PASS' : '❌ FAIL');
+
+// Test Case 2: Edge cases
+console.log('\nTest Case 2: Edge Cases');
+const testCases = [
+  { input: 1772887910600.0001, desc: 'Minimal decimal' },
+  { input: 1772887910600.9999, desc: 'Maximum decimal' },
+  { input: 1000000000000, desc: 'Already integer' },
+  { input: Date.now(), desc: 'Current timestamp' },
+];
+
+testCases.forEach(({ input, desc }) => {
+  const result = Math.floor(input);
+  console.log(`  ${desc}: ${input} → ${result} (${Number.isInteger(result) ? '✅' : '❌'})`);
+});
+
+// Test Case 3: Type validation
+console.log('\nTest Case 3: Type Validation');
+function validateBigintCompatible(value) {
+  if (!Number.isInteger(value)) {
+    console.log(`  ❌ FAIL: ${value} is not an integer`);
+    return false;
+  }
+  if (value > Number.MAX_SAFE_INTEGER) {
+    console.log(`  ⚠️ WARNING: ${value} exceeds MAX_SAFE_INTEGER`);
+  }
+  console.log(`  ✅ PASS: ${value} is valid for bigint`);
+  return true;
+}
+
+validateBigintCompatible(Math.floor(1772887910600.7717));
+validateBigintCompatible(1772887910600.7717);  // This should fail
+```
+
+**Run the test:**
+
+```bash
+node test-fix.js
+```
+
+**Expected Output:**
+```
+Test Case 1: Decimal Timestamp
+  Input: 1772887910600.7717
+  Output: 1772887910600
+  Is Integer? true
+  Type: number
+  Status: ✅ PASS
+
+Test Case 2: Edge Cases
+  Minimal decimal: 1000000000000.0001 → 1000000000000 (✅)
+  Maximum decimal: 1772887910600.9999 → 1772887910600 (✅)
+  Already integer: 1000000000000 → 1000000000000 (✅)
+  Current timestamp: [current time] → [rounded] (✅)
+
+Test Case 3: Type Validation
+  ✅ PASS: 1772887910600 is valid for bigint
+  ❌ FAIL: 1772887910600.7717 is not an integer
+```
+
+---
+
+### Step 2: Check All Related Functions
+
+**Search for all timestamp-related inserts:**
+
+```bash
+# In Replit terminal:
+grep -r "Math.floor\|Math.round" . --include="*.js"
+```
+
+**Expected:** Should show your fixes are in place
+
+---
+
+### Step 3: Restart Your Server
+
+**In Replit terminal:**
+
+```bash
+# Stop current server
+# Press Ctrl+C
+
+# Clear any cached data
+npm run clean  # if available
+# or
+rm -rf node_modules/.cache
+
+# Restart
+npm start
+# or
+node index.js
+```
+
+---
+
+### Step 4: Monitor Logs
+
+**Watch for the orbital check:**
+
+```bash
+# In new Replit terminal tab:
+tail -f logs.txt | grep -i orbital
+# or
+npm run logs
+# or watch your server output
+```
+
+**Expected After Fix:**
+```
+✅ Orbital impact scheduled: [parcel-id]
+```
+
+**NOT Expected After Fix:**
+```
+🔴 invalid input syntax for type bigint
+```
+
+---
+
+## 🧪 UNIT TEST TEMPLATE
+
+**Create:** `tests/orbital-check.test.js`
+
+```javascript
+// tests/orbital-check.test.js
+
+const assert = require('assert');
+
+describe('Orbital Check Fix', () => {
+  
+  test('should handle decimal timestamps', () => {
+    const decimalTime = 1772887910600.7717;
+    const result = Math.floor(decimalTime);
+    
+    assert.strictEqual(result, 1772887910600);
+    assert.strictEqual(Number.isInteger(result), true);
+  });
+  
+  test('should preserve integer timestamps', () => {
+    const intTime = 1772887910600;
+    const result = Math.floor(intTime);
+    
+    assert.strictEqual(result, 1772887910600);
+    assert.strictEqual(Number.isInteger(result), true);
+  });
+  
+  test('should handle high precision decimals', () => {
+    const testCases = [
+      { input: 1772887910600.1, expected: 1772887910600 },
+      { input: 1772887910600.5, expected: 1772887910600 },
+      { input: 1772887910600.9, expected: 1772887910600 },
+      { input: 1772887910600.0001, expected: 1772887910600 },
+    ];
+    
+    testCases.forEach(({ input, expected }) => {
+      const result = Math.floor(input);
+      assert.strictEqual(result, expected);
+    });
+  });
+  
+  test('should convert function output properly', async () => {
+    // Assuming you have this function
+    const orbitalTime = calculateOrbitalTime();
+    const rounded = Math.floor(orbitalTime);
+    
+    assert.strictEqual(Number.isInteger(rounded), true);
+  });
+});
+```
+
+**Run tests:**
+
+```bash
+npm test
+# or
+npx jest tests/orbital-check.test.js
+# or
+node_modules/.bin/mocha tests/orbital-check.test.js
+```
+
+---
+
+## 🚀 DEPLOYMENT CHECKLIST
+
+Before pushing to production:
+
+```bash
+# ✅ Step 1: Verify code changes
+git diff
+
+# ✅ Step 2: Run tests
+npm test
+
+# ✅ Step 3: Check for other instances
+grep -r "await db.query" src/ | grep -i "time\|timestamp"
+
+# ✅ Step 4: Build
+npm run build
+
+# ✅ Step 5: Start server
+npm start
+
+# ✅ Step 6: Monitor logs
+# Watch for "orbital" messages - should see successes, not errors
+
+# ✅ Step 7: Commit and push
+git add .
+git commit -m "fix: round timestamps to bigint-compatible integers"
+git push origin main
+```
+
+---
+
+## 📊 COMMON ISSUES & SOLUTIONS
+
+### Issue 1: Can't find the problematic code
+
+**Solution:**
+```bash
+# Search more broadly
+grep -r "orbital_impacts\|ATMOSPHERIC_BURST\|orbitalTime" . --include="*.js"
+grep -r "invalid input syntax" .  # Check error logs
+```
+
+### Issue 2: Multiple places need fixing
+
+**Solution:**
+```bash
+# Create a script to fix all at once
+# Or use Find & Replace in Replit (Ctrl+H)
+```
+
+### Issue 3: Tests are failing
+
+**Solution:**
+```bash
+# Run a single test
+npm test -- --grep "decimal timestamp"
+
+# Run with verbose output
+npm test -- --verbose
+
+# Debug the test
+node --inspect-brk node_modules/.bin/jest
+```
+
+### Issue 4: Server won't restart
+
+**Solution:**
+```bash
+# Kill any lingering processes
+pkill -f "node"
+# or in Replit, use the Stop button
+
+# Check for syntax errors
+node -c src/your-file.js
+
+# Start fresh
+npm install
+npm start
+```
+
+---
+
+## 💡 SUMMARY: What to Do Right Now
+
+1. **Search** for `triggerOrbitalCheck` function
+2. **Find** the line with decimal timestamp (e.g., `1772887910600.7717`)
+3. **Replace** with: `Math.floor(orbitalTime)`
+4. **Test** using the test-fix.js script above
+5. **Restart** your server
+6. **Monitor** logs to confirm fix works
+7. **Commit** and push your changes
+
+---
+
+## 🎯 EXPECTED RESULTS
+
+### Before Fix ❌
+```
+[ORBITAL-DEBUG] triggerOrbitalCheck | IMPACT triggered
+[ERROR] invalid input syntax for type bigint: "1772887910600.7717"
+[CRASH] Application error - orbital check failed
+```
+
+### After Fix ✅
+```
+[DEBUG] Orbital delay: 1234567
+[DEBUG] Raw impact time: 1772887911834.567
+[DEBUG] Rounded impact time: 1772887911834
+[ORBITAL-DEBUG] triggerOrbitalCheck | IMPACT triggered | type: ATMOSPHERIC_BURST
+✅ Orbital impact scheduled: [parcel-id]
+[SUCCESS] Database insert completed
+```
+
+---
+
+## 🔧 QUICK REFERENCE COMMANDS
+
+```bash
+# Find the problem
+grep -r "triggerOrbitalCheck" .
+
+# Test the fix
+node test-fix.js
+
+# Run tests
+npm test
+
+# Check server logs
+tail -f logs.txt
+
+# Restart server
+npm start
+
+# View recent errors
+grep -i "error\|fail" logs.txt | tail -20
+
+# Search for other timestamp issues
+grep -r "Date.now()" src/ --include="*.js" -n
+```
+
+---
+
+## 📞 NEED HELP?
+
+**Check these files for more details:**
+- `DATABASE_ERROR_DEBUG_REPORT.md` - Complete explanation
+- `BIGINT_TIMESTAMP_DEBUGGER.html` - Interactive converter
+- Your application logs - Watch for `[ORBITAL-DEBUG]` messages
+
+**Common next steps:**
+- Add more logging around timestamp calculations
+- Add input validation for all database inserts
+- Consider using TypeScript for type safety
+- Set up automated tests to catch this earlier
+
+---
+
+## ✅ DONE!
+
+Once you:
+1. ✅ Find the code
+2. ✅ Apply Math.floor()
+3. ✅ Restart the server
+4. ✅ Verify in logs
+
+**Your application will be fixed!** 🎉
+
+---
+
+**Last Updated:** March 2026  
+**Status:** Ready to Deploy  
+**Time Estimate:** 5-10 minutes total
