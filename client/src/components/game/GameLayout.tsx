@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
@@ -839,15 +839,18 @@ export function GameLayout() {
           {activeTab === "economics" && (
             <EconomicsPanel className="h-full" />
           )}
-          {activeTab === "intel" && (
+          <div
+            className={activeTab === "intel" ? "h-full" : "hidden"}
+            style={{ display: activeTab === "intel" ? undefined : "none" }}
+          >
             <WorldIntelPanel
               className="h-full"
-              onReplayStateChange={({ replayTime: rt, visibleTypes: vt }) => {
+              onReplayStateChange={useCallback(({ replayTime: rt, visibleTypes: vt }: { replayTime: number; visibleTypes: Set<string> }) => {
                 setReplayTime(rt);
                 setReplayVisibleTypes(vt);
-              }}
+              }, [])}
             />
-          )}
+          </div>
         </div>
       )}
 

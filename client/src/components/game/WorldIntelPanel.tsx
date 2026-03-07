@@ -50,7 +50,7 @@ export function WorldIntelPanel({ className, onReplayStateChange }: WorldIntelPa
   const [rangeMs, setRangeMs]           = useState(60 * 60_000);
   const [playing, setPlaying]           = useState(false);
   const [speed, setSpeed]               = useState<number>(5);
-  const [replayOffsetMs, setReplayOffsetMs] = useState(0);
+  const [replayOffsetMs, setReplayOffsetMs] = useState(60 * 60_000);
   const [visibleTypes, setVisibleTypes] = useState<Set<WorldEventType>>(
     new Set(LAYER_TYPES)
   );
@@ -66,7 +66,11 @@ export function WorldIntelPanel({ className, onReplayStateChange }: WorldIntelPa
   const rangeEnd   = now.current;
   const replayTime = rangeStart + replayOffsetMs;
 
+  const prevReplayRef = useRef<string>("");
   useEffect(() => {
+    const key = `${replayTime}|${[...visibleTypes].sort().join(",")}`;
+    if (key === prevReplayRef.current) return;
+    prevReplayRef.current = key;
     onReplayStateChange?.({ replayTime, visibleTypes: visibleTypes as Set<string> });
   }, [replayTime, visibleTypes, onReplayStateChange]);
 
@@ -98,13 +102,20 @@ export function WorldIntelPanel({ className, onReplayStateChange }: WorldIntelPa
     });
   };
 
+  const isLive = rangeEnd - replayTime < 10_000;
+
   const visibleEvents = useMemo(() => {
     return events.filter(e => {
       if (!visibleTypes.has(e.type as WorldEventType)) return false;
-      const end = e.endTimestamp ?? e.timestamp + 120_000;
-      return replayTime >= e.timestamp - 5000 && replayTime <= end;
+      if (isLive) {
+        return e.timestamp >= rangeStart && e.timestamp <= rangeEnd;
+      }
+      if (e.endTimestamp !== undefined) {
+        return e.timestamp <= replayTime && replayTime <= e.endTimestamp;
+      }
+      return Math.abs(e.timestamp - replayTime) <= 30_000;
     });
-  }, [events, replayTime, visibleTypes]);
+  }, [events, replayTime, visibleTypes, isLive, rangeStart, rangeEnd]);
 
   const recentEvents = useMemo(() => {
     return [...events]
