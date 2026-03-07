@@ -75,6 +75,11 @@ import {
   type AiFactionState,
   type ContestedPlot,
 } from "./engine/ai/reconquest.js";
+import {
+  BASE_INFLUENCE_DAMAGE,
+  INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL,
+  MIN_INFLUENCE_DAMAGE,
+} from "./engine/battle/tuning.js";
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
 import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable, orbitalEvents as orbitalEventsTable, aiFactionIdentities as aiFactionIdentitiesTable } from "./db-schema";
@@ -2448,7 +2453,9 @@ export class DbStorage implements IStorage {
       if (target.activeBattleId) throw new Error("Territory is already under attack");
 
       const { iron, fuel } = action.resourcesBurned;
+      const crystal = action.crystalBurned ?? 0;
       if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
+      if (attacker.crystal < crystal) throw new Error("Insufficient crystal for attack");
 
       const now = Date.now();
 
@@ -2466,7 +2473,7 @@ export class DbStorage implements IStorage {
         commanders[cmdIdx] = { ...cmd, lockedUntil: now + COMMANDER_LOCK_MS };
       }
 
-      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + commanderBonus;
+      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus;
       // Apply morale debuff: attacker power is reduced when they recently lost territory
       const moraleActive   = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
       const attackerPower  = moraleActive
@@ -2490,13 +2497,15 @@ export class DbStorage implements IStorage {
         defenderPower,
         troopsCommitted:  action.troopsCommitted,
         resourcesBurned:  { iron, fuel },
+        crystalBurned:    crystal,
+        influenceDamage:  0,
         startTs:          now,
         resolveTs:        now + BATTLE_DURATION_MS,
         status:           "pending" as const,
         commanderId:      commanderId ?? null,
       };
 
-      const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel };
+      const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel, crystal: attackerRow.crystal - crystal };
       if (commanderId) playerUpdates.commanders = commanders;
 
       await Promise.all([
@@ -2834,16 +2843,31 @@ export class DbStorage implements IStorage {
         const attackerWins    = adjustedPower > battleRow.defenderPower;
         const outcome         = attackerWins ? "attacker_wins" : "defender_wins";
 
-        await tx.update(battlesTable)
-          .set({ status: "resolved", outcome, randFactor })
-          .where(eq(battlesTable.id, battleRow.id));
-
         const [[targetRow], [attackerRow]] = await Promise.all([
           tx.select().from(parcelsTable).where(eq(parcelsTable.id, battleRow.targetParcelId)),
           tx.select().from(playersTable).where(eq(playersTable.id, battleRow.attackerId)),
         ]);
 
         if (!targetRow || !attackerRow) return;
+
+        // ── Influence damage calculation ──────────────────────────────────────
+        const totalDefenseLevels = ((targetRow.improvements ?? []) as any[])
+          .filter((i: any) => ["turret", "shield_gen", "fortress"].includes(i.type))
+          .reduce((sum: number, i: any) => sum + (i.level ?? 1), 0);
+        const rawInfluenceDamage = attackerWins
+          ? Math.max(
+              MIN_INFLUENCE_DAMAGE,
+              Math.round(BASE_INFLUENCE_DAMAGE * (1 - totalDefenseLevels * INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL))
+            )
+          : 0;
+        const currentInfluence = (targetRow as any).influence ?? 100;
+        const newInfluence = attackerWins
+          ? Math.max(0, currentInfluence - rawInfluenceDamage)
+          : currentInfluence;
+
+        await tx.update(battlesTable)
+          .set({ status: "resolved", outcome, randFactor, influenceDamage: rawInfluenceDamage })
+          .where(eq(battlesTable.id, battleRow.id));
 
         await tx.update(parcelsTable)
           .set({ activeBattleId: null })
@@ -2931,6 +2955,7 @@ export class DbStorage implements IStorage {
                 ironStored:           targetRow.ironStored    - pillagedIron,
                 fuelStored:           targetRow.fuelStored    - pillagedFuel,
                 crystalStored:        targetRow.crystalStored - pillagedCrystal,
+                influence:            newInfluence,
                 purchasePriceAlgo:    null,
                 lastFrontierClaimTs:  now,
                 ...reconquestUpdates,

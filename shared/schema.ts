@@ -314,6 +314,7 @@ export const attackActionSchema = z.object({
     iron: z.number().min(0),
     fuel: z.number().min(0),
   }),
+  crystalBurned: z.number().min(0).optional(),
   commanderId: z.string().optional(),
 });
 
