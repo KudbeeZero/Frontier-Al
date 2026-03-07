@@ -178,7 +178,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
       const color = isSelected
         ? COLOR_SELECTED
-        : parcel?.ownerId === currentPlayerId
+        : (currentPlayerId && parcel?.ownerId === currentPlayerId)
           ? COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1)
           : getPlotColor(parcel, currentPlayerId, players);
       meshRef.current.setColorAt(i, color);
@@ -228,15 +228,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [raycaster, camera, plotCoords, plotIdToParcel, onPlotSelect]);
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[undefined, undefined, PLOT_COUNT]}
-      onPointerDown={handlePointerDown}
-      onClick={handleClick}
-    >
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors side={THREE.DoubleSide} />
-    </instancedMesh>
+      <instancedMesh
+        ref={meshRef}
+        args={[undefined, undefined, PLOT_COUNT]}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors side={THREE.DoubleSide} />
+      </instancedMesh>
   );
 }
 
