@@ -154,11 +154,30 @@ export function LandSheet({
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="grid grid-cols-5 gap-2 mb-3">
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
               <Shield className={cn("w-4 h-4 mx-auto mb-1", parcel.defenseLevel > 5 ? "text-green-500" : parcel.defenseLevel > 2 ? "text-yellow-500" : "text-red-500")} />
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Defense</span>
               <span className="font-mono text-sm font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
+            </div>
+            <div className="text-center">
+              <div className={cn(
+                "w-4 h-4 mx-auto mb-1 rounded-full border-2",
+                (parcel.influence ?? 100) > 66
+                  ? "border-green-500 bg-green-500/20"
+                  : (parcel.influence ?? 100) > 33
+                  ? "border-yellow-500 bg-yellow-500/20"
+                  : "border-red-500 bg-red-500/20"
+              )} />
+              <span className={cn(
+                "font-mono text-sm font-bold",
+                (parcel.influence ?? 100) > 66 ? "text-green-400"
+                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
+                  : "text-red-400"
+              )}>
+                {parcel.influence ?? 100}
+              </span>
+              <p className="text-[10px] text-muted-foreground uppercase">Influence</p>
             </div>
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
               <MapPin className="w-4 h-4 mx-auto mb-1 text-amber-500" />

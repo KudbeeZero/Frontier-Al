@@ -149,10 +149,10 @@ export function useBlockchainActions() {
   );
 
   const queueAttackAction = useCallback(
-    (plotId: number, troops: number, iron: number, fuel: number) => {
+    (plotId: number, troops: number, iron: number, fuel: number, crystal: number = 0) => {
       if (isReady && address) {
-        console.log(`[ACTION-DEBUG] queueAttackAction | path: enqueueGameAction→batch | plotId: ${plotId} | troops: ${troops} | ts: ${Date.now()}`);
-        enqueueGameAction("attack", plotId, { troops, iron, fuel });
+        console.log(`[ACTION-DEBUG] queueAttackAction | path: enqueueGameAction→batch | plotId: ${plotId} | troops: ${troops} | crystal: ${crystal} | ts: ${Date.now()}`);
+        enqueueGameAction("attack", plotId, { troops, iron, fuel, crystal });
       }
     },
     [isReady, address]

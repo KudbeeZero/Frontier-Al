@@ -226,15 +226,15 @@ export function GameLayout() {
 
   const handleAttackClick = () => setAttackModalOpen(true);
 
-  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, commanderId?: string) => {
+  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string) => {
     if (!isConnected) {
       toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
       return;
     }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
+    queueAttackAction(selectedParcel.plotId, troops, iron, fuel, crystal);
     attackMutation.mutate(
-      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, commanderId },
+      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, crystalBurned: crystal, commanderId },
       {
         onSuccess: (data: any) => {
           const battleId = data?.id as string | undefined;

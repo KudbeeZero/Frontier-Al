@@ -14,7 +14,7 @@ interface AttackModalProps {
   onOpenChange: (open: boolean) => void;
   targetParcel: LandParcel | null;
   attacker: Player | null;
-  onAttack: (troops: number, iron: number, fuel: number, commanderId?: string) => void;
+  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string) => void;
   isAttacking: boolean;
 }
 
@@ -60,6 +60,7 @@ export function AttackModal({
   const [troops, setTroops] = useState(1);
   const [extraIron, setExtraIron] = useState(0);
   const [extraFuel, setExtraFuel] = useState(0);
+  const [extraCrystal, setExtraCrystal] = useState(0);
   const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(null);
 
   if (!targetParcel || !attacker) return null;
@@ -78,7 +79,7 @@ export function AttackModal({
     fuel: baseCost.fuel + extraFuel,
   };
 
-  const canAfford = attacker.iron >= totalCost.iron && attacker.fuel >= totalCost.fuel;
+  const canAfford = attacker.iron >= totalCost.iron && attacker.fuel >= totalCost.fuel && attacker.crystal >= extraCrystal;
   const maxTroops = Math.min(
     10,
     Math.floor(attacker.iron / ATTACK_BASE_COST.iron),
@@ -86,12 +87,12 @@ export function AttackModal({
   );
 
   const commanderBonus = selectedCommander?.attackBonus ?? 0;
-  const attackerPower = troops * 10 + extraIron * 0.5 + extraFuel * 0.8 + commanderBonus;
+  const attackerPower = troops * 10 + extraIron * 0.5 + extraFuel * 0.8 + extraCrystal * 1.2 + commanderBonus;
   const defenderPower = targetParcel.defenseLevel * 15 * biomeBonuses[targetParcel.biome].defenseMod;
   const winChance = Math.min(95, Math.max(5, (attackerPower / (attackerPower + defenderPower)) * 100));
 
   const handleSubmit = () => {
-    onAttack(troops, totalCost.iron, totalCost.fuel, selectedCommanderId ?? undefined);
+    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined);
   };
 
   return (
@@ -260,6 +261,29 @@ export function AttackModal({
                 data-testid="slider-extra-fuel"
               />
             </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-display uppercase tracking-wide flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-cyan-400 inline-block" />
+                  Crystal Boost
+                  <span className="text-[10px] text-muted-foreground normal-case font-normal">(×1.2 power)</span>
+                </span>
+                <span className="font-mono text-sm text-cyan-400">{extraCrystal}</span>
+              </div>
+              <Slider
+                value={[extraCrystal]}
+                onValueChange={([v]) => setExtraCrystal(v)}
+                min={0}
+                max={Math.max(0, attacker.crystal)}
+                step={1}
+                className="w-full"
+                data-testid="slider-extra-crystal"
+              />
+              {attacker.crystal === 0 && (
+                <p className="text-[10px] text-muted-foreground mt-1">Mine volcanic parcels to acquire crystal.</p>
+              )}
+            </div>
           </div>
 
           {/* Power Display */}
@@ -305,6 +329,11 @@ export function AttackModal({
               <span className={cn("font-mono flex items-center gap-1", !canAfford && "text-destructive")}>
                 <Fuel className="w-3 h-3 text-fuel" /> {totalCost.fuel}
               </span>
+              {extraCrystal > 0 && (
+                <span className="font-mono flex items-center gap-1 text-cyan-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block" /> {extraCrystal}
+                </span>
+              )}
             </div>
           </div>
         </div>
