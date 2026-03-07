@@ -1,10 +1,10 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "python-3.11", "web"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["nano", "emacsclient-commands", "lsof", "gt", "run"]
+packages = ["emacsclient-commands", "gt", "lsof", "nano", "run"]
 
 [env]
 PORT = "5000"
