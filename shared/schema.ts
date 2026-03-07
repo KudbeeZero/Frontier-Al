@@ -397,6 +397,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
   baseDefenseBonus: number;
   specialAbility: string;
   imageKey: string;
+  maxConcurrentAttacks: number;
 }> = {
   sentinel: {
     name: "Sentinel",
@@ -406,6 +407,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 10,
     specialAbility: "Fortify",
     imageKey: "sentinel",
+    maxConcurrentAttacks: 1,
   },
   phantom: {
     name: "Phantom",
@@ -415,6 +417,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 6,
     specialAbility: "Cloak",
     imageKey: "phantom",
+    maxConcurrentAttacks: 2,
   },
   reaper: {
     name: "Reaper",
@@ -424,6 +427,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 5,
     specialAbility: "Annihilate",
     imageKey: "reaper",
+    maxConcurrentAttacks: 3,
   },
 };
 

@@ -2496,6 +2496,37 @@ export class DbStorage implements IStorage {
       if (target.ownerId === attacker.id) throw new Error("Cannot attack your own territory");
       if (target.activeBattleId) throw new Error("Territory is already under attack");
 
+      // ── Commander gate ────────────────────────────────────────────────────
+      const attackerCommanders = (attackerRow.commanders ?? []) as CommanderAvatar[];
+      if (!attackerRow.isAi && attackerCommanders.length === 0) {
+        throw new Error("A Commander is required to launch an attack. Mint one from the Commander panel.");
+      }
+
+      // ── Concurrent attack cap ─────────────────────────────────────────────
+      if (!attackerRow.isAi) {
+        const TIER_RANK: Record<string, number> = { sentinel: 1, phantom: 2, reaper: 3 };
+        const highestTier = attackerCommanders.reduce((best, c) => {
+          return (TIER_RANK[c.tier] ?? 0) > (TIER_RANK[best] ?? 0) ? c.tier : best;
+        }, "sentinel" as string);
+        const maxConcurrent = COMMANDER_INFO[highestTier as CommanderTier]?.maxConcurrentAttacks ?? 1;
+
+        const [{ count }] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(battlesTable)
+          .where(
+            and(
+              eq(battlesTable.attackerId, attacker.id),
+              eq(battlesTable.status, "pending")
+            )
+          );
+
+        if (count >= maxConcurrent) {
+          throw new Error(
+            `Attack limit reached. Your ${highestTier} Commander allows ${maxConcurrent} simultaneous attack${maxConcurrent > 1 ? "s" : ""}. Wait for a battle to resolve.`
+          );
+        }
+      }
+
       const { iron, fuel } = action.resourcesBurned;
       const crystal = action.crystalBurned ?? 0;
       if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
