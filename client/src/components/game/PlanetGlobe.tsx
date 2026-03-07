@@ -177,10 +177,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  // Fibonacci nearest-neighbor MIN spacing at N=21000 is ~0.060 units.
-  // Keep fill below that to avoid overlap-caused diagonal artifacts.
-  const fillSize   = GLOBE_RADIUS * 0.026;
-  const borderSize = GLOBE_RADIUS * 0.030;
+  // Equivalent of plotSize * 0.007/0.0125 scaling; border gap tightened (ring 0.78→0.6 equivalent).
+  const fillSize   = GLOBE_RADIUS * 0.014;
+  const borderSize = GLOBE_RADIUS * 0.016;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
