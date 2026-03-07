@@ -497,6 +497,11 @@ export function enqueueGameAction(
   extra?: Record<string, unknown>,
   minerals?: { fe: number; fu: number; cr: number }
 ) {
+  const CHAIN_OPTIONAL_ACTIONS = ["mine", "collect", "upgrade", "build", "switch_commander"];
+  if (CHAIN_OPTIONAL_ACTIONS.includes(type)) {
+    // These actions are server-authoritative. No on-chain note needed.
+    return;
+  }
   const action: BatchedAction = { a: type, p: plotId, x: extra, t: Date.now() };
   if (minerals) action.m = minerals;
 

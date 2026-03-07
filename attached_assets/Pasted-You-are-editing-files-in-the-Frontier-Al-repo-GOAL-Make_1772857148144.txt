@@ -1,0 +1,65 @@
+You are editing files in the Frontier-Al repo.
+
+GOAL: Make mine, collect, and upgrade actions server-side only (no wallet signature required).
+Land purchase, claimFrontier, and NFT delivery keep their signatures — do not touch those.
+
+DO NOT refactor. DO NOT rename anything. DO NOT touch routes.ts blockchain init logic.
+Make only the targeted changes described below.
+
+─────────────────────────────────────────────
+CHANGE 1 — server/routes.ts: Remove on-chain note from mine, collect, and upgrade routes
+─────────────────────────────────────────────
+
+Find the mine route handler. It will look roughly like:
+  app.post("/api/mine", ...
+Inside it, find any call to enqueueGameAction, createGameActionTransaction, or any algosdk/blockchain call.
+Remove only those blockchain call lines. Keep the storage.mineResources() call and the res.json() response intact.
+
+Find the collect route handler:
+  app.post("/api/collect", ...
+Same treatment — remove any enqueueGameAction or blockchain call inside it. Keep storage.collectAll() and res.json().
+
+Find the upgrade / build route handler:
+  app.post("/api/upgrade", ... OR app.post("/api/build", ...
+Same treatment — remove any enqueueGameAction or blockchain call. Keep the storage call and res.json().
+
+─────────────────────────────────────────────
+CHANGE 2 — client/src/hooks/useBlockchainActions.ts: Skip signing for mine, collect, upgrade
+─────────────────────────────────────────────
+
+Find the executeAction function (or equivalent dispatch function) that handles action types.
+It will have a switch or if/else on action type ("mine", "collect", "upgrade", "purchase", "claim_frontier", etc).
+
+For the "mine", "collect", and "upgrade" action types:
+  - Remove the wallet signing step (the peraWallet.signTransaction or luteWallet.signTransaction call)
+  - Remove the algodClient.sendRawTransaction call
+  - Keep the fetch() call to the server REST endpoint (e.g. POST /api/mine)
+  - Keep the queryClient.invalidateQueries() call after success
+
+Do NOT touch the "purchase", "claim_frontier", or "mint_avatar" action types — those keep their full signing flow.
+
+─────────────────────────────────────────────
+CHANGE 3 — client/src/lib/algorand.ts: Guard enqueueGameAction for mine/collect/upgrade
+─────────────────────────────────────────────
+
+Find the enqueueGameAction function.
+At the very top of that function body, add this guard:
+
+  const CHAIN_OPTIONAL_ACTIONS = ["mine", "collect", "upgrade", "build", "switch_commander"];
+  if (CHAIN_OPTIONAL_ACTIONS.includes(action.type)) {
+    // These actions are server-authoritative. No on-chain note needed.
+    return;
+  }
+
+This ensures even if enqueueGameAction is called accidentally for these types, it exits immediately without creating a transaction.
+
+─────────────────────────────────────────────
+DO NOT touch:
+- server/services/chain/* (any file)
+- server/algorand.ts
+- The purchase land flow
+- The claimFrontier flow
+- The NFT deliver flow
+- WalletContext.tsx
+- PlanetGlobe.tsx
+─────────────────────────────────────────────

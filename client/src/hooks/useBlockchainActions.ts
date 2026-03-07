@@ -273,14 +273,35 @@ export function useBlockchainActions() {
   );
 
   const signMineAction = useCallback(
-    (plotId: number) => signGameAction("mine", plotId),
-    [signGameAction]
+    async (plotId: number) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
   );
 
   const signUpgradeAction = useCallback(
-    (plotId: number, upgradeType: string) =>
-      signGameAction("upgrade", plotId, { upgradeType }),
-    [signGameAction]
+    async (plotId: number, upgradeType: string) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
+  );
+
+  const signBuildAction = useCallback(
+    async (plotId: number, improvementType: string) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
+  );
+
+  const signCollectAction = useCallback(
+    async () => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
   );
 
   const signAttackAction = useCallback(
@@ -425,6 +446,8 @@ export function useBlockchainActions() {
     lastTxId,
     signMineAction,
     signUpgradeAction,
+    signBuildAction,
+    signCollectAction,
     signAttackAction,
     signPurchaseAction,
     signClaimFrontierAction,
