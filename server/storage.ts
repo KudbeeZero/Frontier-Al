@@ -1209,6 +1209,7 @@ export class MemStorage implements IStorage {
   }
 
   async runAITurn(): Promise<GameEvent[]> {
+    if (process.env.AI_ENABLED !== 'true') return [];
     const newEvents: GameEvent[] = [];
     const now = Date.now();
 
@@ -2969,6 +2970,7 @@ export class DbStorage implements IStorage {
 
   async runAITurn(): Promise<GameEvent[]> {
     await this.initialize();
+    if (process.env.AI_ENABLED !== 'true') return [];
     const now = Date.now();
     const newEvents: GameEvent[] = [];
 
@@ -3055,22 +3057,24 @@ export class DbStorage implements IStorage {
                 const cost = entry.p.purchasePriceAlgo ?? 0.5;
                 if ((ai.treasury ?? 0) < cost) break;
 
-                try {
-                  await this.purchaseLand({ playerId: ai.id, parcelId: entry.p.id });
-                  purchased++;
-                  
-                  // Deduct from treasury
-                  await this.db.update(playersTable)
-                    .set({ treasury: sql`${playersTable.treasury} - ${cost}` })
-                    .where(eq(playersTable.id, ai.id));
+                if (process.env.AI_ENABLED === 'true') {
+                  try {
+                    await this.purchaseLand({ playerId: ai.id, parcelId: entry.p.id });
+                    purchased++;
+                    
+                    // Deduct from treasury
+                    await this.db.update(playersTable)
+                      .set({ treasury: sql`${playersTable.treasury} - ${cost}` })
+                      .where(eq(playersTable.id, ai.id));
 
-                  const evt: GameEvent = {
-                    id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: entry.p.id,
-                    description: `${ai.name} expanded toward NEXUS-7 territory (Cost: ${cost} ALGO)`, timestamp: now,
-                  };
-                  await this.addEvent(evt);
-                  newEvents.push(evt);
-                } catch {}
+                    const evt: GameEvent = {
+                      id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: entry.p.id,
+                      description: `${ai.name} expanded toward NEXUS-7 territory (Cost: ${cost} ALGO)`, timestamp: now,
+                    };
+                    await this.addEvent(evt);
+                    newEvents.push(evt);
+                  } catch {}
+                }
               }
             }
           }
@@ -3087,16 +3091,18 @@ export class DbStorage implements IStorage {
             });
             if (nearby.length > 0) {
               const target = nearby[Math.floor(Math.random() * nearby.length)];
-              try {
-                await this.purchaseLand({ playerId: ai.id, parcelId: target.id });
-                const desc = `${ai.name} purchased new territory`;
-                const evt: GameEvent = {
-                  id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: target.id,
-                  description: desc, timestamp: now,
-                };
-                await this.addEvent(evt);
-                newEvents.push(evt);
-              } catch {}
+              if (process.env.AI_ENABLED === 'true') {
+                try {
+                  await this.purchaseLand({ playerId: ai.id, parcelId: target.id });
+                  const desc = `${ai.name} purchased new territory`;
+                  const evt: GameEvent = {
+                    id: randomUUID(), type: "ai_action", playerId: ai.id, parcelId: target.id,
+                    description: desc, timestamp: now,
+                  };
+                  await this.addEvent(evt);
+                  newEvents.push(evt);
+                } catch {}
+              }
               break;
             }
           }
@@ -3159,31 +3165,33 @@ export class DbStorage implements IStorage {
 
           if (canAttack && Math.random() > attackThreshold) {
             if (priorityTargetId) {
-              try {
-                await this.deployAttack({
-                  attackerId: ai.id,
-                  targetParcelId: priorityTargetId,
-                  troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
-                  resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
-                });
+              if (process.env.AI_ENABLED === 'true') {
+                try {
+                  await this.deployAttack({
+                    attackerId: ai.id,
+                    targetParcelId: priorityTargetId,
+                    troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
+                    resourcesBurned: { iron: ATTACK_BASE_COST.iron, fuel: ATTACK_BASE_COST.fuel },
+                  });
 
-                const desc =
-                  ai.name === "VANGUARD"
-                    ? `${ai.name} executed Nexus strike`
-                    : `${ai.name} launched suppression strike`;
+                  const desc =
+                    ai.name === "VANGUARD"
+                      ? `${ai.name} executed Nexus strike`
+                      : `${ai.name} launched suppression strike`;
 
-                const evt: GameEvent = {
-                  id: randomUUID(),
-                  type: "ai_action",
-                  playerId: ai.id,
-                  parcelId: priorityTargetId!,   // ✅ add this
-                  description: desc,
-                  timestamp: now,
-                };
+                  const evt: GameEvent = {
+                    id: randomUUID(),
+                    type: "ai_action",
+                    playerId: ai.id,
+                    parcelId: priorityTargetId!,   // ✅ add this
+                    description: desc,
+                    timestamp: now,
+                  };
 
-                await this.addEvent(evt);
-                newEvents.push(evt);
-              } catch {}
+                  await this.addEvent(evt);
+                  newEvents.push(evt);
+                } catch {}
+              }
             } else {
               for (const parcel of ownedParcels) {
                 const targets = allParcels.filter((p) => {
@@ -3193,31 +3201,33 @@ export class DbStorage implements IStorage {
 
                 if (targets.length > 0) {
                   const attackTarget = targets[Math.floor(Math.random() * targets.length)];
-                  try {
-                    await this.deployAttack({
-                      attackerId: ai.id,
-                      targetParcelId: attackTarget.id,
-                      troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
-                      resourcesBurned: {
-                        iron: ATTACK_BASE_COST.iron,
-                        fuel: ATTACK_BASE_COST.fuel,
-                      },
-                    });
+                  if (process.env.AI_ENABLED === 'true') {
+                    try {
+                      await this.deployAttack({
+                        attackerId: ai.id,
+                        targetParcelId: attackTarget.id,
+                        troopsCommitted: ai.name === "VANGUARD" ? 2 : 1,
+                        resourcesBurned: {
+                          iron: ATTACK_BASE_COST.iron,
+                          fuel: ATTACK_BASE_COST.fuel,
+                        },
+                      });
 
-                    const desc = `${ai.name} deployed troops`;
+                      const desc = `${ai.name} deployed troops`;
 
-                    const evt: GameEvent = {
-                      id: randomUUID(),
-                      type: "ai_action",
-                      playerId: ai.id,
-                      parcelId: attackTarget.id,
-                      description: desc,
-                      timestamp: now,
-                    };
+                      const evt: GameEvent = {
+                        id: randomUUID(),
+                        type: "ai_action",
+                        playerId: ai.id,
+                        parcelId: attackTarget.id,
+                        description: desc,
+                        timestamp: now,
+                      };
 
-                    await this.addEvent(evt);
-                    newEvents.push(evt);
-                  } catch {}
+                      await this.addEvent(evt);
+                      newEvents.push(evt);
+                    } catch {}
+                  }
                   break;
                 }
               }
@@ -3228,12 +3238,14 @@ export class DbStorage implements IStorage {
 
       // Upgrade defense
       if (ai.aiBehavior === "defensive") {
-        for (const parcel of ownedParcels) {
-          if (parcel.defenseLevel < 5 && ai.iron >= UPGRADE_COSTS.defense.iron && ai.fuel >= UPGRADE_COSTS.defense.fuel) {
-            try {
-              await this.upgradeBase({ playerId: ai.id, parcelId: parcel.id, upgradeType: "defense" });
-            } catch {}
-            break;
+        if (process.env.AI_ENABLED === 'true') {
+          for (const parcel of ownedParcels) {
+            if (parcel.defenseLevel < 5 && ai.iron >= UPGRADE_COSTS.defense.iron && ai.fuel >= UPGRADE_COSTS.defense.fuel) {
+              try {
+                await this.upgradeBase({ playerId: ai.id, parcelId: parcel.id, upgradeType: "defense" });
+              } catch {}
+              break;
+            }
           }
         }
       }
@@ -3283,27 +3295,29 @@ export class DbStorage implements IStorage {
         );
 
         if (decision.shouldAttempt && decision.targetParcelId) {
-          try {
-            await this.deployAttack({
-              attackerId:      ai.id,
-              targetParcelId:  decision.targetParcelId,
-              troopsCommitted: decision.troopsCommitted,
-              resourcesBurned: decision.resourcesBurned,
-            });
+          if (process.env.AI_ENABLED === 'true') {
+            try {
+              await this.deployAttack({
+                attackerId:      ai.id,
+                targetParcelId:  decision.targetParcelId,
+                troopsCommitted: decision.troopsCommitted,
+                resourcesBurned: decision.resourcesBurned,
+              });
 
-            const evt: GameEvent = {
-              id:          randomUUID(),
-              type:        "ai_action",
-              playerId:    ai.id,
-              parcelId:    decision.targetParcelId,
-              description: decision.reason,
-              timestamp:   now,
-            };
-            await this.addEvent(evt);
-            newEvents.push(evt);
-          } catch (err) {
-            // Attack failed (cooldown, resources, etc.) — log and move on
-            console.warn(`[AI-RECONQUEST] ${ai.name} reconquest attempt failed:`, err instanceof Error ? err.message : err);
+              const evt: GameEvent = {
+                id:          randomUUID(),
+                type:        "ai_action",
+                playerId:    ai.id,
+                parcelId:    decision.targetParcelId,
+                description: decision.reason,
+                timestamp:   now,
+              };
+              await this.addEvent(evt);
+              newEvents.push(evt);
+            } catch (err) {
+              // Attack failed (cooldown, resources, etc.) — log and move on
+              console.warn(`[AI-RECONQUEST] ${ai.name} reconquest attempt failed:`, err instanceof Error ? err.message : err);
+            }
           }
         }
 
@@ -3320,28 +3334,30 @@ export class DbStorage implements IStorage {
             (now - Number((p as any).capturedAt)) < 15 * 60 * 1000 // captured in last 15 min
           );
           for (const raidPlot of justConquered) {
-            try {
-              await this.db.update(parcelsTable)
-                .set({
-                  ownerId:              null,
-                  ownerType:            null,
-                  purchasePriceAlgo:    0.5,
-                  capturedFromFaction:  null,
-                  capturedAt:           null,
-                } as any)
-                .where(eq(parcelsTable.id, raidPlot.id));
+            if (process.env.AI_ENABLED === 'true') {
+              try {
+                await this.db.update(parcelsTable)
+                  .set({
+                    ownerId:              null,
+                    ownerType:            null,
+                    purchasePriceAlgo:    0.5,
+                    capturedFromFaction:  null,
+                    capturedAt:           null,
+                  } as any)
+                  .where(eq(parcelsTable.id, raidPlot.id));
 
-              const evt: GameEvent = {
-                id:          randomUUID(),
-                type:        "ai_action",
-                playerId:    ai.id,
-                parcelId:    raidPlot.id,
-                description: `${ai.name} raided plot #${raidPlot.plotId} and withdrew`,
-                timestamp:   now,
-              };
-              await this.addEvent(evt);
-              newEvents.push(evt);
-            } catch {}
+                const evt: GameEvent = {
+                  id:          randomUUID(),
+                  type:        "ai_action",
+                  playerId:    ai.id,
+                  parcelId:    raidPlot.id,
+                  description: `${ai.name} raided plot #${raidPlot.plotId} and withdrew`,
+                  timestamp:   now,
+                };
+                await this.addEvent(evt);
+                newEvents.push(evt);
+              } catch {}
+            }
           }
         }
       }
