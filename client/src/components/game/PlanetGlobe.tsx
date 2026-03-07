@@ -582,7 +582,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
-        minDistance={GLOBE_RADIUS * 1.25}
+        minDistance={GLOBE_RADIUS * 1.8}
         maxDistance={GLOBE_RADIUS * 5.5}
         rotateSpeed={0.45}
         zoomSpeed={1.1}
@@ -632,7 +632,7 @@ export default function PlanetGlobe({
   return (
     <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#02040e" }}>
       <Canvas
-        camera={{ position: [0, 0, GLOBE_RADIUS * 3.2], fov: 42 }}
+        camera={{ position: [0, 0, GLOBE_RADIUS * 4.2], fov: 42 }}
         gl={{ antialias: true, alpha: false, toneMapping: THREE.ReinhardToneMapping, toneMappingExposure: 2.2 }}
         style={{ background: "#02040e" }}
       >
