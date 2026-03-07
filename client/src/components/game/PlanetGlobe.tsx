@@ -138,8 +138,17 @@ interface PlotOverlayProps {
   onPlotSelect: (parcelId: string) => void;
 }
 
+// Deterministic size variation per plotId — 8 buckets for natural variety
+const SIZE_VARIANTS = [1.0, 1.12, 0.90, 1.18, 0.95, 1.06, 0.88, 1.14];
+function getPlotSizeVariant(plotId: number): number {
+  return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
+}
+
+const BORDER_COLOR = new THREE.Color("#e0e8ff");
+
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
-  const meshRef = useRef<THREE.InstancedMesh>(null!);
+  const fillMeshRef  = useRef<THREE.InstancedMesh>(null!);
+  const borderMeshRef = useRef<THREE.InstancedMesh>(null!);
   const readyRef = useRef(false);
   const { raycaster, mouse, camera } = useThree();
   const pulseRef = useRef(0);
@@ -167,82 +176,100 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const plotSize = GLOBE_RADIUS * 0.0125;
+  // Fill tiles sit slightly above globe, border tiles sit just below
+  const fillSize   = GLOBE_RADIUS * 0.024;
+  const borderSize = GLOBE_RADIUS * 0.027;
 
-  const getPlotScale = (parcel: LandParcel | undefined, isSelected: boolean): number => {
-    if (isSelected) return 2.8;
-    if (!parcel?.ownerId) return 1.0;
-    if (parcel.ownerId === currentPlayerId) return 2.0;
-    return 1.7;
+  const applyInstance = (
+    mesh: THREE.InstancedMesh,
+    i: number,
+    pos: THREE.Vector3,
+    size: number,
+    color: THREE.Color
+  ) => {
+    dummy.position.copy(pos);
+    dummy.lookAt(pos.clone().multiplyScalar(2));
+    dummy.scale.setScalar(size);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setColorAt(i, color);
   };
 
   useFrame((_, delta) => {
-    if (!meshRef.current || !readyRef.current || animatedIndices.length === 0) return;
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current || animatedIndices.length === 0) return;
     pulseRef.current += delta * 2.5;
 
     for (const i of animatedIndices) {
       const coord = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
+      const sizeVar = getPlotSizeVariant(coord.plotId);
 
-      const baseScale = getPlotScale(parcel, isSelected);
       const pulse = isSelected
-        ? baseScale + Math.sin(pulseRef.current * 2) * 0.5
-        : baseScale + Math.sin(pulseRef.current + i * 0.1) * 0.12;
+        ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
+        : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
 
-      const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
-      dummy.position.copy(pos);
-      dummy.lookAt(pos.clone().multiplyScalar(2));
-      dummy.scale.setScalar(plotSize * pulse);
-      dummy.updateMatrix();
-      meshRef.current.setMatrixAt(i, dummy.matrix);
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
 
-      let color: THREE.Color;
+      let fillColor: THREE.Color;
       const isHovered = hoveredIndexRef.current === i;
       if (parcel?.activeBattleId) {
-        const battlePulse = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
-        color = new THREE.Color("#ff1744").multiplyScalar(battlePulse);
+        const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
+        fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
       } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
-        color = COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
       } else {
-        color = getPlotColor(parcel, currentPlayerId, players);
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
-      if (isHovered) color.multiplyScalar(1.2);
-      meshRef.current.setColorAt(i, color);
+      if (isHovered) fillColor = fillColor.clone().multiplyScalar(1.3);
+
+      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * pulse, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse,
+        isSelected ? new THREE.Color("#ffffff") : BORDER_COLOR
+      );
     }
-    meshRef.current.instanceMatrix.needsUpdate = true;
-    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+
+    fillMeshRef.current.instanceMatrix.needsUpdate = true;
+    borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
+    if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
   });
 
   useEffect(() => {
-    if (!meshRef.current) return;
+    if (!fillMeshRef.current || !borderMeshRef.current) return;
     for (let i = 0; i < plotCoords.length; i++) {
       const coord = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
-      const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
-      dummy.position.copy(pos);
-      dummy.lookAt(pos.clone().multiplyScalar(2));
-      let color: THREE.Color;
+      const sizeVar = getPlotSizeVariant(coord.plotId);
+
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
+
+      let fillColor: THREE.Color;
       if (parcel?.activeBattleId) {
-        color = new THREE.Color("#ff1744").multiplyScalar(0.9);
+        fillColor = new THREE.Color("#ff1744").multiplyScalar(0.9);
       } else {
-        color = getPlotColor(parcel, currentPlayerId, players);
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
-      dummy.scale.setScalar(plotSize * getPlotScale(parcel, isSelected));
-      dummy.updateMatrix();
-      meshRef.current.setMatrixAt(i, dummy.matrix);
-      meshRef.current.setColorAt(i, color);
+
+      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar,
+        isSelected ? new THREE.Color("#ffffff") : BORDER_COLOR
+      );
     }
-    meshRef.current.instanceMatrix.needsUpdate = true;
-    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    fillMeshRef.current.instanceMatrix.needsUpdate = true;
+    borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
+    if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
     readyRef.current = true;
-  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
+  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, fillSize, borderSize]);
 
   const handlePointerMove = useCallback((e: any) => {
-    if (!meshRef.current) return;
+    if (!fillMeshRef.current) return;
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(meshRef.current);
+    const intersects = raycaster.intersectObject(fillMeshRef.current);
     hoveredIndexRef.current = intersects.length > 0 ? (intersects[0].instanceId ?? null) : null;
   }, [raycaster, mouse, camera]);
 
@@ -253,12 +280,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
     if (!pointerDownState.current) return;
-
-    // Use snapshotted mouse position and camera to prevent drift during orbit damping
     raycaster.setFromCamera(pointerDownState.current.mouse, pointerDownState.current.cam);
-    const intersects = raycaster.intersectObject(meshRef.current);
+    const intersects = raycaster.intersectObject(fillMeshRef.current);
     pointerDownState.current = null;
-
     if (!intersects.length) return;
     const instanceId = intersects[0].instanceId;
     if (instanceId === undefined) return;
@@ -268,25 +292,33 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [raycaster, camera, plotCoords, plotIdToParcel, onPlotSelect]);
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[undefined, undefined, PLOT_COUNT]}
-      onPointerMove={handlePointerMove}
-      onPointerDown={handlePointerDown}
-      onClick={handleClick}
-    >
-      <ringGeometry args={[0.65, 1, 128]} />
-      <meshPhongMaterial 
-        transparent 
-        opacity={0.8} 
-        depthWrite={false} 
-        side={THREE.DoubleSide}
-        emissive={new THREE.Color(0.4, 0.4, 0.4)}
-        emissiveIntensity={0.6}
-        shininess={100}
-        wireframe={false}
-      />
-    </instancedMesh>
+    <>
+      {/* Border layer — uniform light color, sits just below fill */}
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial transparent opacity={0.55} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
+      </instancedMesh>
+
+      {/* Fill layer — biome/ownership colors, sits in front */}
+      <instancedMesh
+        ref={fillMeshRef}
+        args={[undefined, undefined, PLOT_COUNT]}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshPhongMaterial
+          transparent
+          opacity={0.82}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          emissive={new THREE.Color(0.15, 0.15, 0.15)}
+          emissiveIntensity={0.4}
+          shininess={60}
+        />
+      </instancedMesh>
+    </>
   );
 }
 
