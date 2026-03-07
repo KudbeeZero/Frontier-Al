@@ -8,6 +8,8 @@ import { Canvas, useLoader, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, Player } from "@shared/schema";
+import type { WorldEvent } from "@shared/worldEvents";
+import { GlobeEventOverlays } from "./GlobeEventOverlays";
 import { biomeColors } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Sword, HardHat, Pickaxe, Shield, Zap } from "lucide-react";
@@ -557,9 +559,12 @@ interface SceneProps {
   selectedPlotId: string | null;
   onPlotSelect: (parcelId: string) => void;
   controlsRef: React.RefObject<OrbitControlsImpl>;
+  replayEvents?: WorldEvent[];
+  replayTime?: number;
+  replayVisibleTypes?: Set<string>;
 }
 
-function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef }: SceneProps) {
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
   return (
     <>
       <StarField />
@@ -576,6 +581,13 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
           selectedPlotId={selectedPlotId}
           onPlotSelect={onPlotSelect}
         />
+        {replayEvents && replayEvents.length > 0 && replayVisibleTypes && replayTime !== undefined && (
+          <GlobeEventOverlays
+            events={replayEvents}
+            replayTime={replayTime}
+            visibleTypes={replayVisibleTypes}
+          />
+        )}
       </group>
       <AtmosphereGlow />
       <OrbitControls
@@ -602,6 +614,9 @@ interface PlanetGlobeProps {
   onMine?: () => void;
   onBuild?: () => void;
   className?: string;
+  replayEvents?: WorldEvent[];
+  replayTime?: number;
+  replayVisibleTypes?: Set<string>;
 }
 
 export default function PlanetGlobe({
@@ -614,6 +629,9 @@ export default function PlanetGlobe({
   onMine,
   onBuild,
   className,
+  replayEvents,
+  replayTime,
+  replayVisibleTypes,
 }: PlanetGlobeProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null!);
 
@@ -642,6 +660,9 @@ export default function PlanetGlobe({
           selectedPlotId={selectedParcelId}
           onPlotSelect={onParcelSelect}
           controlsRef={controlsRef}
+          replayEvents={replayEvents}
+          replayTime={replayTime}
+          replayVisibleTypes={replayVisibleTypes}
         />
       </Canvas>
 

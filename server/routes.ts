@@ -7,6 +7,7 @@ import { db } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
 import { broadcastGameState } from "./wsServer";
+import { appendWorldEvent, listWorldEvents, getRecentWorldEvents, seedDemoWorldEvents } from "./worldEventStore";
 
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
@@ -615,6 +616,13 @@ export async function registerRoutes(
       res.json({ success: true, battle });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
+      // Log world event
+      try {
+        const targetParcel = await storage.getParcel(action.targetParcelId);
+        if (targetParcel) {
+          appendWorldEvent({ type: "battle_started", timestamp: Date.now(), lat: targetParcel.lat, lng: targetParcel.lng, plotId: targetParcel.plotId, defenderPlotId: targetParcel.plotId, playerId: action.attackerId, severity: "high", metadata: { battleId: battle.id, targetParcelId: action.targetParcelId } });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Attack failed" });
@@ -656,6 +664,7 @@ export async function registerRoutes(
       const buyerAddress = player.address;
       const parcel = await storage.purchaseLand(action);
       console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
+      appendWorldEvent({ type: "land_claimed", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: action.playerId, metadata: { plotId: parcel.plotId } });
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
       let nftAssetId: number | null = null;
@@ -932,10 +941,41 @@ export async function registerRoutes(
     }
   });
 
+  // World Intel API endpoints
+  app.get("/api/world/events", async (req, res) => {
+    try {
+      const { start, end, types, limit } = req.query;
+      const filters: import("@shared/worldEvents").WorldEventFilters = {};
+      if (start)  filters.start  = Number(start);
+      if (end)    filters.end    = Number(end);
+      if (limit)  filters.limit  = Number(limit);
+      if (types)  filters.types  = String(types).split(",") as import("@shared/worldEvents").WorldEventType[];
+      res.json(listWorldEvents(filters));
+    } catch { res.status(500).json({ error: "Failed to fetch world events" }); }
+  });
+
+  app.get("/api/world/events/recent", (_req, res) => {
+    try { res.json(getRecentWorldEvents()); }
+    catch { res.status(500).json({ error: "Failed to fetch recent events" }); }
+  });
+
+  app.post("/api/world/events/dev-seed", (_req, res) => {
+    try { seedDemoWorldEvents(); res.json({ success: true }); }
+    catch { res.status(500).json({ error: "Seed failed" }); }
+  });
+
   // Staggered background tasks — avoids hammering Neon with simultaneous queries
   setInterval(async () => {
     try {
-      await storage.resolveBattles();
+      const resolved = await storage.resolveBattles();
+      for (const battle of resolved) {
+        try {
+          const parcel = await storage.getParcel(battle.targetParcelId);
+          if (parcel) {
+            appendWorldEvent({ type: "battle_resolved", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: battle.attackerId, severity: "high", metadata: { battleId: battle.id, outcome: battle.outcome } });
+          }
+        } catch { /* non-critical */ }
+      }
     } catch (error) {
       console.error("Background task error (battles):", error);
     }

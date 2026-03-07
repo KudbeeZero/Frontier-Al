@@ -16,6 +16,8 @@ import { OnboardingFlow } from "./OnboardingFlow";
 import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
+import { WorldIntelPanel } from "./WorldIntelPanel";
+import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
 import { OrbitalCanvas } from "./OrbitalCanvas";
@@ -91,6 +93,9 @@ export function GameLayout() {
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
   const lastLocatedOwnedId = useRef<string | null>(null);
   const lastLocatedEnemyId = useRef<string | null>(null);
+  const [replayTime, setReplayTime] = useState<number>(Date.now());
+  const [replayVisibleTypes, setReplayVisibleTypes] = useState<Set<string>>(new Set());
+  const { data: replayEvents = [] } = useWorldEvents({ start: Date.now() - 24 * 60 * 60_000, limit: 500 });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -640,6 +645,9 @@ export function GameLayout() {
               onMine={handleMine}
               onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
               className="absolute inset-0 w-full h-full"
+              replayEvents={replayEvents}
+              replayTime={replayTime}
+              replayVisibleTypes={replayVisibleTypes}
             />
           )}
 
@@ -830,6 +838,15 @@ export function GameLayout() {
           )}
           {activeTab === "economics" && (
             <EconomicsPanel className="h-full" />
+          )}
+          {activeTab === "intel" && (
+            <WorldIntelPanel
+              className="h-full"
+              onReplayStateChange={({ replayTime: rt, visibleTypes: vt }) => {
+                setReplayTime(rt);
+                setReplayVisibleTypes(vt);
+              }}
+            />
           )}
         </div>
       )}
