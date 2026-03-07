@@ -199,7 +199,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const color = isSelected
         ? COLOR_SELECTED
         : (currentPlayerId && parcel?.ownerId === currentPlayerId)
-          ? COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.1)
+          ? COLOR_PLAYER.clone().multiplyScalar(0.85 + Math.sin(pulseRef.current + i * 0.1) * 0.15)
           : getPlotColor(parcel, currentPlayerId, players);
       meshRef.current.setColorAt(i, color);
     }
@@ -255,8 +255,17 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <ringGeometry args={[0.55, 1, 6]} />
-      <meshBasicMaterial transparent opacity={0.92} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
+      <ringGeometry args={[0.85, 1, 6]} />
+      <meshStandardMaterial 
+        transparent 
+        opacity={0.65} 
+        depthWrite={false} 
+        side={THREE.DoubleSide} 
+        emissive={new THREE.Color(0.2, 0.2, 0.2)}
+        emissiveIntensity={0.3}
+        roughness={0.7}
+        metalness={0.0}
+      />
     </instancedMesh>
   );
 }
