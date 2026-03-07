@@ -228,15 +228,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [raycaster, camera, plotCoords, plotIdToParcel, onPlotSelect]);
 
   return (
-      <instancedMesh
-        ref={meshRef}
-        args={[undefined, undefined, PLOT_COUNT]}
-        onPointerDown={handlePointerDown}
-        onClick={handleClick}
-      >
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors side={THREE.DoubleSide} />
-      </instancedMesh>
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, PLOT_COUNT]}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+    >
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors={true} side={THREE.DoubleSide} />
+    </instancedMesh>
   );
 }
 
