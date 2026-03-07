@@ -97,7 +97,7 @@ export function LandSheet({
   return (
     <div
       className={cn(
-        "lg:hidden fixed bottom-16 left-0 right-0 z-40 transition-all duration-300 ease-out",
+        "fixed bottom-16 lg:bottom-0 left-0 right-0 lg:left-72 lg:right-72 z-40 transition-all duration-300 ease-out",
         expanded ? "max-h-[75vh]" : "max-h-[280px]"
       )}
       data-testid="land-sheet"

@@ -636,7 +636,7 @@ export function GameLayout() {
               onParcelSelect={setSelectedParcelId}
               onAttack={handleAttackClick}
               onMine={handleMine}
-              onBuild={() => setActiveTab("economics")}
+              onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
               className="absolute inset-0 w-full h-full"
             />
           )}

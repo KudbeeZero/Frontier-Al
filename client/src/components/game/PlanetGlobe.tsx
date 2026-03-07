@@ -65,7 +65,7 @@ function getPlotColor(
   if (!parcel) return new THREE.Color("#0a0f1a");
   if (!parcel.ownerId) {
     const base = biomeColors[parcel.biome] || "#1a2035";
-    return new THREE.Color(base).multiplyScalar(0.22);
+    return new THREE.Color(base);
   }
   if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
   const owner = players.find(p => p.id === parcel.ownerId);
