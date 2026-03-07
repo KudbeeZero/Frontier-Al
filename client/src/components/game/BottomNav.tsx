@@ -22,7 +22,7 @@ const tabs: { id: NavTab; label: string; icon: React.ElementType }[] = [
 export function BottomNav({ activeTab, onTabChange, battleCount }: BottomNavProps) {
   return (
     <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 backdrop-blur-xl bg-card/95 border-t border-border"
+      className="fixed bottom-0 left-0 right-0 z-50 backdrop-blur-xl bg-card/95 border-t border-border"
       data-testid="bottom-nav"
     >
       <div className="flex items-center justify-around h-16 overflow-x-auto">
