@@ -129,6 +129,8 @@ export interface LandParcel {
   frontierAccumulated: number;
   lastFrontierClaimTs: number;
   frontierPerDay: number;
+  influence: number;
+  influenceRepairRate: number;
   // Reconquest tracking — set when human captures AI land
   capturedFromFaction: string | null;
   capturedAt:          number | null;
@@ -186,6 +188,8 @@ export interface Battle {
   status: "pending" | "resolved";
   outcome?: "attacker_wins" | "defender_wins";
   randFactor?: number;
+  crystalBurned?: number;
+  influenceDamage?: number;
   /** ID of the commander deployed in this attack */
   commanderId?: string;
 }

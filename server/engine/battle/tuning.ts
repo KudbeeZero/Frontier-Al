@@ -67,3 +67,9 @@ export const AI_FACTION_PRESETS: Record<string, { attackModifier: number; defens
   "VANGUARD": { attackModifier: 1.3, defenseModifier: 0.9 }, // raider
   "SPECTRE":  { attackModifier: 1.0, defenseModifier: 1.0 }, // economic
 };
+
+export const CRYSTAL_POWER_FACTOR = 1.2;
+export const BASE_INFLUENCE_DAMAGE = 15;
+export const INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL = 0.04;
+export const MIN_INFLUENCE_DAMAGE = 3;
+export const INFLUENCE_YIELD_THRESHOLD = 20;

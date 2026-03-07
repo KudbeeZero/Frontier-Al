@@ -421,7 +421,7 @@ export function FlatMap({
 
         // Faction color resolution
         const owner = p.ownerId ? players?.find(pl => pl.id === p.ownerId) : null;
-        const factionColor = owner?.name && owner.isAI ? FACTION_COLORS[owner.name as keyof typeof FACTION_COLORS] : null;
+        const factionColor = owner?.name && (owner as any).isAi ? FACTION_COLORS[owner.name as keyof typeof FACTION_COLORS] : null;
 
         if (isSelected) {
           color = COLORS.selected;

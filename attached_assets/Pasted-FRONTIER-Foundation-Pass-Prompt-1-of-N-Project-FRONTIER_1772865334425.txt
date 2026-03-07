@@ -1,0 +1,78 @@
+FRONTIER — Foundation Pass (Prompt 1 of N)
+Project: FRONTIER MMO Strategy Game
+
+GOAL: Add influence columns and crystal attack support to the schema and types 
+ONLY. Zero behaviour changes. The game must work identically after this prompt.
+Nothing is wired into the live battle flow yet.
+
+DO NOT:
+- Change any logic in resolveBattles()
+- Change any logic in deployAttack()
+- Remove troopsCommitted from anywhere — leave it fully intact
+- Touch any .tsx or .ts files in client/src/
+- Change any API route
+- Run drizzle-kit push
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHANGE 1 — server/db-schema.ts
+ADD only — do not change any existing column
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In the parcels table, after the handoverCount column, ADD:
+
+  influence:           integer("influence").notNull().default(100),
+  influenceRepairRate: real("influence_repair_rate").notNull().default(2.0),
+
+In the battles table, after troopsCommitted, ADD:
+
+  crystalBurned:   integer("crystal_burned").notNull().default(0),
+  influenceDamage: integer("influence_damage").notNull().default(0),
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHANGE 2 — shared/schema.ts
+ADD fields to existing interfaces only
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In the LandParcel interface or type, ADD:
+  influence: number;
+  influenceRepairRate: number;
+
+In the Battle interface or type, ADD:
+  crystalBurned?: number;
+  influenceDamage?: number;
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHANGE 3 — server/engine/battle/tuning.ts
+ADD new constants only — remove nothing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+At the bottom of the file, ADD:
+
+  export const CRYSTAL_POWER_FACTOR = 1.2;
+  export const BASE_INFLUENCE_DAMAGE = 15;
+  export const INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL = 0.04;
+  export const MIN_INFLUENCE_DAMAGE = 3;
+  export const INFLUENCE_YIELD_THRESHOLD = 20;
+
+DO NOT remove TROOPS_POWER_FACTOR.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHANGE 4 — Generate migration file only
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run: npx drizzle-kit generate
+
+Confirm the migration file was created in the drizzle/ folder.
+DO NOT run drizzle-kit push.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. npx tsc --noEmit → zero errors
+2. TROOPS_POWER_FACTOR still exists in tuning.ts
+3. troopsCommitted still exists everywhere it was before
+4. parcels table has influence and influence_repair_rate in db-schema.ts
+5. battles table has crystal_burned and influence_damage in db-schema.ts
+6. drizzle migration file was generated
+7. No files in client/src/ were touched

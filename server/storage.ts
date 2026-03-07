@@ -78,7 +78,7 @@ import {
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
 import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable, orbitalEvents as orbitalEventsTable, aiFactionIdentities as aiFactionIdentitiesTable } from "./db-schema";
-import type { DB } from "./db";
+import type { db as DB } from "./db";
 
 const MICRO = 1_000_000;
 function toMicroFRNTR(frntr: number): number { return Math.round(frntr * MICRO); }
@@ -207,6 +207,8 @@ export class MemStorage implements IStorage {
         frontierAccumulated: 0,
         lastFrontierClaimTs: Date.now(),
         frontierPerDay: 1,
+        influence: 100,
+        influenceRepairRate: 2.0,
         capturedFromFaction: null,
         capturedAt:          null,
         handoverCount:       0,
@@ -1384,12 +1386,14 @@ function rowToParcel(row: ParcelRow): LandParcel {
     storageCapacity:     row.storageCapacity,
     lastMineTs:          Number(row.lastMineTs),
     activeBattleId:      row.activeBattleId ?? null,
-    yieldMultiplier:     row.yieldMultiplier,
-    improvements:        (row.improvements ?? []) as Improvement[],
+    yieldMultiplier:      row.yieldMultiplier,
+    improvements:         (row.improvements ?? []) as Improvement[],
     purchasePriceAlgo:   row.purchasePriceAlgo ?? null,
     frontierAccumulated: row.frontierAccumulated,
     lastFrontierClaimTs: Number(row.lastFrontierClaimTs),
     frontierPerDay:      row.frontierPerDay,
+    influence:           row.influence,
+    influenceRepairRate: row.influenceRepairRate,
     capturedFromFaction: (row as any).capturedFromFaction ?? null,
     capturedAt:          (row as any).capturedAt ? Number((row as any).capturedAt) : null,
     handoverCount:       (row as any).handoverCount ?? 0,
@@ -1446,6 +1450,8 @@ function rowToBattle(row: BattleRow): Battle {
     status:           row.status as "pending" | "resolved",
     outcome:          (row.outcome ?? undefined) as Battle["outcome"],
     randFactor:       row.randFactor ?? undefined,
+    crystalBurned:    row.crystalBurned,
+    influenceDamage:  row.influenceDamage,
     commanderId:      (row as any).commanderId ?? undefined,
   };
 }

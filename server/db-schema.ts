@@ -153,6 +153,8 @@ export const parcels = pgTable(
     capturedFromFaction:  varchar("captured_from_faction", { length: 20 }),  // e.g. "NEXUS-7"
     capturedAt:           bigint("captured_at",  { mode: "number" }),         // Unix ms of capture
     handoverCount:        integer("handover_count").notNull().default(0),     // exchanges between same player+faction
+    influence:            integer("influence").notNull().default(100),
+    influenceRepairRate:  real("influence_repair_rate").notNull().default(2.0),
   },
   (t) => ({
     /** Fast lookup of all plots owned by a given player. */
@@ -174,6 +176,8 @@ export const battles = pgTable(
     attackerPower:    real("attacker_power").notNull(),
     defenderPower:    real("defender_power").notNull(),
     troopsCommitted:  integer("troops_committed").notNull(),
+    crystalBurned:    integer("crystal_burned").notNull().default(0),
+    influenceDamage:  integer("influence_damage").notNull().default(0),
     resourcesBurned:  jsonb("resources_burned").$type<{ iron: number; fuel: number }>().notNull(),
     startTs:          bigint("start_ts", { mode: "number" }).notNull(),
     resolveTs:        bigint("resolve_ts", { mode: "number" }).notNull(),

@@ -643,14 +643,11 @@ export async function registerRoutes(
         return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
       }
 
+      const buyerAddress = player.address;
       const parcel = await storage.purchaseLand(action);
       console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
-      // AI purchases do not receive NFTs. Fire-and-forget so the HTTP
-      // response is immediate; minting happens in the background.
-      let nftAssetId: number | null = null;
-      const buyerAddress = player.address;
       const isHumanBuyer =
         buyerAddress &&
         !buyerAddress.startsWith("AI_") &&
