@@ -158,7 +158,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     for (let i = 0; i < plotCoords.length; i++) {
       const coord = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
-      if (parcel?.id === selectedPlotId || parcel?.ownerId === currentPlayerId) {
+      if (parcel?.id === selectedPlotId || parcel?.ownerId === currentPlayerId || parcel?.activeBattleId) {
         indices.push(i);
       }
     }
@@ -166,7 +166,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const plotSize = GLOBE_RADIUS * 0.016;
+  const plotSize = GLOBE_RADIUS * 0.0125;
 
   const getPlotScale = (parcel: LandParcel | undefined, isSelected: boolean): number => {
     if (isSelected) return 2.8;
@@ -196,11 +196,17 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
-      const color = isSelected
-        ? COLOR_SELECTED
-        : (currentPlayerId && parcel?.ownerId === currentPlayerId)
-          ? COLOR_PLAYER.clone().multiplyScalar(0.85 + Math.sin(pulseRef.current + i * 0.1) * 0.15)
-          : getPlotColor(parcel, currentPlayerId, players);
+      let color: THREE.Color;
+      if (isSelected) {
+        color = COLOR_SELECTED;
+      } else if (parcel?.activeBattleId) {
+        const battlePulse = 0.6 + Math.sin(pulseRef.current * 3) * 0.4;
+        color = new THREE.Color("#ff1744").multiplyScalar(battlePulse);
+      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+        color = COLOR_PLAYER.clone().multiplyScalar(0.85 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
+      } else {
+        color = getPlotColor(parcel, currentPlayerId, players);
+      }
       meshRef.current.setColorAt(i, color);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
@@ -216,7 +222,14 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().multiplyScalar(2));
-      const color = isSelected ? COLOR_SELECTED : getPlotColor(parcel, currentPlayerId, players);
+      let color: THREE.Color;
+      if (isSelected) {
+        color = COLOR_SELECTED;
+      } else if (parcel?.activeBattleId) {
+        color = new THREE.Color("#ff1744").multiplyScalar(0.7);
+      } else {
+        color = getPlotColor(parcel, currentPlayerId, players);
+      }
       dummy.scale.setScalar(plotSize * getPlotScale(parcel, isSelected));
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);

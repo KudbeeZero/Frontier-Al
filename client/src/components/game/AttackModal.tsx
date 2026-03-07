@@ -91,6 +91,18 @@ export function AttackModal({
   const defenderPower = targetParcel.defenseLevel * 15 * biomeBonuses[targetParcel.biome].defenseMod;
   const winChance = Math.min(95, Math.max(5, (attackerPower / (attackerPower + defenderPower)) * 100));
 
+  const ironShort = Math.max(0, totalCost.iron - attacker.iron);
+  const fuelShort = Math.max(0, totalCost.fuel - attacker.fuel);
+  const crystalShort = Math.max(0, extraCrystal - attacker.crystal);
+  const cannotAffordReason = ironShort > 0 ? `Need ${ironShort} more iron` : fuelShort > 0 ? `Need ${fuelShort} more fuel` : `Need ${crystalShort} more crystal`;
+  
+  const isOnCooldown = attacker.attackCooldownUntil && Date.now() < attacker.attackCooldownUntil;
+  const cooldownMs = isOnCooldown ? (attacker.attackCooldownUntil ?? 0) - Date.now() : 0;
+  const cooldownMin = Math.ceil(cooldownMs / 60000);
+
+  const hasNoCommander = (attacker.commanders ?? []).length === 0;
+  const allCommandersLocked = (attacker.commanders ?? []).every(c => c.lockedUntil && Date.now() < c.lockedUntil);
+
   const handleSubmit = () => {
     onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined);
   };
@@ -338,6 +350,35 @@ export function AttackModal({
           </div>
         </div>
 
+        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked) && (
+          <div className="p-3 bg-yellow-400/10 border border-yellow-400/30 rounded-md space-y-1">
+            {isOnCooldown && (
+              <p className="text-xs text-yellow-400 flex items-center gap-1.5">
+                <Clock className="w-3 h-3 shrink-0" />
+                Attack on cooldown for {cooldownMin} minute{cooldownMin > 1 ? 's' : ''}
+              </p>
+            )}
+            {!canAfford && (
+              <p className="text-xs text-yellow-400 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                {cannotAffordReason}
+              </p>
+            )}
+            {hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Mint a Commander to attack (50+ FRONTIER)
+              </p>
+            )}
+            {allCommandersLocked && !hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-center gap-1.5">
+                <Clock className="w-3 h-3 shrink-0" />
+                All Commanders locked. Wait for cooldown to expire.
+              </p>
+            )}
+          </div>
+        )}
+
         <DialogFooter className="gap-2">
           <Button
             variant="outline"
@@ -350,7 +391,7 @@ export function AttackModal({
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={!canAfford || isAttacking}
+            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked}
             className="font-display uppercase tracking-wide"
             data-testid="button-attack-confirm"
           >
