@@ -198,12 +198,12 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
       let color: THREE.Color;
       if (isSelected) {
-        color = COLOR_SELECTED;
+        color = COLOR_SELECTED.clone().multiplyScalar(1.3);
       } else if (parcel?.activeBattleId) {
-        const battlePulse = 0.6 + Math.sin(pulseRef.current * 3) * 0.4;
+        const battlePulse = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
         color = new THREE.Color("#ff1744").multiplyScalar(battlePulse);
       } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
-        color = COLOR_PLAYER.clone().multiplyScalar(0.85 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
+        color = COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
       } else {
         color = getPlotColor(parcel, currentPlayerId, players);
       }
@@ -224,9 +224,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       dummy.lookAt(pos.clone().multiplyScalar(2));
       let color: THREE.Color;
       if (isSelected) {
-        color = COLOR_SELECTED;
+        color = COLOR_SELECTED.clone().multiplyScalar(1.3);
       } else if (parcel?.activeBattleId) {
-        color = new THREE.Color("#ff1744").multiplyScalar(0.7);
+        color = new THREE.Color("#ff1744").multiplyScalar(0.9);
       } else {
         color = getPlotColor(parcel, currentPlayerId, players);
       }
@@ -268,16 +268,16 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <ringGeometry args={[0.85, 1, 6]} />
-      <meshStandardMaterial 
+      <ringGeometry args={[0.78, 1, 6]} />
+      <meshPhongMaterial 
         transparent 
-        opacity={0.65} 
+        opacity={0.8} 
         depthWrite={false} 
-        side={THREE.DoubleSide} 
-        emissive={new THREE.Color(0.2, 0.2, 0.2)}
-        emissiveIntensity={0.3}
-        roughness={0.7}
-        metalness={0.0}
+        side={THREE.DoubleSide}
+        emissive={new THREE.Color(0.4, 0.4, 0.4)}
+        emissiveIntensity={0.6}
+        shininess={100}
+        wireframe={false}
       />
     </instancedMesh>
   );
