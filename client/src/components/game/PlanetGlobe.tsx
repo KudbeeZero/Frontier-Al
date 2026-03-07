@@ -57,20 +57,31 @@ function latLngToVec3(lat: number, lng: number, r: number): THREE.Vector3 {
   );
 }
 
+const BIOME_DISPLAY_COLORS: Record<string, string> = {
+  forest:   "#2ecc71",
+  desert:   "#f39c12",
+  mountain: "#95a5a6",
+  plains:   "#27ae60",
+  water:    "#2980b9",
+  tundra:   "#bdc3c7",
+  volcanic: "#e74c3c",
+  swamp:    "#16a085",
+};
+
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
   players: Player[]
 ): THREE.Color {
-  if (!parcel) return new THREE.Color("#0a0f1a");
+  if (!parcel) return new THREE.Color(0x080c18);
   if (!parcel.ownerId) {
-    const base = biomeColors[parcel.biome] || "#1a2035";
-    return new THREE.Color(base);
+    const hex = BIOME_DISPLAY_COLORS[parcel.biome] || "#3498db";
+    return new THREE.Color(hex);
   }
   if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
   const owner = players.find(p => p.id === parcel.ownerId);
   if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
-    return FACTION_COLORS[owner.name].three.clone().multiplyScalar(0.9);
+    return FACTION_COLORS[owner.name].three.clone();
   }
   return new THREE.Color("#ff6e40");
 }
@@ -235,7 +246,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       onClick={handleClick}
     >
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial transparent opacity={0.9} depthWrite={false} vertexColors={true} side={THREE.DoubleSide} />
+      <meshBasicMaterial transparent opacity={0.95} depthWrite={false} vertexColors={true} side={THREE.DoubleSide} toneMapped={false} />
     </instancedMesh>
   );
 }
@@ -261,10 +272,10 @@ function GlobeTerrain() {
         <meshStandardMaterial
           map={albedoTex}
           emissiveMap={nightTex}
-          emissive={new THREE.Color(0.15, 0.3, 1.0)}
-          emissiveIntensity={0.35}
-          roughness={0.85}
-          metalness={0.05}
+          emissive={new THREE.Color(0.3, 0.5, 1.0)}
+          emissiveIntensity={0.6}
+          roughness={0.6}
+          metalness={0.0}
         />
       </mesh>
       <mesh ref={cloudRef}>
@@ -480,10 +491,10 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
   return (
     <>
       <StarField />
-      <ambientLight intensity={0.25} color="#1a3a6a" />
-      <directionalLight position={[6, 4, 5]} intensity={1.8} color="#e8f4ff" />
-      <directionalLight position={[-4, -2, -3]} intensity={0.3} color="#001a4a" />
-      <pointLight position={[0, 0, 0]} intensity={0.4} color="#0055ff" distance={8} />
+      <ambientLight intensity={1.4} color="#ffffff" />
+      <directionalLight position={[6, 4, 5]} intensity={2.5} color="#e8f4ff" />
+      <directionalLight position={[-4, -2, -3]} intensity={1.2} color="#8aaeff" />
+      <pointLight position={[0, 0, 0]} intensity={0.6} color="#4488ff" distance={10} />
       <group>
         <GlobeTerrain />
         <PlotOverlay
@@ -549,7 +560,7 @@ export default function PlanetGlobe({
     <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#02040e" }}>
       <Canvas
         camera={{ position: [0, 0, GLOBE_RADIUS * 3.2], fov: 42 }}
-        gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+        gl={{ antialias: true, alpha: false, toneMapping: THREE.ReinhardToneMapping, toneMappingExposure: 2.2 }}
         style={{ background: "#02040e" }}
       >
         <Scene
