@@ -78,7 +78,7 @@ import {
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
 import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable, orbitalEvents as orbitalEventsTable, aiFactionIdentities as aiFactionIdentitiesTable } from "./db-schema";
-import type { db as DB } from "./db";
+type DB = typeof db;
 
 const MICRO = 1_000_000;
 function toMicroFRNTR(frntr: number): number { return Math.round(frntr * MICRO); }
@@ -1585,6 +1585,20 @@ export class DbStorage implements IStorage {
     );
     await this.db.execute(
       sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS consecutive_losses INT NOT NULL DEFAULT 0`
+    );
+
+    // Influence columns — Foundation Pass
+    await this.db.execute(
+      sql`ALTER TABLE parcels ADD COLUMN IF NOT EXISTS influence INT NOT NULL DEFAULT 100`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE parcels ADD COLUMN IF NOT EXISTS influence_repair_rate REAL NOT NULL DEFAULT 2.0`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE battles ADD COLUMN IF NOT EXISTS crystal_burned INT NOT NULL DEFAULT 0`
+    );
+    await this.db.execute(
+      sql`ALTER TABLE battles ADD COLUMN IF NOT EXISTS influence_damage INT NOT NULL DEFAULT 0`
     );
 
     // Check whether the world has already been seeded.

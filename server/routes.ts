@@ -648,6 +648,7 @@ export async function registerRoutes(
       console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
+      let nftAssetId: number | null = null;
       const isHumanBuyer =
         buyerAddress &&
         !buyerAddress.startsWith("AI_") &&
