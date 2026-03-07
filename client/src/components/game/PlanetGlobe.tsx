@@ -140,6 +140,7 @@ interface PlotOverlayProps {
 
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!);
+  const readyRef = useRef(false);
   const { raycaster, mouse, camera } = useThree();
   const pulseRef = useRef(0);
   const pointerDownState = useRef<{ mouse: THREE.Vector2 } | null>(null);
@@ -175,7 +176,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   };
 
   useFrame((_, delta) => {
-    if (!meshRef.current || animatedIndices.length === 0) return;
+    if (!meshRef.current || !readyRef.current || animatedIndices.length === 0) return;
     pulseRef.current += delta * 2.5;
 
     for (const i of animatedIndices) {
@@ -223,6 +224,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    readyRef.current = true;
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
 
   const handlePointerDown = useCallback(() => {
