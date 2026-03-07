@@ -138,13 +138,14 @@ interface PlotOverlayProps {
   onPlotSelect: (parcelId: string) => void;
 }
 
-// Deterministic size variation per plotId — 8 buckets for natural variety
-const SIZE_VARIANTS = [1.0, 1.12, 0.90, 1.18, 0.95, 1.06, 0.88, 1.14];
+// Tight size variation — tiles must all adequately fill their Fibonacci spacing
+const SIZE_VARIANTS = [1.0, 1.06, 0.95, 1.09, 0.97, 1.04, 0.93, 1.07];
 function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
 
-const BORDER_COLOR = new THREE.Color("#e0e8ff");
+// Dark grout color — globe texture shows through as dark border between tiles
+const BORDER_COLOR = new THREE.Color("#0d1b2e");
 
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
   const fillMeshRef  = useRef<THREE.InstancedMesh>(null!);
@@ -176,9 +177,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  // Fill tiles sit slightly above globe, border tiles sit just below
-  const fillSize   = GLOBE_RADIUS * 0.024;
-  const borderSize = GLOBE_RADIUS * 0.027;
+  // Fibonacci nearest-neighbor spacing at N=21000, R=2 ≈ 0.087 units.
+  // Fill at 80% of spacing leaves a narrow grout gap; border at 90% shows as dark edge.
+  const fillSize   = GLOBE_RADIUS * 0.038;
+  const borderSize = GLOBE_RADIUS * 0.043;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -293,10 +295,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
   return (
     <>
-      {/* Border layer — uniform light color, sits just below fill */}
+      {/* Border layer — dark grout color, sits just below fill, peeks out at edges */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial transparent opacity={0.55} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
+        <meshBasicMaterial transparent opacity={0.90} depthWrite={false} side={THREE.DoubleSide} />
       </instancedMesh>
 
       {/* Fill layer — biome/ownership colors, sits in front */}
@@ -310,12 +312,12 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <planeGeometry args={[1, 1]} />
         <meshPhongMaterial
           transparent
-          opacity={0.82}
+          opacity={0.92}
           depthWrite={false}
           side={THREE.DoubleSide}
-          emissive={new THREE.Color(0.15, 0.15, 0.15)}
-          emissiveIntensity={0.4}
-          shininess={60}
+          emissive={new THREE.Color(0.1, 0.1, 0.1)}
+          emissiveIntensity={0.3}
+          shininess={40}
         />
       </instancedMesh>
     </>
