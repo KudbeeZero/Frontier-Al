@@ -907,13 +907,11 @@ export async function registerRoutes(
   setInterval(async () => {
     try {
       await storage.resolveBattles();
+      if (process.env.AI_ENABLED !== "false") {
+        await storage.runAITurn();
+      }
     } catch (error) {
-      console.error("Background task error (resolveBattles):", error);
-    }
-    try {
-      await storage.runAITurn();
-    } catch (error) {
-      console.error("Background task error (runAITurn):", error);
+      console.error("Background task error:", error);
     }
   }, 15000);
 
