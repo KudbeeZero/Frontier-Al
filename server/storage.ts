@@ -79,6 +79,7 @@ import {
   BASE_INFLUENCE_DAMAGE,
   INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL,
   MIN_INFLUENCE_DAMAGE,
+  INFLUENCE_YIELD_THRESHOLD,
 } from "./engine/battle/tuning.js";
 import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { db } from "./db";
@@ -1756,6 +1757,46 @@ export class DbStorage implements IStorage {
     });
   }
 
+  /**
+   * Applies passive influence repair to all parcels owned by human players
+   * that are below 100 and have not been repaired recently.
+   * Called from the game tick — safe to run every 15 seconds (rate-limited
+   * internally by influenceRepairRate which is points-per-DAY).
+   */
+  private async repairInfluence(now: number): Promise<void> {
+    const damaged = await this.db
+      .select()
+      .from(parcelsTable)
+      .where(
+        and(
+          eq(parcelsTable.ownerType, "player"),
+          sql`${parcelsTable.influence} < 100`
+        )
+      );
+
+    if (damaged.length === 0) return;
+
+    const MS_PER_DAY = 86_400_000;
+
+    for (const row of damaged) {
+      const lastClaim = Number(row.lastFrontierClaimTs) || 0;
+      const elapsedMs = now - lastClaim;
+      if (elapsedMs <= 0) continue;
+
+      const repairRate = (row as any).influenceRepairRate ?? 2.0;
+      const repairAmount = (elapsedMs / MS_PER_DAY) * repairRate;
+      const currentInfluence = (row as any).influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + repairAmount);
+
+      if (newInfluence - currentInfluence >= 0.5) {
+        await this.db
+          .update(parcelsTable)
+          .set({ influence: Math.round(newInfluence) })
+          .where(eq(parcelsTable.id, row.id));
+      }
+    }
+  }
+
   /** Compute how much FRONTIER has accumulated on a parcel and update the row. */
   private accumulatedFrontier(parcel: LandParcel, now: number): number {
     if (!parcel.ownerId) return 0;
@@ -2219,6 +2260,9 @@ export class DbStorage implements IStorage {
 
       for (const row of ownedRows) {
         const parcel  = rowToParcel(row);
+        // Parcels below the influence threshold generate no FRNTR until repaired
+        const influenceOk = (parcel.influence ?? 100) >= INFLUENCE_YIELD_THRESHOLD;
+        if (!influenceOk) continue;
         // Update frontierAccumulated with time-elapsed earnings first
         const earned  = this.accumulatedFrontier(parcel, now);
         const newAccum = parcel.frontierAccumulated + earned;
@@ -3014,6 +3058,8 @@ export class DbStorage implements IStorage {
       });
     }
 
+    // Passive influence repair — runs on the same cadence as battle resolution
+    await this.repairInfluence(now);
     return resolved;
   }
 

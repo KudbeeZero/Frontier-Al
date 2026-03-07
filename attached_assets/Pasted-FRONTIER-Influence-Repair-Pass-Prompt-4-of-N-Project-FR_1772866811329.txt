@@ -1,0 +1,142 @@
+FRONTIER — Influence Repair Pass (Prompt 4 of N)
+Project: FRONTIER MMO Strategy Game
+
+CONTEXT: Parcels now have an influence column (0–100, default 100) that 
+decreases when an attacker wins a battle. There is currently no mechanism 
+to recover it. This prompt adds passive daily repair.
+
+Two surgical edits only — both in server/storage.ts.
+DO NOT touch any client files, routes, or schema.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXT: How the existing resource tick works
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+There is already a collectAll or equivalent method in storage.ts that 
+iterates player-owned parcels and updates frontierAccumulated based on 
+time elapsed. The influence repair should piggyback on the same loop 
+that already fires on the game tick — specifically wherever 
+lastFrontierClaimTs and frontierAccumulated are updated per parcel.
+
+Find that loop in the DB storage class (it will be inside a method like 
+collectAll, claimFrontier, or the game tick handler that updates per-parcel 
+FRNTR accumulation). This is the correct place to add influence repair.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 1 — Import new tuning constant
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In the existing import from ./engine/battle/tuning.js in storage.ts, 
+ADD to the list:
+
+  INFLUENCE_YIELD_THRESHOLD
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 2 — Add a dedicated influence repair helper method
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In the DB storage class, ADD this new private method. Place it near the 
+other private helpers (near bumpLastTs or addEvent):
+
+  /**
+   * Applies passive influence repair to all parcels owned by human players
+   * that are below 100 and have not been repaired recently.
+   * Called from the game tick — safe to run every 15 seconds (rate-limited
+   * internally by influenceRepairRate which is points-per-DAY).
+   */
+  private async repairInfluence(now: number): Promise<void> {
+    // Only repair parcels below max that are owned by a human player
+    const damaged = await this.db
+      .select()
+      .from(parcelsTable)
+      .where(
+        and(
+          eq(parcelsTable.ownerType, "player"),
+          sql`${parcelsTable.influence} < 100`
+        )
+      );
+
+    if (damaged.length === 0) return;
+
+    const MS_PER_DAY = 86_400_000;
+
+    for (const row of damaged) {
+      const lastClaim = Number(row.lastFrontierClaimTs) || 0;
+      const elapsedMs = now - lastClaim;
+      if (elapsedMs <= 0) continue;
+
+      const repairRate = (row as any).influenceRepairRate ?? 2.0;
+      // repairRate is points per day — scale to elapsed time
+      const repairAmount = (elapsedMs / MS_PER_DAY) * repairRate;
+      const currentInfluence = (row as any).influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + repairAmount);
+
+      // Only write if the change is at least 0.5 points to avoid thrashing
+      if (newInfluence - currentInfluence >= 0.5) {
+        await this.db
+          .update(parcelsTable)
+          .set({ influence: Math.round(newInfluence) })
+          .where(eq(parcelsTable.id, row.id));
+      }
+    }
+  }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 3 — Call repairInfluence from the battle resolve background tick
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND the DB resolveBattles method. At the very end of the method, just 
+before the final return statement, ADD:
+
+    // Passive influence repair — runs on the same cadence as battle resolution
+    await this.repairInfluence(now);
+
+So the end of resolveBattles looks like:
+
+    ...
+    await this.repairInfluence(now);
+    return resolved;
+  }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 4 — Apply INFLUENCE_YIELD_THRESHOLD in frontier accumulation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Find the method in the DB storage class that accumulates FRNTR per parcel 
+over time. It will contain a reference to frontierPerDay and 
+frontierAccumulated. This is likely inside claimFrontier or a helper it 
+calls, or inside the game tick.
+
+Wherever you find the line that computes how much FRNTR to add to a parcel, 
+it will look something like:
+
+  const earned = (elapsedDays * parcel.frontierPerDay * multiplier)
+
+ADD a guard immediately before that calculation:
+
+  // Parcels below the influence threshold generate no FRNTR until repaired
+  const influenceOk = ((row as any).influence ?? 100) >= INFLUENCE_YIELD_THRESHOLD;
+  if (!influenceOk) continue;  // skip this parcel — no yield until influence recovers
+
+If the existing code uses a different control flow (e.g. it's not inside a 
+loop with continue), wrap the earned amount instead:
+
+  const influenceOk = ((row as any).influence ?? 100) >= INFLUENCE_YIELD_THRESHOLD;
+  const earned = influenceOk
+    ? (elapsedDays * parcel.frontierPerDay * multiplier)
+    : 0;
+
+Use whichever pattern fits the existing code — don't restructure the method.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. npx tsc --noEmit → zero errors
+2. No client files modified
+3. Confirm repairInfluence is called at the end of the DB resolveBattles 
+   method (not the in-memory one)
+4. Confirm INFLUENCE_YIELD_THRESHOLD is used — parcels at influence 0–19 
+   should accumulate 0 FRNTR/day
+5. Manual test: find a parcel below 100 influence in the DB, wait one 
+   background tick (15s), confirm its influence value increased
