@@ -165,7 +165,14 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const plotSize = GLOBE_RADIUS * 0.022;
+  const plotSize = GLOBE_RADIUS * 0.016;
+
+  const getPlotScale = (parcel: LandParcel | undefined, isSelected: boolean): number => {
+    if (isSelected) return 2.8;
+    if (!parcel?.ownerId) return 1.0;
+    if (parcel.ownerId === currentPlayerId) return 2.0;
+    return 1.7;
+  };
 
   useFrame((_, delta) => {
     pulseRef.current += delta * 2.5;
@@ -176,9 +183,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
 
+      const baseScale = getPlotScale(parcel, isSelected);
       const pulse = isSelected
-        ? 1.8 + Math.sin(pulseRef.current * 2) * 0.6
-        : 1.1 + Math.sin(pulseRef.current + i * 0.1) * 0.08;
+        ? baseScale + Math.sin(pulseRef.current * 2) * 0.5
+        : baseScale + Math.sin(pulseRef.current + i * 0.1) * 0.12;
 
       const pos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.002);
       dummy.position.copy(pos);
@@ -208,7 +216,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().multiplyScalar(2));
       const color = isSelected ? COLOR_SELECTED : getPlotColor(parcel, currentPlayerId, players);
-      dummy.scale.setScalar(plotSize * (isSelected ? 2.2 : 1.0));
+      dummy.scale.setScalar(plotSize * getPlotScale(parcel, isSelected));
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
       meshRef.current.setColorAt(i, color);
@@ -245,8 +253,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial transparent opacity={0.95} depthWrite={false} vertexColors={true} side={THREE.DoubleSide} toneMapped={false} />
+      <ringGeometry args={[0.55, 1, 6]} />
+      <meshBasicMaterial transparent opacity={0.92} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
     </instancedMesh>
   );
 }
