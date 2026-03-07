@@ -9,6 +9,26 @@
 import algosdk from "algosdk";
 import type { ChainNetwork } from "./types";
 
+export function assertChainConfig(): void {
+  const required = [
+    'DATABASE_URL',
+    'ALGORAND_ADMIN_MNEMONIC',
+    'ALGORAND_ADMIN_ADDRESS',
+    'SESSION_SECRET',
+    'PUBLIC_BASE_URL',
+  ];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    throw new Error(`[FRONTIER] Missing required secrets: ${missing.join(', ')}`);
+  }
+  const network = process.env.ALGORAND_NETWORK;
+  if (!network) {
+    console.warn('[FRONTIER] WARNING: ALGORAND_NETWORK not set. Defaulting to testnet.');
+  } else {
+    console.log(`[FRONTIER] Network: ${network}`);
+  }
+}
+
 // Override with env vars to switch networks without code changes.
 const ALGOD_URL     = process.env.ALGOD_URL     ?? "https://testnet-api.algonode.cloud";
 const INDEXER_URL   = process.env.INDEXER_URL   ?? "https://testnet-idx.algonode.cloud";

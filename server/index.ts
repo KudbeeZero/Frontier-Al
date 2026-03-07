@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { assertChainConfig } from "./services/chain/client";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import path from "path";
@@ -83,23 +84,7 @@ app.use((req, res, next) => {
     next();
   });
 
-  if (process.env.NODE_ENV === "production") {
-    const requiredSecrets = [
-      "DATABASE_URL",
-      "SESSION_SECRET",
-      "ALGORAND_ADMIN_MNEMONIC",
-      "ALGORAND_ADMIN_ADDRESS",
-      "PUBLIC_BASE_URL",
-    ];
-    const missing = requiredSecrets.filter((s) => !process.env[s]);
-    if (missing.length > 0) {
-      console.warn(
-        `[WARNING] Missing secrets in production: ${missing.join(", ")}. This may cause runtime errors.`,
-      );
-      // Removed hard exit to allow healthcheck to pass even if secrets are being configured
-    }
-  }
-
+  assertChainConfig();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
