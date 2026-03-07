@@ -138,8 +138,8 @@ interface PlotOverlayProps {
   onPlotSelect: (parcelId: string) => void;
 }
 
-// Tight size variation — tiles must all adequately fill their Fibonacci spacing
-const SIZE_VARIANTS = [1.0, 1.06, 0.95, 1.09, 0.97, 1.04, 0.93, 1.07];
+// Subtle size variation — natural variety without causing overlap artifacts
+const SIZE_VARIANTS = [1.0, 1.04, 0.96, 1.06, 0.98, 1.02, 0.95, 1.05];
 function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
@@ -177,10 +177,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  // Fibonacci nearest-neighbor spacing at N=21000, R=2 ≈ 0.087 units.
-  // Fill at 80% of spacing leaves a narrow grout gap; border at 90% shows as dark edge.
-  const fillSize   = GLOBE_RADIUS * 0.038;
-  const borderSize = GLOBE_RADIUS * 0.043;
+  // Fibonacci nearest-neighbor MIN spacing at N=21000 is ~0.060 units.
+  // Keep fill below that to avoid overlap-caused diagonal artifacts.
+  const fillSize   = GLOBE_RADIUS * 0.026;
+  const borderSize = GLOBE_RADIUS * 0.030;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
