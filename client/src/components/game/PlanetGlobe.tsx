@@ -67,7 +67,7 @@ function getPlotColor(
     const base = biomeColors[parcel.biome] || "#1a2035";
     return new THREE.Color(base).multiplyScalar(0.22);
   }
-  if (parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
+  if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
   const owner = players.find(p => p.id === parcel.ownerId);
   if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
     return FACTION_COLORS[owner.name].three.clone().multiplyScalar(0.9);

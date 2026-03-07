@@ -62,6 +62,13 @@ const COLORS = {
   grid: "#111115",
 };
 
+const FACTION_COLORS = {
+  "NEXUS-7":  { hex: "#00e5ff", glow: "#00b8d4" },
+  "KRONOS":   { hex: "#ffb300", glow: "#e65100" },
+  "VANGUARD": { hex: "#ff1744", glow: "#b71c1c" },
+  "SPECTRE":  { hex: "#d500f9", glow: "#6a0080" },
+};
+
 export function FlatMap({
   parcels,
   selectedParcelId,
@@ -412,12 +419,17 @@ export function FlatMap({
         let color = COLORS.unclaimed;
         let plotAlpha = 0.45;
 
+        // Faction color resolution
+        const owner = p.ownerId ? players?.find(pl => pl.id === p.ownerId) : null;
+        const factionColor = owner?.name && owner.isAI ? FACTION_COLORS[owner.name as keyof typeof FACTION_COLORS] : null;
+
         if (isSelected) {
           color = COLORS.selected;
           size = plotSize * 1.8;
           plotAlpha = 0.9;
         } else if (isHovered) {
           if (isPlayerOwned) color = COLORS.playerGlow;
+          else if (factionColor) color = factionColor.glow;
           else if (isEnemyOwned) color = COLORS.enemyGlow;
           else {
             const r = Math.min(255, Math.round(102 * 1.2));
@@ -435,6 +447,9 @@ export function FlatMap({
           const pg = Math.min(255, Math.round(g * (playerPulse + 0.15)));
           const pb = Math.min(255, Math.round(b * (playerPulse + 0.15)));
           color = `rgb(${pr},${pg},${pb})`;
+          plotAlpha = 0.7;
+        } else if (factionColor) {
+          color = factionColor.hex;
           plotAlpha = 0.7;
         } else if (isEnemyOwned) {
           color = COLORS.enemy;
