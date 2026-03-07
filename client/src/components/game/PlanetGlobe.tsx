@@ -175,8 +175,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   };
 
   useFrame((_, delta) => {
-    pulseRef.current += delta * 2.5;
     if (!meshRef.current || animatedIndices.length === 0) return;
+    pulseRef.current += delta * 2.5;
 
     for (const i of animatedIndices) {
       const coord = plotCoords[i];
