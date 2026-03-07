@@ -275,7 +275,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <ringGeometry args={[0.65, 1, 6]} />
+      <ringGeometry args={[0.65, 1, 128]} />
       <meshPhongMaterial 
         transparent 
         opacity={0.8} 
