@@ -644,6 +644,7 @@ export async function registerRoutes(
       }
 
       const parcel = await storage.purchaseLand(action);
+      console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
       // AI purchases do not receive NFTs. Fire-and-forget so the HTTP
@@ -666,6 +667,8 @@ export async function registerRoutes(
           .select()
           .from(mintIdempotencyTable)
           .where(eq(mintIdempotencyTable.key, idempotencyKey));
+
+        console.log(`[mint-audit] idempotency check plotId=${parcel.plotId} status=${existingKey?.status ?? 'new'}`);
 
         if (existingKey && (existingKey.status === "confirmed" || existingKey.status === "pending")) {
           nftAssetId = existingKey.assetId ?? null;
@@ -697,6 +700,7 @@ export async function registerRoutes(
             // Fire-and-forget: mint in background, don't block response
             mintLandNft({ plotId: parcel.plotId, receiverAddress: buyerAddress, metadataBaseUrl: PUBLIC_BASE_URL })
               .then(async (result) => {
+                console.log(`[mint-audit] minted plotId=${parcel.plotId} asaId=${result.assetId} txId=${result.createTxId}`);
                 // Persist to plot_nfts (upsert)
                 await db.insert(plotNftsTable).values({
                   plotId: parcel.plotId,
@@ -711,9 +715,11 @@ export async function registerRoutes(
                 await db.update(mintIdempotencyTable)
                   .set({ status: "confirmed", assetId: result.assetId, txId: result.createTxId, updatedAt: Date.now() })
                   .where(eq(mintIdempotencyTable.key, idempotencyKey));
+                console.log(`[mint-audit] transfer queued plotId=${parcel.plotId} toAddress=${buyerAddress}`);
                 console.log(`[purchase] plotId=${parcel.plotId} NFT minted assetId=${result.assetId}`);
               })
               .catch(async (err) => {
+                console.error(`[mint-audit] FAIL plotId=${parcel.plotId}`, err);
                 await db.update(mintIdempotencyTable)
                   .set({ status: "failed", updatedAt: Date.now() })
                   .where(eq(mintIdempotencyTable.key, idempotencyKey));
@@ -934,6 +940,48 @@ export async function registerRoutes(
       console.error("[ORBITAL-DEBUG] Background orbital check error:", error);
     }
   }, 5 * 60 * 1000);
+
+  app.get("/api/admin/mint-status/:plotId", async (req, res) => {
+    const adminKey = process.env.ADMIN_KEY;
+    if (adminKey && req.query.adminKey !== adminKey) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId)) {
+      return res.status(400).json({ error: "Invalid plotId" });
+    }
+
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+
+    try {
+      const [nftRecord] = await db
+        .select()
+        .from(plotNftsTable)
+        .where(eq(plotNftsTable.plotId, plotId));
+
+      const idmpKey = `mint-plot-${plotId}`;
+      const [idempotencyKey] = await db
+        .select()
+        .from(mintIdempotencyTable)
+        .where(eq(mintIdempotencyTable.key, idmpKey));
+
+      if (!nftRecord && !idempotencyKey) {
+        return res.status(404).json({ error: "No mint record found for this plot" });
+      }
+
+      res.json({
+        plotId,
+        nftRecord: nftRecord || null,
+        idempotencyKey: idempotencyKey || null,
+      });
+    } catch (error) {
+      console.error(`[admin] mint-status error plotId=${plotId}`, error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
   return httpServer;
 }
