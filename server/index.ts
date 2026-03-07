@@ -85,6 +85,8 @@ app.use((req, res, next) => {
   });
 
   assertChainConfig();
+  const { initWsServer } = await import("./wsServer");
+  initWsServer(httpServer);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

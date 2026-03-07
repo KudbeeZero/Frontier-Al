@@ -22,6 +22,7 @@ import { OrbitalCanvas } from "./OrbitalCanvas";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
+import { useGameSocket } from "@/hooks/useGameSocket";
 import { useQuery } from "@tanstack/react-query";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +56,7 @@ export function GameLayout() {
     isOptedInToFrontier,
     treasuryAddress,
   } = useBlockchainActions();
+  useGameSocket();
   const { data: gameState, isLoading, error } = useGameState();
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();

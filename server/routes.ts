@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
+import { broadcastGameState } from "./wsServer";
 
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
@@ -402,6 +403,7 @@ export async function registerRoutes(
     try {
       const gameState = await storage.getGameState();
       res.json(gameState);
+      broadcastGameState(gameState);
     } catch (error) {
       console.error("Error fetching game state:", error);
       res.status(500).json({ error: "Failed to fetch game state" });
@@ -585,6 +587,8 @@ export async function registerRoutes(
       const action = mineActionSchema.parse(req.body);
       const result = await storage.mineResources(action);
       res.json({ success: true, yield: result });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mining failed" });
@@ -596,6 +600,8 @@ export async function registerRoutes(
       const action = upgradeActionSchema.parse(req.body);
       const parcel = await storage.upgradeBase(action);
       res.json({ success: true, parcel });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Upgrade failed" });
@@ -607,6 +613,8 @@ export async function registerRoutes(
       const action = attackActionSchema.parse(req.body);
       const battle = await storage.deployAttack(action);
       res.json({ success: true, battle });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Attack failed" });
@@ -618,6 +626,8 @@ export async function registerRoutes(
       const action = buildActionSchema.parse(req.body);
       const parcel = await storage.buildImprovement(action);
       res.json({ success: true, parcel });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Build failed" });
@@ -744,6 +754,8 @@ export async function registerRoutes(
       const action = collectActionSchema.parse(req.body);
       const result = await storage.collectAll(action.playerId);
       res.json({ success: true, collected: result });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Collection failed" });
@@ -791,6 +803,8 @@ export async function registerRoutes(
       }
 
       res.json({ success: true, claimed: result, txId, asaId });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });
@@ -802,6 +816,8 @@ export async function registerRoutes(
       const action = mintAvatarActionSchema.parse(req.body);
       const avatar = await storage.mintAvatar(action);
       res.json({ success: true, avatar });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mint failed" });
@@ -814,6 +830,8 @@ export async function registerRoutes(
       if (!playerId || commanderIndex === undefined) return res.status(400).json({ error: "playerId and commanderIndex required" });
       const activeCommander = await storage.switchCommander(playerId, commanderIndex);
       res.json({ success: true, activeCommander });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Switch failed" });
     }
@@ -824,6 +842,8 @@ export async function registerRoutes(
       const action = specialAttackActionSchema.parse(req.body);
       const result = await storage.executeSpecialAttack(action);
       res.json({ success: true, result });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Special attack failed" });
@@ -835,6 +855,8 @@ export async function registerRoutes(
       const action = deployDroneActionSchema.parse(req.body);
       const drone = await storage.deployDrone(action);
       res.json({ success: true, drone });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Drone deployment failed" });
@@ -846,6 +868,8 @@ export async function registerRoutes(
       const action = deploySatelliteActionSchema.parse(req.body);
       const satellite = await storage.deploySatellite(action);
       res.json({ success: true, satellite });
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Satellite deployment failed" });
