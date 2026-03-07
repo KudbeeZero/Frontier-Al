@@ -250,10 +250,12 @@ export async function registerRoutes(
       }
 
       // ARC-3 style metadata — keep lean; mutable game state is excluded.
+      res.setHeader("Content-Type", "application/json");
       res.json({
         name:         `Frontier Plot #${parcel.plotId}`,
         description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
         image:        `${baseUrl}/nft/biomes/${parcel.biome}.svg`,
+        image_mimetype: "image/svg+xml",
         external_url: `${baseUrl}/plot/${parcel.plotId}`,
         properties: {
           plotId:            parcel.plotId,

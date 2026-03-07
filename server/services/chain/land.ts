@@ -50,7 +50,7 @@ export async function mintLandNft(params: MintLandParams): Promise<MintResult> {
     defaultFrozen:  false,
     unitName:       "PLOT",
     assetName:      `Frontier Plot #${plotId}`,
-    assetURL:       `${baseUrl}/nft/metadata/${plotId}`,
+    assetURL:       `${baseUrl}/nft/metadata/${plotId}#arc3`,
     // On TestNet: all roles set to admin for recovery.
     // Production mainnet: freeze and clawback should be empty strings ("").
     manager:        account.addr.toString(),
