@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
@@ -95,7 +95,8 @@ export function GameLayout() {
   const lastLocatedEnemyId = useRef<string | null>(null);
   const [replayTime, setReplayTime] = useState<number>(Date.now());
   const [replayVisibleTypes, setReplayVisibleTypes] = useState<Set<string>>(new Set());
-  const { data: replayEvents = [] } = useWorldEvents({ start: Date.now() - 24 * 60 * 60_000, limit: 500 });
+  const replayWindowStart = useMemo(() => Date.now() - 24 * 60 * 60_000, []);
+  const { data: replayEvents = [] } = useWorldEvents({ start: replayWindowStart, limit: 500 });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
