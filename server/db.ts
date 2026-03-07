@@ -22,10 +22,10 @@ try {
 
     pool = new Pool({
       connectionString,
-      max: 10,
+      max: 3,
       ssl: { rejectUnauthorized: false },
-      connectionTimeoutMillis: 20000, // Increased to 20s for serverless cold starts
-      idleTimeoutMillis: 30000,       // 30s idle timeout
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
       allowExitOnIdle: true,          // Allow the process to exit if the pool is idle
     });
     

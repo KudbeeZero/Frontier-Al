@@ -902,18 +902,24 @@ export async function registerRoutes(
     }
   });
 
-  // Background tasks: resolve battles, run AI turns, trigger orbital checks
-  // Tasks are run independently to prevent one failure from blocking others
+  // Staggered background tasks — avoids hammering Neon with simultaneous queries
   setInterval(async () => {
     try {
       await storage.resolveBattles();
+    } catch (error) {
+      console.error("Background task error (battles):", error);
+    }
+  }, 15000);
+
+  setInterval(async () => {
+    try {
       if (process.env.AI_ENABLED !== "false") {
         await storage.runAITurn();
       }
     } catch (error) {
-      console.error("Background task error:", error);
+      console.error("Background task error (AI):", error);
     }
-  }, 15000);
+  }, 20000);
 
   // Orbital check every 5 minutes
   setInterval(async () => {
