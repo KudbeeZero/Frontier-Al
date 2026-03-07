@@ -97,6 +97,10 @@ export function GameLayout() {
   const [replayVisibleTypes, setReplayVisibleTypes] = useState<Set<string>>(new Set());
   const replayWindowStart = useMemo(() => Date.now() - 24 * 60 * 60_000, []);
   const { data: replayEvents = [] } = useWorldEvents({ start: replayWindowStart, limit: 500 });
+  const handleReplayStateChange = useCallback(({ replayTime: rt, visibleTypes: vt }: { replayTime: number; visibleTypes: Set<string> }) => {
+    setReplayTime(rt);
+    setReplayVisibleTypes(vt);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -846,10 +850,7 @@ export function GameLayout() {
           >
             <WorldIntelPanel
               className="h-full"
-              onReplayStateChange={useCallback(({ replayTime: rt, visibleTypes: vt }: { replayTime: number; visibleTypes: Set<string> }) => {
-                setReplayTime(rt);
-                setReplayVisibleTypes(vt);
-              }, [])}
+              onReplayStateChange={handleReplayStateChange}
             />
           </div>
         </div>
