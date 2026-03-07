@@ -144,6 +144,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   const { raycaster, mouse, camera } = useThree();
   const pulseRef = useRef(0);
   const pointerDownState = useRef<{ mouse: THREE.Vector2; cam: THREE.Camera } | null>(null);
+  const hoveredIndexRef = useRef<number | null>(null);
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
 
@@ -197,9 +198,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
       let color: THREE.Color;
-      if (isSelected) {
-        color = COLOR_SELECTED.clone().multiplyScalar(1.3);
-      } else if (parcel?.activeBattleId) {
+      const isHovered = hoveredIndexRef.current === i;
+      if (parcel?.activeBattleId) {
         const battlePulse = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
         color = new THREE.Color("#ff1744").multiplyScalar(battlePulse);
       } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
@@ -207,6 +207,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else {
         color = getPlotColor(parcel, currentPlayerId, players);
       }
+      if (isHovered) color.multiplyScalar(1.2);
       meshRef.current.setColorAt(i, color);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
@@ -223,9 +224,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       dummy.position.copy(pos);
       dummy.lookAt(pos.clone().multiplyScalar(2));
       let color: THREE.Color;
-      if (isSelected) {
-        color = COLOR_SELECTED.clone().multiplyScalar(1.3);
-      } else if (parcel?.activeBattleId) {
+      if (parcel?.activeBattleId) {
         color = new THREE.Color("#ff1744").multiplyScalar(0.9);
       } else {
         color = getPlotColor(parcel, currentPlayerId, players);
@@ -239,6 +238,13 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
     readyRef.current = true;
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, plotSize]);
+
+  const handlePointerMove = useCallback((e: any) => {
+    if (!meshRef.current) return;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(meshRef.current);
+    hoveredIndexRef.current = intersects.length > 0 ? (intersects[0].instanceId ?? null) : null;
+  }, [raycaster, mouse, camera]);
 
   const handlePointerDown = useCallback(() => {
     pointerDownState.current = { mouse: mouse.clone(), cam: camera.clone() };
@@ -265,10 +271,11 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     <instancedMesh
       ref={meshRef}
       args={[undefined, undefined, PLOT_COUNT]}
+      onPointerMove={handlePointerMove}
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <ringGeometry args={[0.78, 1, 6]} />
+      <ringGeometry args={[0.65, 1, 6]} />
       <meshPhongMaterial 
         transparent 
         opacity={0.8} 
