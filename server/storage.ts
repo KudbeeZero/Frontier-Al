@@ -2152,21 +2152,20 @@ export class DbStorage implements IStorage {
   async collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }> {
     await this.initialize();
     return this.db.transaction(async (tx) => {
-      const [[playerRow]] = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
-      if (!playerRow) throw new Error("Player not found");
+      const playerRows = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
+      if (!playerRows.length) throw new Error("Player not found");
+      const playerRow = playerRows[0];
 
-      const totals = await tx
-        .select({
-          iron: sql<number>`COALESCE(SUM(${parcelsTable.ironStored}), 0)::integer`,
-          fuel: sql<number>`COALESCE(SUM(${parcelsTable.fuelStored}), 0)::integer`,
-          crystal: sql<number>`COALESCE(SUM(${parcelsTable.crystalStored}), 0)::integer`,
-        })
-        .from(parcelsTable)
-        .where(eq(parcelsTable.ownerId, playerId));
+      const ownedParcels = await tx.select().from(parcelsTable).where(eq(parcelsTable.ownerId, playerId));
+      let totalIron = 0;
+      let totalFuel = 0;
+      let totalCrystal = 0;
 
-      const totalIron = totals.length > 0 ? Number(totals[0].iron) : 0;
-      const totalFuel = totals.length > 0 ? Number(totals[0].fuel) : 0;
-      const totalCrystal = totals.length > 0 ? Number(totals[0].crystal) : 0;
+      for (const parcel of ownedParcels) {
+        totalIron += parcel.ironStored || 0;
+        totalFuel += parcel.fuelStored || 0;
+        totalCrystal += parcel.crystalStored || 0;
+      }
 
       if (totalIron > 0 || totalFuel > 0 || totalCrystal > 0) {
         await Promise.all([
