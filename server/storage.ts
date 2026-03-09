@@ -81,7 +81,7 @@ import {
   MIN_INFLUENCE_DAMAGE,
   INFLUENCE_YIELD_THRESHOLD,
 } from "./engine/battle/tuning.js";
-import { eq, and, desc, lt, sql } from "drizzle-orm";
+import { eq, and, desc, lt, sql, sum } from "drizzle-orm";
 import { db } from "./db";
 import { gameMeta, players as playersTable, parcels as parcelsTable, battles as battlesTable, gameEvents as gameEventsTable, plotNfts as plotNftsTable, orbitalEvents as orbitalEventsTable, aiFactionIdentities as aiFactionIdentitiesTable } from "./db-schema";
 type DB = typeof db;
@@ -2157,16 +2157,16 @@ export class DbStorage implements IStorage {
 
       const [totalsRow] = await tx
         .select({
-          iron: sql<number>`COALESCE(SUM(${parcelsTable.ironStored}), 0)`,
-          fuel: sql<number>`COALESCE(SUM(${parcelsTable.fuelStored}), 0)`,
-          crystal: sql<number>`COALESCE(SUM(${parcelsTable.crystalStored}), 0)`,
+          iron: sum(parcelsTable.ironStored).mapWith(Number),
+          fuel: sum(parcelsTable.fuelStored).mapWith(Number),
+          crystal: sum(parcelsTable.crystalStored).mapWith(Number),
         })
         .from(parcelsTable)
         .where(eq(parcelsTable.ownerId, playerId));
 
-      const totalIron = Number(totalsRow.iron) || 0;
-      const totalFuel = Number(totalsRow.fuel) || 0;
-      const totalCrystal = Number(totalsRow.crystal) || 0;
+      const totalIron = totalsRow?.iron ?? 0;
+      const totalFuel = totalsRow?.fuel ?? 0;
+      const totalCrystal = totalsRow?.crystal ?? 0;
 
       if (totalIron > 0 || totalFuel > 0 || totalCrystal > 0) {
         await Promise.all([
