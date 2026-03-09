@@ -2263,8 +2263,10 @@ export class DbStorage implements IStorage {
         // Parcels below the influence threshold generate no FRNTR until repaired
         const influenceOk = (parcel.influence ?? 100) >= INFLUENCE_YIELD_THRESHOLD;
         if (!influenceOk) continue;
-        // Update frontierAccumulated with time-elapsed earnings first
-        const earned  = this.accumulatedFrontier(parcel, now);
+        // Calculate earned frontier from time elapsed since last claim
+        const days = (now - parcel.lastFrontierClaimTs) / (1000 * 60 * 60 * 24);
+        const perDay = calculateFrontierPerDay(parcel.improvements);
+        const earned = perDay * days;
         const newAccum = parcel.frontierAccumulated + earned;
         total += newAccum;
         await tx.update(parcelsTable)
