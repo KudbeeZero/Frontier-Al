@@ -2155,18 +2155,18 @@ export class DbStorage implements IStorage {
       const [[playerRow]] = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
       if (!playerRow) throw new Error("Player not found");
 
-      const [totalsRow] = await tx
+      const totals = await tx
         .select({
-          iron: sum(parcelsTable.ironStored).mapWith(Number),
-          fuel: sum(parcelsTable.fuelStored).mapWith(Number),
-          crystal: sum(parcelsTable.crystalStored).mapWith(Number),
+          iron: sql<number>`COALESCE(SUM(${parcelsTable.ironStored}), 0)::integer`,
+          fuel: sql<number>`COALESCE(SUM(${parcelsTable.fuelStored}), 0)::integer`,
+          crystal: sql<number>`COALESCE(SUM(${parcelsTable.crystalStored}), 0)::integer`,
         })
         .from(parcelsTable)
         .where(eq(parcelsTable.ownerId, playerId));
 
-      const totalIron = totalsRow?.iron ?? 0;
-      const totalFuel = totalsRow?.fuel ?? 0;
-      const totalCrystal = totalsRow?.crystal ?? 0;
+      const totalIron = totals.length > 0 ? Number(totals[0].iron) : 0;
+      const totalFuel = totals.length > 0 ? Number(totals[0].fuel) : 0;
+      const totalCrystal = totals.length > 0 ? Number(totals[0].crystal) : 0;
 
       if (totalIron > 0 || totalFuel > 0 || totalCrystal > 0) {
         await Promise.all([
