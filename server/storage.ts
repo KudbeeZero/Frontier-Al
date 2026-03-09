@@ -2152,22 +2152,24 @@ export class DbStorage implements IStorage {
   async collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }> {
     await this.initialize();
     return this.db.transaction(async (tx) => {
-      const [[playerRow], ownedRows] = await Promise.all([
-        tx.select().from(playersTable).where(eq(playersTable.id, playerId)),
-        tx.select().from(parcelsTable).where(eq(parcelsTable.ownerId, playerId)),
-      ]);
+      const [[playerRow]] = await tx.select().from(playersTable).where(eq(playersTable.id, playerId));
       if (!playerRow) throw new Error("Player not found");
 
-      let totalIron = 0, totalFuel = 0, totalCrystal = 0;
-      for (const p of ownedRows) {
-        totalIron    += p.ironStored;
-        totalFuel    += p.fuelStored;
-        totalCrystal += p.crystalStored;
-      }
+      const [totalsRow] = await tx
+        .select({
+          iron: sql<number>`COALESCE(SUM(${parcelsTable.ironStored}), 0)`,
+          fuel: sql<number>`COALESCE(SUM(${parcelsTable.fuelStored}), 0)`,
+          crystal: sql<number>`COALESCE(SUM(${parcelsTable.crystalStored}), 0)`,
+        })
+        .from(parcelsTable)
+        .where(eq(parcelsTable.ownerId, playerId));
+
+      const totalIron = Number(totalsRow.iron) || 0;
+      const totalFuel = Number(totalsRow.fuel) || 0;
+      const totalCrystal = Number(totalsRow.crystal) || 0;
 
       if (totalIron > 0 || totalFuel > 0 || totalCrystal > 0) {
         await Promise.all([
-          // Zero stored resources on all owned parcels in one statement
           tx.update(parcelsTable)
             .set({ ironStored: 0, fuelStored: 0, crystalStored: 0 })
             .where(eq(parcelsTable.ownerId, playerId)),
@@ -2175,8 +2177,6 @@ export class DbStorage implements IStorage {
             .set({ iron: playerRow.iron + totalIron, fuel: playerRow.fuel + totalFuel, crystal: playerRow.crystal + totalCrystal })
             .where(eq(playersTable.id, playerId)),
         ]);
-
-        console.log(`[collect] playerId=${playerId} iron=${totalIron} fuel=${totalFuel}`);
 
         const now = Date.now();
         await this.addEvent({

@@ -317,6 +317,7 @@ export function GameLayout() {
     collectMutation.mutate(player.id, {
       onSuccess: (data: any) => {
         const c = data.collected;
+        queueMineAction(0, c);
         toast({ title: "Resources Collected", description: `+${c.iron} Iron, +${c.fuel} Fuel, +${c.crystal} Crystal` });
       },
       onError: (error) => toast({ title: "Collection Failed", description: error.message, variant: "destructive" }),
