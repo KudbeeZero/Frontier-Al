@@ -9,10 +9,12 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 3,
-  connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
-  allowExitOnIdle: true,
+  max: 5,
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 60000,
+  allowExitOnIdle: false,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 pool.on("error", (err) => {
