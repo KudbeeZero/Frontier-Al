@@ -116,6 +116,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           const addr = accounts.length > 0 ? accounts[0] : savedAddress;
           setActiveWalletType("lute");
           localStorage.setItem("frontier_wallet_address", addr);
+          localStorage.setItem("frontier_onboarded_v1", "1");
           setState((prev) => ({
             ...prev,
             isConnected: true,
@@ -153,6 +154,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setActiveWalletType("pera");
             localStorage.setItem("frontier_wallet_type", "pera");
             localStorage.setItem("frontier_wallet_address", address);
+            localStorage.setItem("frontier_onboarded_v1", "1");
             setState((prev) => ({
               ...prev,
               isConnected: true,
