@@ -226,11 +226,13 @@ export function GameLayout() {
       return;
     }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    queueUpgradeAction(selectedParcel.plotId, type);
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
       {
-        onSuccess: () => toast({ title: "Upgrade Complete", description: `${type} upgraded.` }),
+        onSuccess: () => {
+          queueUpgradeAction(selectedParcel.plotId, type);
+          toast({ title: "Upgrade Complete", description: `${type} upgraded.` });
+        },
         onError: (error) => toast({ title: "Upgrade Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -244,11 +246,11 @@ export function GameLayout() {
       return;
     }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    queueAttackAction(selectedParcel.plotId, troops, iron, fuel, crystal);
     attackMutation.mutate(
       { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, crystalBurned: crystal, commanderId },
       {
         onSuccess: (data: any) => {
+          queueAttackAction(selectedParcel.plotId, troops, iron, fuel, crystal);
           const battleId = data?.id as string | undefined;
           toast({ title: "Attack Deployed", description: "Battle will resolve in 10 minutes." });
           setAttackModalOpen(false);
@@ -265,11 +267,13 @@ export function GameLayout() {
       return;
     }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    queueBuildAction(selectedParcel.plotId, type);
     buildMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, improvementType: type },
       {
-        onSuccess: () => toast({ title: "Construction Complete", description: `${type} has been built.` }),
+        onSuccess: () => {
+          queueBuildAction(selectedParcel.plotId, type);
+          toast({ title: "Construction Complete", description: `${type} has been built.` });
+        },
         onError: (error) => toast({ title: "Build Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -418,11 +422,11 @@ export function GameLayout() {
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    queueSpecialAttackAction(selectedParcel.plotId, attackType);
     specialAttackMutation.mutate(
       { playerId: player.id, attackType, targetParcelId: selectedParcelId },
       {
         onSuccess: (data: any) => {
+          queueSpecialAttackAction(selectedParcel.plotId, attackType);
           const result = data.result;
           toast({ title: "Special Attack Launched", description: `${result?.effect || "Attack successful"} - ${result?.damage || 0} damage dealt` });
         },
@@ -433,11 +437,13 @@ export function GameLayout() {
 
   const handleSwitchCommander = (index: number) => {
     if (!player) return;
-    queueSwitchCommanderAction(index);
     switchCommanderMutation.mutate(
       { playerId: player.id, commanderIndex: index },
       {
-        onSuccess: () => toast({ title: "Commander Switched", description: "Active commander updated." }),
+        onSuccess: () => {
+          queueSwitchCommanderAction(index);
+          toast({ title: "Commander Switched", description: "Active commander updated." });
+        },
         onError: (error) => toast({ title: "Switch Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -448,11 +454,13 @@ export function GameLayout() {
     const targetParcel = targetParcelId
       ? gameState?.parcels.find((p) => p.id === targetParcelId)
       : null;
-    queueDeployDroneAction(targetParcel?.plotId);
     deployDroneMutation.mutate(
       { playerId: player.id, targetParcelId },
       {
-        onSuccess: () => toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." }),
+        onSuccess: () => {
+          queueDeployDroneAction(targetParcel?.plotId);
+          toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." });
+        },
         onError: (error) => toast({ title: "Deploy Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -460,11 +468,13 @@ export function GameLayout() {
 
   const handleDeploySatellite = () => {
     if (!player) return;
-    queueDeploySatelliteAction();
     deploySatelliteMutation.mutate(
       { playerId: player.id },
       {
-        onSuccess: () => toast({ title: "Satellite Launched", description: "+25% mining yield on all your territories for 1 hour." }),
+        onSuccess: () => {
+          queueDeploySatelliteAction();
+          toast({ title: "Satellite Launched", description: "+25% mining yield on all your territories for 1 hour." });
+        },
         onError: (error) => toast({ title: "Launch Failed", description: error.message, variant: "destructive" }),
       }
     );
