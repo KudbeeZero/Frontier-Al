@@ -322,6 +322,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   );
 }
 
+// Fixed sun direction in world space (globe does not rotate).
+// Points FROM the globe center TOWARD the sun.
+const SUN_DIR = new THREE.Vector3(1.0, 0.22, 0.55).normalize();
+
 function GlobeTerrain() {
   const albedoTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_albedo.png");
   const nightTex  = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_night_lights.png");
@@ -336,20 +340,63 @@ function GlobeTerrain() {
     if (cloudRef.current) cloudRef.current.rotation.y += delta * 0.018;
   });
 
+  // Day/night terrain shader: lit side shows albedo, dark side shows
+  // boosted night-lights + a warm golden glow at the terminator.
+  const terrainUniforms = useMemo(() => ({
+    albedoMap: { value: albedoTex },
+    nightMap:  { value: nightTex },
+    sunDir:    { value: SUN_DIR },
+  }), [albedoTex, nightTex]);
+
+  const terrainVert = `
+    varying vec2 vUv;
+    varying vec3 vWorldNormal;
+    void main() {
+      vUv = uv;
+      vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const terrainFrag = `
+    uniform sampler2D albedoMap;
+    uniform sampler2D nightMap;
+    uniform vec3 sunDir;
+    varying vec2 vUv;
+    varying vec3 vWorldNormal;
+    void main() {
+      vec3 n       = normalize(vWorldNormal);
+      float NdotL  = dot(n, sunDir);
+
+      vec4 dayCol   = texture2D(albedoMap, vUv);
+      vec4 nightCol = texture2D(nightMap,  vUv);
+
+      // Smooth terminator band: fully dark at -0.12, fully lit at 0.18
+      float dayBlend   = smoothstep(-0.12, 0.18, NdotL);
+      float nightBlend = 1.0 - dayBlend;
+
+      // Lit side: full albedo; dark side: very dim
+      vec3 terrain = mix(dayCol.rgb * 0.055, dayCol.rgb, dayBlend);
+
+      // Night lights — boosted and visible deep into dark hemisphere
+      vec3 nightGlow = nightCol.rgb * nightBlend * 2.6;
+
+      // Warm golden terminator crescent
+      float crescent = smoothstep(-0.28, 0.0, NdotL) * smoothstep(0.28, 0.0, NdotL);
+      vec3 termColor = vec3(1.0, 0.58, 0.12) * crescent * 0.45;
+
+      gl_FragColor = vec4(terrain + nightGlow + termColor, 1.0);
+    }
+  `;
+
   return (
     <>
       <mesh>
         <sphereGeometry args={[GLOBE_RADIUS, 128, 64]} />
-        <meshBasicMaterial map={albedoTex} />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.001, 128, 64]} />
-        <meshBasicMaterial
-          map={nightTex}
-          transparent
-          blending={THREE.AdditiveBlending}
-          opacity={0.55}
-          depthWrite={false}
+        <shaderMaterial
+          uniforms={terrainUniforms}
+          vertexShader={terrainVert}
+          fragmentShader={terrainFrag}
         />
       </mesh>
       <mesh ref={cloudRef}>
@@ -357,7 +404,7 @@ function GlobeTerrain() {
         <meshBasicMaterial
           map={cloudsTex}
           transparent
-          opacity={0.12}
+          opacity={0.14}
           depthWrite={false}
           side={THREE.FrontSide}
           blending={THREE.AdditiveBlending}
@@ -367,17 +414,74 @@ function GlobeTerrain() {
   );
 }
 
+/**
+ * Additive inner glow on the dark hemisphere: deep cyan → violet,
+ * with a bright crescent halo right at the terminator edge.
+ */
+function DarkSideGlow() {
+  const uniforms = useMemo(() => ({
+    sunDir: { value: SUN_DIR },
+  }), []);
+
+  const vert = `
+    varying vec3 vWorldNormal;
+    void main() {
+      vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const frag = `
+    uniform vec3 sunDir;
+    varying vec3 vWorldNormal;
+    void main() {
+      vec3 n      = normalize(vWorldNormal);
+      float NdotL = dot(n, sunDir);
+
+      // Ramp in across the terminator into the full dark side
+      float darkFactor = smoothstep(0.18, -0.55, NdotL);
+
+      // Extra crescent halo exactly at the terminator edge
+      float crescent = smoothstep(-0.18, 0.0, NdotL) * (1.0 - smoothstep(0.0, 0.18, NdotL));
+
+      // Gradient: cyan at terminator edge → deep violet in the darkest zone
+      float t = clamp(-NdotL * 0.5 + 0.5, 0.0, 1.0);
+      vec3 cyanCol   = vec3(0.0,  0.88, 1.0);
+      vec3 violetCol = vec3(0.38, 0.0,  0.95);
+      vec3 color = mix(cyanCol, violetCol, t * darkFactor);
+
+      float alpha = darkFactor * 0.30 + crescent * 0.55;
+      gl_FragColor = vec4(color, alpha * 0.95);
+    }
+  `;
+
+  return (
+    <mesh>
+      <sphereGeometry args={[GLOBE_RADIUS * 1.002, 64, 32]} />
+      <shaderMaterial
+        uniforms={uniforms}
+        vertexShader={vert}
+        fragmentShader={frag}
+        transparent
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        side={THREE.FrontSide}
+      />
+    </mesh>
+  );
+}
+
 function AtmosphereGlow() {
   const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.05, 0.35, 1.0) },
-    coefficient: { value: 0.55 },
-    power:       { value: 4.0 },
+    glowColor:   { value: new THREE.Color(0.0, 0.65, 1.0) },
+    coefficient: { value: 0.58 },
+    power:       { value: 3.8 },
   }), []);
 
   const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.0, 0.6, 0.7) },
-    coefficient: { value: 0.4 },
-    power:       { value: 6.0 },
+    glowColor:   { value: new THREE.Color(0.0, 0.82, 0.95) },
+    coefficient: { value: 0.38 },
+    power:       { value: 5.5 },
   }), []);
 
   const vertShader = `
@@ -397,7 +501,7 @@ function AtmosphereGlow() {
     varying vec3 vPositionNormal;
     void main() {
       float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity * 0.5);
+      gl_FragColor = vec4(glowColor, intensity * 0.65);
     }
   `;
 
@@ -409,7 +513,7 @@ function AtmosphereGlow() {
           transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
       </mesh>
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.18, 64, 32]} />
+        <sphereGeometry args={[GLOBE_RADIUS * 1.20, 64, 32]} />
         <shaderMaterial uniforms={outerUniforms} vertexShader={vertShader} fragmentShader={fragShader}
           transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
       </mesh>
@@ -571,6 +675,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       <ambientLight intensity={1.0} color="#ffffff" />
       <group>
         <GlobeTerrain />
+        <DarkSideGlow />
         <PlotOverlay
           parcels={parcels}
           players={players}
