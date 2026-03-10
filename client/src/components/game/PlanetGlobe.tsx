@@ -76,11 +76,10 @@ function getPlotColor(
   currentPlayerId: string | null,
   players: Player[]
 ): THREE.Color {
-  if (!parcel) return new THREE.Color(0x080c18);
-  if (!parcel.ownerId) {
-    const hex = BIOME_DISPLAY_COLORS[parcel.biome] || "#3498db";
-    return new THREE.Color(hex);
-  }
+  // With AdditiveBlending, black = fully transparent.
+  // Only owned / contested plots should emit visible light.
+  if (!parcel) return new THREE.Color(0x000000);
+  if (!parcel.ownerId) return new THREE.Color(0x000000); // terrain shows through
   if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
   const owner = players.find(p => p.id === parcel.ownerId);
   if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
@@ -147,8 +146,8 @@ function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
 
-// Dark grout color — globe texture shows through as dark border between tiles
-const BORDER_COLOR = new THREE.Color("#0d1b2e");
+// Additive blending: this tiny value creates a barely-visible honeycomb grid on terrain
+const BORDER_COLOR = new THREE.Color("#020810");
 
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
   const fillMeshRef  = useRef<THREE.InstancedMesh>(null!);
@@ -180,8 +179,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const fillSize   = GLOBE_RADIUS * 0.022;
-  const borderSize = GLOBE_RADIUS * 0.025;
+  const fillSize   = GLOBE_RADIUS * 0.014;
+  const borderSize = GLOBE_RADIUS * 0.016;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -227,10 +226,13 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       }
       if (isHovered) fillColor = fillColor.clone().multiplyScalar(1.3);
 
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : (fillColor.r + fillColor.g + fillColor.b > 0.01)
+          ? fillColor.clone().multiplyScalar(1.6)
+          : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * pulse, fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse,
-        isSelected ? new THREE.Color("#ffffff") : BORDER_COLOR
-      );
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
     }
 
     fillMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -257,10 +259,13 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
 
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : (fillColor.r + fillColor.g + fillColor.b > 0.01)
+          ? fillColor.clone().multiplyScalar(1.6)
+          : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar, fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar,
-        isSelected ? new THREE.Color("#ffffff") : BORDER_COLOR
-      );
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar, borderColor);
     }
     fillMeshRef.current.instanceMatrix.needsUpdate = true;
     borderMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -296,13 +301,19 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
   return (
     <>
-      {/* Border layer — dark grout color, sits just below fill, peeks out at hex edges */}
+      {/* Border ring — barely-visible honeycomb grid; glows with ownership color on claimed tiles */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
-        <meshBasicMaterial transparent opacity={1.0} depthWrite={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          transparent
+          opacity={1.0}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+        />
       </instancedMesh>
 
-      {/* Fill layer — biome/ownership colors, sits in front, unlit so no dark-side shadowing */}
+      {/* Fill layer — additive: black = invisible, faction colour = glowing territory */}
       <instancedMesh
         ref={fillMeshRef}
         args={[undefined, undefined, PLOT_COUNT]}
@@ -313,9 +324,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           transparent
-          opacity={0.95}
+          opacity={1.0}
           depthWrite={false}
           side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
     </>
@@ -382,20 +394,20 @@ function GlobeTerrain() {
       float dayBlend   = smoothstep(-0.12, 0.18, NdotL);
       float nightBlend = 1.0 - dayBlend;
 
-      // Lit side: ultra-saturated, bright terrain; dark side: subtle remnant
-      vec3 saturatedDay = saturate(dayCol.rgb, 1.75) * 1.48;
+      // Day side: clean, rich colours — not overexposed
+      vec3 saturatedDay = saturate(dayCol.rgb, 1.30) * 1.10;
       vec3 terrain = mix(dayCol.rgb * 0.02, saturatedDay, dayBlend);
 
-      // Night lights — extremely vivid, professional neon-city glow
-      vec3 nightGlow = saturate(nightCol.rgb, 2.0) * nightBlend * 8.8;
+      // Night lights — vivid but tasteful neon city glow
+      vec3 nightGlow = saturate(nightCol.rgb, 1.8) * nightBlend * 5.5;
 
-      // Bright, wide golden terminator with warm glow
-      float crescent = smoothstep(-0.32, 0.0, NdotL) * smoothstep(0.32, 0.0, NdotL);
-      vec3 termColor = vec3(1.0, 0.65, 0.0) * crescent * 1.15;
+      // Golden terminator at day/night boundary
+      float crescent = smoothstep(-0.30, 0.0, NdotL) * smoothstep(0.30, 0.0, NdotL);
+      vec3 termColor = vec3(1.0, 0.60, 0.0) * crescent * 0.80;
 
-      // Strong specular shine on dayside for professional gloss
-      float spec = pow(max(0.0, NdotL), 6.0) * dayBlend * 0.28;
-      vec3 specGlow = vec3(1.0, 0.98, 0.88) * spec;
+      // Subtle oceanic specular on lit side
+      float spec = pow(max(0.0, NdotL), 12.0) * dayBlend * 0.18;
+      vec3 specGlow = vec3(0.85, 0.95, 1.0) * spec;
 
       gl_FragColor = vec4(terrain + nightGlow + termColor + specGlow, 1.0);
     }
@@ -462,8 +474,8 @@ function DarkSideGlow() {
       vec3 violetCol = vec3(0.38, 0.0,  0.95);
       vec3 color = mix(cyanCol, violetCol, t * darkFactor);
 
-      float alpha = darkFactor * 0.72 + crescent * 1.0;
-      gl_FragColor = vec4(color, alpha * 1.25);
+      float alpha = darkFactor * 0.38 + crescent * 0.70;
+      gl_FragColor = vec4(color, alpha);
     }
   `;
 
@@ -485,15 +497,15 @@ function DarkSideGlow() {
 
 function AtmosphereGlow() {
   const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.4, 0.95, 1.0) },
-    coefficient: { value: 0.75 },
-    power:       { value: 2.2 },
+    glowColor:   { value: new THREE.Color(0.0, 0.92, 1.0) },
+    coefficient: { value: 0.65 },
+    power:       { value: 3.0 },
   }), []);
 
   const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.3, 1.0, 1.0) },
-    coefficient: { value: 0.52 },
-    power:       { value: 3.8 },
+    glowColor:   { value: new THREE.Color(0.0, 0.75, 1.0) },
+    coefficient: { value: 0.42 },
+    power:       { value: 5.5 },
   }), []);
 
   const vertShader = `
@@ -513,7 +525,7 @@ function AtmosphereGlow() {
     varying vec3 vPositionNormal;
     void main() {
       float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity);
+      gl_FragColor = vec4(glowColor, intensity * 0.88);
     }
   `;
 
@@ -825,11 +837,11 @@ export default function PlanetGlobe({
   );
 
   return (
-    <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#02040e" }}>
+    <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#010306" }}>
       <Canvas
-        camera={{ position: [0, 0, GLOBE_RADIUS * 4.2], fov: 42 }}
-        gl={{ antialias: true, alpha: false, toneMapping: THREE.NoToneMapping }}
-        style={{ background: "#02040e" }}
+        camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 38 }}
+        gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
+        style={{ background: "#010306" }}
       >
         <Scene
           parcels={parcels}
