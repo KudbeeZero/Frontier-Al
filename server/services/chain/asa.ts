@@ -303,7 +303,7 @@ export async function clawbackFrontierAsa(
     const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
       sender:          account.addr.toString(),
       receiver:        account.addr.toString(),
-      revocationTarget: fromAddress,
+      assetSender:     fromAddress,
       amount:          microAmount,
       assetIndex:      asaId,
       suggestedParams: sp,

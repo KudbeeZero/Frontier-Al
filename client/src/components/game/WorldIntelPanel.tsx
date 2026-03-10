@@ -506,7 +506,11 @@ export function WorldIntelPanel({ className, onReplayStateChange, activeBattleCo
                   className="w-1.5 h-1.5 rounded-full shrink-0"
                   style={active ? { background: color, boxShadow: `0 0 4px ${color}` } : { background: "#555" }}
                 />
-                {Icon && <Icon className="w-2.5 h-2.5 shrink-0" style={{ color: active ? color : "#555" }} />}
+                {Icon && (
+                  <span className="shrink-0" style={{ color: active ? color : "#555" }}>
+                    <Icon className="w-2.5 h-2.5" />
+                  </span>
+                )}
                 <span
                   className="text-[9px] font-mono truncate tracking-wider"
                   style={{ color: active ? color : "#555" }}
