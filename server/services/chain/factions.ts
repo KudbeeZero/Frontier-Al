@@ -153,6 +153,33 @@ async function mintFactionIdentityAsa(
   return { assetId, txId };
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  maxAttempts = 4,
+  baseDelayMs = 3000,
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isLast = attempt === maxAttempts;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (isLast) throw err;
+      const delay = baseDelayMs * attempt;
+      console.warn(`[chain/factions] ${label} attempt ${attempt}/${maxAttempts} failed (${msg}). Retrying in ${delay}ms…`);
+      await sleep(delay);
+    }
+  }
+  throw new Error(`[chain/factions] ${label} exhausted all attempts`);
+}
+
 // ── Public: idempotent bootstrap for all four factions ───────────────────────
 
 /**
@@ -188,10 +215,16 @@ export async function bootstrapFactionIdentities(baseUrl: string): Promise<void>
       }
 
       // 2. Not in DB — check if admin account already has this ASA on-chain
-      //    (handles the case where DB was wiped but chain wasn't)
-      const algod       = getAlgodClient();
-      const account     = getAdminAccount();
-      const accountInfo = await algod.accountInformation(account.addr.toString()).do();
+      //    (handles the case where DB was wiped but chain wasn't).
+      //    Retry with backoff — first call after cold start can time out.
+      const algod   = getAlgodClient();
+      const account = getAdminAccount();
+
+      const accountInfo = await withRetry(
+        `accountInformation(${faction.name})`,
+        () => algod.accountInformation(account.addr.toString()).do(),
+      );
+
       const created: any[] = (accountInfo as any)["created-assets"] ??
                              (accountInfo as any).createdAssets ?? [];
 
