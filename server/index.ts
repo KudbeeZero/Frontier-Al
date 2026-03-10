@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import path from "path";
 import fs from "fs";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -86,7 +87,7 @@ app.use((req, res, next) => {
 
   assertChainConfig();
   const { initWsServer } = await import("./wsServer");
-  initWsServer(httpServer);
+  initWsServer(httpServer, storage);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
-import { broadcastGameState } from "./wsServer";
+import { broadcastGameState, markDirty } from "./wsServer";
 import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
 
 // ── Chain Service ─────────────────────────────────────────────────────────────
@@ -616,8 +616,7 @@ export async function registerRoutes(
       const action = mineActionSchema.parse(req.body);
       const result = await storage.mineResources(action);
       res.json({ success: true, yield: result });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
       try {
         const minedParcel = await storage.getParcel(action.parcelId);
         if (minedParcel) {
@@ -649,8 +648,7 @@ export async function registerRoutes(
       const action = upgradeActionSchema.parse(req.body);
       const parcel = await storage.upgradeBase(action);
       res.json({ success: true, parcel });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Upgrade failed" });
@@ -666,8 +664,7 @@ export async function registerRoutes(
         if (attackPlayer) fireBurn(attackPlayer.address, action.crystalBurned, `Crystal burn battleId=${battle.id}`);
       }
       res.json({ success: true, battle });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
       // Log world event
       try {
         const targetParcelEvt = await storage.getParcel(action.targetParcelId);
@@ -714,8 +711,7 @@ export async function registerRoutes(
         if (cost > 0) fireBurn(buildPlayer.address, cost, `Build improvement plotId=${parcel.plotId}`);
       }
       res.json({ success: true, parcel });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Build failed" });
@@ -849,6 +845,7 @@ export async function registerRoutes(
           message: "Your Plot NFT is being minted. Add it to your Pera wallet once you receive the asset ID."
         }
       });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Purchase failed" });
@@ -860,8 +857,7 @@ export async function registerRoutes(
       const action = collectActionSchema.parse(req.body);
       const result = await storage.collectAll(action.playerId);
       res.json({ success: true, collected: result });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Collection failed" });
@@ -909,8 +905,7 @@ export async function registerRoutes(
       }
 
       res.json({ success: true, claimed: result, txId, asaId });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });
@@ -945,8 +940,7 @@ export async function registerRoutes(
           });
         }
       } catch { /* non-critical */ }
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mint failed" });
@@ -959,8 +953,7 @@ export async function registerRoutes(
       if (!playerId || commanderIndex === undefined) return res.status(400).json({ error: "playerId and commanderIndex required" });
       const activeCommander = await storage.switchCommander(playerId, commanderIndex);
       res.json({ success: true, activeCommander });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Switch failed" });
     }
@@ -971,8 +964,7 @@ export async function registerRoutes(
       const action = specialAttackActionSchema.parse(req.body);
       const result = await storage.executeSpecialAttack(action);
       res.json({ success: true, result });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
       try {
         const saParcel = await storage.getParcel(action.targetParcelId).catch(() => undefined);
         const saPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
@@ -1026,8 +1018,7 @@ export async function registerRoutes(
         }
       } catch { /* non-critical */ }
       res.json({ success: true, drone });
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Drone deployment failed" });
@@ -1060,8 +1051,7 @@ export async function registerRoutes(
           }
         });
       } catch { /* non-critical */ }
-      const gameState = await storage.getGameState();
-      broadcastGameState(gameState);
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Satellite deployment failed" });
@@ -1147,40 +1137,44 @@ export async function registerRoutes(
   setInterval(async () => {
     try {
       const resolved = await withDbRetry(() => storage.resolveBattles(), "resolveBattles");
-      for (const battle of resolved) {
-        try {
-          const parcel = await storage.getParcel(battle.targetParcelId);
-          if (parcel) {
-            const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
-            appendWorldEvent({
-              type: "battle_resolved",
-              timestamp: Date.now(),
-              lat: parcel.lat,
-              lng: parcel.lng,
-              plotId: parcel.plotId,
-              playerId: battle.attackerId,
-              severity: battle.outcome === "attacker_wins" ? "high" : "medium",
-              metadata: {
-                battleId: battle.id,
-                outcome: battle.outcome,
-                attacker: resolvedAttacker?.name ?? "Unknown",
-              }
-            });
-          }
-        } catch { /* non-critical */ }
+      if (resolved.length > 0) {
+        for (const battle of resolved) {
+          try {
+            const parcel = await storage.getParcel(battle.targetParcelId);
+            if (parcel) {
+              const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
+              appendWorldEvent({
+                type: "battle_resolved",
+                timestamp: Date.now(),
+                lat: parcel.lat,
+                lng: parcel.lng,
+                plotId: parcel.plotId,
+                playerId: battle.attackerId,
+                severity: battle.outcome === "attacker_wins" ? "high" : "medium",
+                metadata: {
+                  battleId: battle.id,
+                  outcome: battle.outcome,
+                  attacker: resolvedAttacker?.name ?? "Unknown",
+                }
+              });
+            }
+          } catch { /* non-critical */ }
+        }
+        markDirty();
       }
     } catch (error) {
-      console.warn("Background task error (battles):", error instanceof Error ? error.message : error);
+      console.warn("Background task (battles):", error instanceof Error ? error.message : error);
     }
   }, 15000);
 
   setInterval(async () => {
     try {
       if (process.env.AI_ENABLED !== "false") {
-        await withDbRetry(() => storage.runAITurn(), "runAITurn");
+        const aiEvents = await withDbRetry(() => storage.runAITurn(), "runAITurn");
+        if (aiEvents && aiEvents.length > 0) markDirty();
       }
     } catch (error) {
-      console.warn("Background task error (AI):", error instanceof Error ? error.message : error);
+      console.warn("Background task (AI):", error instanceof Error ? error.message : error);
     }
   }, 20000);
 
@@ -1189,10 +1183,11 @@ export async function registerRoutes(
     try {
       const event = await withDbRetry(() => storage.triggerOrbitalCheck(), "triggerOrbitalCheck");
       if (event) {
-        console.log(`[ORBITAL-DEBUG] Background orbital check | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
+        console.log(`[ORBITAL] new impact id=${event.id} type=${event.type}`);
+        markDirty();
       }
     } catch (error) {
-      console.warn("[ORBITAL-DEBUG] Background orbital check error:", error instanceof Error ? error.message : error);
+      console.warn("[ORBITAL] background check:", error instanceof Error ? error.message : error);
     }
   }, 5 * 60 * 1000);
 
