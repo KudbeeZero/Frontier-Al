@@ -618,6 +618,21 @@ export async function registerRoutes(
       res.json({ success: true, yield: result });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
+      try {
+        const mineParcel = await storage.getParcel(action.parcelId);
+        if (mineParcel) {
+          appendWorldEvent({
+            type: "mine_action",
+            timestamp: Date.now(),
+            lat: mineParcel.lat,
+            lng: mineParcel.lng,
+            plotId: mineParcel.plotId,
+            playerId: action.playerId,
+            severity: "low",
+            metadata: { plotId: mineParcel.plotId }
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mining failed" });
@@ -650,9 +665,25 @@ export async function registerRoutes(
       broadcastGameState(gameState);
       // Log world event
       try {
-        const targetParcel = await storage.getParcel(action.targetParcelId);
-        if (targetParcel) {
-          appendWorldEvent({ type: "battle_started", timestamp: Date.now(), lat: targetParcel.lat, lng: targetParcel.lng, plotId: targetParcel.plotId, defenderPlotId: targetParcel.plotId, playerId: action.attackerId, severity: "high", metadata: { battleId: battle.id, targetParcelId: action.targetParcelId } });
+        const targetParcelEvt = await storage.getParcel(action.targetParcelId);
+        const attackerEvt = await storage.getPlayer(action.attackerId).catch(() => null);
+        if (targetParcelEvt) {
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: targetParcelEvt.lat,
+            lng: targetParcelEvt.lng,
+            plotId: targetParcelEvt.plotId,
+            defenderPlotId: targetParcelEvt.plotId,
+            playerId: action.attackerId,
+            severity: "high",
+            metadata: {
+              battleId: battle.id,
+              targetParcelId: action.targetParcelId,
+              attacker: attackerEvt?.name ?? "Unknown",
+              defender: (targetParcelEvt as any).ownerName ?? "Unclaimed"
+            }
+          });
         }
       } catch { /* non-critical */ }
     } catch (error) {
@@ -705,7 +736,17 @@ export async function registerRoutes(
       const buyerAddress = player.address;
       const parcel = await storage.purchaseLand(action);
       console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
-      appendWorldEvent({ type: "land_claimed", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: action.playerId, metadata: { plotId: parcel.plotId } });
+      const buyerForEvent = await storage.getPlayer(action.playerId).catch(() => null);
+      appendWorldEvent({
+        type: "land_claimed",
+        timestamp: Date.now(),
+        lat: parcel.lat,
+        lng: parcel.lng,
+        plotId: parcel.plotId,
+        playerId: action.playerId,
+        severity: "medium",
+        metadata: { plotId: parcel.plotId, playerName: buyerForEvent?.name ?? "Unknown", biome: parcel.biome }
+      });
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
       let nftAssetId: number | null = null;
@@ -878,6 +919,19 @@ export async function registerRoutes(
         const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
         if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
       }
+      try {
+        const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+        if (mintPlayerEvt) {
+          appendWorldEvent({
+            type: "commander_minted",
+            timestamp: Date.now(),
+            lat: 0, lng: 0,
+            playerId: action.playerId,
+            severity: "medium",
+            metadata: { playerName: mintPlayerEvt.name, tier: action.tier }
+          });
+        }
+      } catch { /* non-critical */ }
       res.json({ success: true, avatar });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
@@ -922,6 +976,20 @@ export async function registerRoutes(
         const { DRONE_MINT_COST_FRONTIER } = await import('@shared/schema');
         fireBurn(dronePlayer.address, DRONE_MINT_COST_FRONTIER, `Drone deploy`);
       }
+      try {
+        const dronePlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+        if (dronePlayerEvt) {
+          appendWorldEvent({
+            type: "scan_ping",
+            timestamp: Date.now(),
+            endTimestamp: Date.now() + 30 * 60_000,
+            lat: 0, lng: 0,
+            playerId: action.playerId,
+            severity: "low",
+            metadata: { playerName: dronePlayerEvt.name, source: "drone" }
+          });
+        }
+      } catch { /* non-critical */ }
       res.json({ success: true, drone });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);

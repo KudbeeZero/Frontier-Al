@@ -3,10 +3,12 @@ export type WorldEventType =
   | "battle_started"
   | "battle_resolved"
   | "commander_deployed"
+  | "commander_minted"
   | "scan_ping"
   | "jammer_zone"
   | "faction_movement"
-  | "resource_pulse";
+  | "resource_pulse"
+  | "mine_action";
 
 export interface WorldEvent {
   id: string;

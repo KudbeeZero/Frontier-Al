@@ -1,0 +1,253 @@
+FRONTIER — World Intel Full Overhaul
+Pass: World Intel Next Level Pass
+
+Context:
+World Intel needs a major upgrade across three areas:
+1. SERVER — Wire real game actions to emit proper world events (mines, builds, commander mints, drone deploys)
+2. CLIENT PANEL — Complete WorldIntelPanel redesign: live ticker, threat meter, event detail drawer, better layout
+3. GLOBE OVERLAYS — Richer marker differentiation per event type, battle arcs between real attacker/defender coords
+
+DO NOT TOUCH: storage.ts, db-schema.ts, battle engine, GameLayout.tsx (except the two prop additions listed), PlanetGlobe.tsx internals, any auth/session logic.
+
+Files to modify:
+- server/routes.ts (add appendWorldEvent calls to more action handlers)
+- server/worldEventStore.ts (improve seedDemoWorldEvents only)
+- shared/worldEvents.ts (add new event types)
+- client/src/hooks/useWorldEvents.ts (add live polling hook)
+- client/src/components/game/WorldIntelPanel.tsx (full redesign)
+- client/src/components/game/GlobeEventOverlays.tsx (richer markers)
+
+---
+
+PART 1 — shared/worldEvents.ts
+
+Add two new event types to the WorldEventType union:
+"mine_action" | "commander_minted"
+
+So the full union becomes:
+export type WorldEventType =
+  | "land_claimed"
+  | "battle_started"
+  | "battle_resolved"
+  | "commander_deployed"
+  | "commander_minted"
+  | "scan_ping"
+  | "jammer_zone"
+  | "faction_movement"
+  | "resource_pulse"
+  | "mine_action";
+
+No other changes to shared/worldEvents.ts.
+
+---
+
+PART 2 — server/routes.ts — Wire real events
+
+Add these appendWorldEvent calls to the following existing action handlers. Each is fire-and-forget inside a try/catch so no game action is blocked.
+
+A) Inside app.post("/api/actions/mine") — after storage call succeeds, before res.json():
+try {
+  const mineParcel = await storage.getParcel(action.parcelId);
+  if (mineParcel) {
+    appendWorldEvent({
+      type: "mine_action",
+      timestamp: Date.now(),
+      lat: mineParcel.lat,
+      lng: mineParcel.lng,
+      plotId: mineParcel.plotId,
+      playerId: action.playerId,
+      severity: "low",
+      metadata: { plotId: mineParcel.plotId }
+    });
+  }
+} catch { /* non-critical */ }
+
+B) Inside app.post("/api/actions/purchase") — after the existing appendWorldEvent call for land_claimed, update it to include playerName in metadata:
+Find the existing appendWorldEvent call near line 667:
+appendWorldEvent({ type: "land_claimed", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: action.playerId, metadata: { plotId: parcel.plotId } });
+
+Replace with:
+const buyerForEvent = await storage.getPlayer(action.playerId).catch(() => null);
+appendWorldEvent({
+  type: "land_claimed",
+  timestamp: Date.now(),
+  lat: parcel.lat,
+  lng: parcel.lng,
+  plotId: parcel.plotId,
+  playerId: action.playerId,
+  severity: "medium",
+  metadata: { plotId: parcel.plotId, playerName: buyerForEvent?.name ?? "Unknown", biome: parcel.biome }
+});
+
+C) Inside app.post("/api/actions/mint-avatar") — after storage.mintAvatar() succeeds:
+try {
+  const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+  if (mintPlayerEvt) {
+    appendWorldEvent({
+      type: "commander_minted",
+      timestamp: Date.now(),
+      lat: 0, lng: 0,
+      playerId: action.playerId,
+      severity: "medium",
+      metadata: { playerName: mintPlayerEvt.name, tier: action.tier }
+    });
+  }
+} catch { /* non-critical */ }
+
+D) Inside app.post("/api/actions/deploy-drone") — after storage.deployDrone() succeeds:
+try {
+  const dronePlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+  if (dronePlayerEvt) {
+    appendWorldEvent({
+      type: "scan_ping",
+      timestamp: Date.now(),
+      endTimestamp: Date.now() + 30 * 60_000,
+      lat: 0, lng: 0,
+      playerId: action.playerId,
+      severity: "low",
+      metadata: { playerName: dronePlayerEvt.name, source: "drone" }
+    });
+  }
+} catch { /* non-critical */ }
+
+E) Inside app.post("/api/actions/attack") — update the existing appendWorldEvent call to include attacker/defender names:
+Find the existing appendWorldEvent for battle_started (around line 623) and replace with:
+try {
+  const targetParcelEvt = await storage.getParcel(action.targetParcelId);
+  const attackerEvt = await storage.getPlayer(action.attackerId).catch(() => null);
+  if (targetParcelEvt) {
+    appendWorldEvent({
+      type: "battle_started",
+      timestamp: Date.now(),
+      lat: targetParcelEvt.lat,
+      lng: targetParcelEvt.lng,
+      plotId: targetParcelEvt.plotId,
+      defenderPlotId: targetParcelEvt.plotId,
+      playerId: action.attackerId,
+      severity: "high",
+      metadata: {
+        battleId: battle.id,
+        targetParcelId: action.targetParcelId,
+        attacker: attackerEvt?.name ?? "Unknown",
+        defender: targetParcelEvt.ownerName ?? "Unclaimed"
+      }
+    });
+  }
+} catch { /* non-critical */ }
+
+---
+
+PART 3 — server/worldEventStore.ts
+
+Replace the seedDemoWorldEvents function body to produce richer demo data with all event types including the two new ones. The function signature stays identical. Replace only the demos array contents with richer entries that include playerName, biome, tier, and outcome metadata for all event types. Keep the "if (store.length >= 5) return;" guard.
+
+---
+
+PART 4 — client/src/hooks/useWorldEvents.ts
+
+Add a new exported hook for live events with faster polling:
+
+export function useLiveWorldEvents() {
+  return useQuery<WorldEvent[]>({
+    queryKey: ["/api/world/events/live"],
+    queryFn: async () => {
+      const res = await fetch("/api/world/events/recent");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 5_000,
+    staleTime: 3_000,
+  });
+}
+
+---
+
+PART 5 — client/src/components/game/WorldIntelPanel.tsx
+
+Full redesign. Replace the entire file content with the following:
+
+The new panel has five sections stacked vertically:
+
+1. HEADER BAR — "WORLD INTEL" title left, live green pulsing dot + "LIVE" badge right when isLive, threat meter in the middle
+
+2. THREAT METER — a horizontal bar showing world activity level (0–100) computed from: (activeBattles * 25 + recentEvents.filter(land_claimed).length * 5 + recentEvents.filter(mine_action).length * 1) capped at 100. Color: green < 30, yellow 30–60, red > 60. Label: "QUIET" / "ACTIVE" / "CONFLICT"
+
+3. CONTROLS — range presets (15m / 1h / 6h / 24h), timeline scrubber, play/pause/rewind, speed selector (1x 5x 20x 60x), event count at this time. Add 6h preset: { label: "6h", ms: 6 * 60 * 60_000 }
+
+4. LAYER TOGGLES — redesigned as a grid of 2 columns instead of flex-wrap. Each toggle shows a colored dot + label + event count for that type in the current window. Include all event types: land_claimed, battle_started, battle_resolved, commander_minted, mine_action, scan_ping, jammer_zone, faction_movement, resource_pulse. Use the existing EVENT_COLORS, adding:
+  commander_minted: "#00e5ff"
+  mine_action: "#78909c"
+
+5. EVENT FEED — redesigned EventRow with:
+   - Left: colored dot + event type icon (use lucide icons: Sword for battle, MapPin for land_claimed, Pickaxe for mine_action, Shield for commander_minted, Radar for scan_ping, Zap for jammer_zone, ArrowRight for faction_movement, Gem for resource_pulse)
+   - Middle: bold event type label, detail text below in muted, severity badge if critical/high
+   - Right: relative time (Xs ago / Xm ago / Xh ago)
+   - Clicking an event row expands an inline detail drawer showing all metadata fields as key: value pairs in monospace
+   - Active battles show a live red pulsing indicator
+   - New events (< 10s old) get a brief highlight animation using a yellow/amber left border
+
+Add at the top of the component: const { data: liveEvents = [] } = useLiveWorldEvents() — merge with the ranged events, dedup by id, sort by timestamp desc.
+
+EVENT_LABELS and EVENT_COLORS must include all 9 event types.
+
+LAYER_TYPES must include all 9 event types.
+
+The Seed Demo button moves to a small ghost button in the top-right of the header, only visible in development (check import.meta.env.DEV).
+
+---
+
+PART 6 — client/src/components/game/GlobeEventOverlays.tsx
+
+Improve marker differentiation:
+
+1. PulseMarker — vary the marker size by event type and severity:
+   - battle_started: radius 0.022 (larger), color bright red, ring pulses faster
+   - battle_resolved: radius 0.016, color orange
+   - land_claimed: radius 0.012, color green
+   - mine_action: radius 0.008, color slate, no ring
+   - commander_minted: radius 0.014, color cyan
+   - scan_ping: radius 0.018, draw as ring only (no filled center dot), pulses outward
+   - jammer_zone: radius 0.020, color purple, slow pulse
+   - resource_pulse: radius 0.010, color green
+
+2. ArcMarker improvements — battle arcs for battle_started events (not just faction_movement):
+   - If event.type === "battle_started" AND event.metadata.fromLat and event.metadata.fromLng exist, render an ArcMarker in addition to the PulseMarker
+   - battle arcs use red color (#ff1744) with faster animation
+   - faction_movement arcs keep yellow (#ffeb3b) with slower animation
+
+3. Add EVENT_SIZES constant:
+const EVENT_SIZES: Partial<Record<string, number>> = {
+  battle_started:    0.022,
+  battle_resolved:   0.016,
+  land_claimed:      0.012,
+  mine_action:       0.008,
+  commander_minted:  0.014,
+  scan_ping:         0.018,
+  jammer_zone:       0.020,
+  resource_pulse:    0.010,
+  commander_deployed:0.014,
+  faction_movement:  0.012,
+};
+
+Update PulseMarker to accept a size prop and pass EVENT_SIZES[event.type] ?? 0.012.
+
+4. GlobeEventOverlays render logic — update to:
+   - Render PulseMarker for all non-arc events
+   - Render ArcMarker for faction_movement AND battle_started (when fromLat/fromLng present in metadata)
+   - For battle_started, render BOTH a PulseMarker at the target AND an ArcMarker if fromLat/fromLng present
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- WorldIntelPanel renders with all 9 layer types
+- Threat meter shows correctly and updates with game state
+- Clicking an event row expands inline detail
+- New events < 10s old show amber highlight
+- Live dot pulses when isLive
+- 6h range preset works
+- GlobeEventOverlays renders different sizes per event type
+- battle_started events render arc when fromLat/fromLng present in metadata
+- Real mine, purchase, commander mint, drone deploy events appear in the feed
+- Only listed files were modified
+- No GameLayout.tsx changes required

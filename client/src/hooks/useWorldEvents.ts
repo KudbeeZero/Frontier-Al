@@ -34,3 +34,16 @@ export function useRecentWorldEvents() {
     staleTime: 10_000,
   });
 }
+
+export function useLiveWorldEvents() {
+  return useQuery<WorldEvent[]>({
+    queryKey: ["/api/world/events/live"],
+    queryFn: async () => {
+      const res = await fetch("/api/world/events/recent");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 5_000,
+    staleTime: 3_000,
+  });
+}
