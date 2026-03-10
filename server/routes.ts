@@ -4,7 +4,7 @@ import algosdk from "algosdk";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
 import { z } from "zod";
-import { db } from "./db";
+import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
 import { broadcastGameState } from "./wsServer";
@@ -1146,7 +1146,7 @@ export async function registerRoutes(
   // Staggered background tasks — avoids hammering Neon with simultaneous queries
   setInterval(async () => {
     try {
-      const resolved = await storage.resolveBattles();
+      const resolved = await withDbRetry(() => storage.resolveBattles(), "resolveBattles");
       for (const battle of resolved) {
         try {
           const parcel = await storage.getParcel(battle.targetParcelId);
@@ -1170,29 +1170,29 @@ export async function registerRoutes(
         } catch { /* non-critical */ }
       }
     } catch (error) {
-      console.error("Background task error (battles):", error);
+      console.warn("Background task error (battles):", error instanceof Error ? error.message : error);
     }
   }, 15000);
 
   setInterval(async () => {
     try {
       if (process.env.AI_ENABLED !== "false") {
-        await storage.runAITurn();
+        await withDbRetry(() => storage.runAITurn(), "runAITurn");
       }
     } catch (error) {
-      console.error("Background task error (AI):", error);
+      console.warn("Background task error (AI):", error instanceof Error ? error.message : error);
     }
   }, 20000);
 
   // Orbital check every 5 minutes
   setInterval(async () => {
     try {
-      const event = await storage.triggerOrbitalCheck();
+      const event = await withDbRetry(() => storage.triggerOrbitalCheck(), "triggerOrbitalCheck");
       if (event) {
         console.log(`[ORBITAL-DEBUG] Background orbital check | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
       }
     } catch (error) {
-      console.error("[ORBITAL-DEBUG] Background orbital check error:", error);
+      console.warn("[ORBITAL-DEBUG] Background orbital check error:", error instanceof Error ? error.message : error);
     }
   }, 5 * 60 * 1000);
 

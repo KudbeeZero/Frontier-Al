@@ -35,3 +35,24 @@ pool.on("error", (err) => {
 });
 
 export const db = drizzle(pool, { schema });
+
+/**
+ * Retry wrapper for background tasks that hit stale Neon connections.
+ * Catches "Connection terminated" / ECONNRESET / timeout errors,
+ * waits 600 ms for the pool to evict the dead client, then retries once.
+ */
+const CONN_ERR = /Connection terminated|ECONNRESET|connection timeout|ETIMEDOUT/i;
+
+export async function withDbRetry<T>(fn: () => Promise<T>, label = "db"): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (CONN_ERR.test(msg)) {
+      console.warn(`[db] ${label}: stale connection — retrying in 600 ms…`);
+      await new Promise(r => setTimeout(r, 600));
+      return fn();
+    }
+    throw err;
+  }
+}
