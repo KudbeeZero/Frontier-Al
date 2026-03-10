@@ -8,7 +8,7 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useLoader, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { LandParcel, Player, Battle, SlimParcel } from "@shared/schema";
+import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent, OrbitalEventType } from "@shared/schema";
 import type { WorldEvent } from "@shared/worldEvents";
 import { GlobeEventOverlays } from "./GlobeEventOverlays";
 import { biomeColors } from "@shared/schema";
@@ -400,6 +400,180 @@ function MiningPulseLayer({ pulses }: MiningPulseLayerProps) {
     <>
       {pulses.map(pulse => (
         <SinglePulse key={pulse.id} pulse={pulse} />
+      ))}
+    </>
+  );
+}
+
+// ── OrbitalZoneLayer ──────────────────────────────────────────────────────────
+// Renders active orbital events on the globe surface:
+//   - Impact events: pulsing zone disc at target coordinates
+//   - Cosmetic events: animated streak arc across the globe
+
+const ORBITAL_ZONE_COLORS: Record<string, string> = {
+  ATMOSPHERIC_BURST: "#ff6622",
+  IMPACT_STRIKE:     "#ff1744",
+  METEOR_SHOWER:     "#ff9944",
+  SINGLE_BOLIDE:     "#ffcc22",
+  COMET_PASS:        "#aaddff",
+  ORBITAL_DEBRIS:    "#aaaaaa",
+};
+
+const ZONE_BASE_RADIUS = 0.12;
+
+interface ImpactZoneProps {
+  event: OrbitalEvent;
+}
+
+function ImpactZone({ event }: ImpactZoneProps) {
+  const discRef = useRef<THREE.Mesh>(null!);
+  const ringRef = useRef<THREE.Mesh>(null!);
+  const tRef    = useRef(0);
+
+  const pos    = useMemo(
+    () => latLngToVec3(event.trajectory.endLat, event.trajectory.endLng, GLOBE_RADIUS * 1.004),
+    [event.trajectory.endLat, event.trajectory.endLng]
+  );
+  const lookAt = useMemo(() => pos.clone().multiplyScalar(2), [pos]);
+  const color  = useMemo(
+    () => new THREE.Color(ORBITAL_ZONE_COLORS[event.type] ?? "#ffffff"),
+    [event.type]
+  );
+  const radius = ZONE_BASE_RADIUS * (0.6 + (event.intensity ?? 0.5) * 0.8);
+
+  useFrame((_, delta) => {
+    tRef.current += delta;
+
+    const breathe = 0.85 + Math.sin(tRef.current * 1.2) * 0.15;
+    if (discRef.current) {
+      discRef.current.scale.setScalar(breathe);
+      (discRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.22 + Math.sin(tRef.current * 1.2) * 0.08;
+    }
+
+    const ringPulse = 0.9 + Math.sin(tRef.current * 2.1 + 1.0) * 0.2;
+    if (ringRef.current) {
+      ringRef.current.scale.setScalar(ringPulse);
+      (ringRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.55 + Math.sin(tRef.current * 2.1 + 1.0) * 0.2;
+    }
+  });
+
+  return (
+    <group position={pos}>
+      <mesh ref={discRef} onUpdate={self => self.lookAt(lookAt)}>
+        <circleGeometry args={[radius, 48]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      <mesh ref={ringRef} onUpdate={self => self.lookAt(lookAt)}>
+        <ringGeometry args={[radius * 0.85, radius * 1.05, 64]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.55}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      <mesh onUpdate={self => self.lookAt(lookAt)}>
+        <circleGeometry args={[radius * 0.08, 16]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+interface CosmeticStreakProps {
+  event: OrbitalEvent;
+}
+
+function CosmeticStreak({ event }: CosmeticStreakProps) {
+  const dotRef      = useRef<THREE.Mesh>(null!);
+  const progressRef = useRef(0);
+
+  const color = useMemo(
+    () => new THREE.Color(ORBITAL_ZONE_COLORS[event.type] ?? "#ffffff"),
+    [event.type]
+  );
+
+  const curve = useMemo(() => {
+    const from = latLngToVec3(
+      event.trajectory.startLat,
+      event.trajectory.startLng,
+      GLOBE_RADIUS * 1.01
+    );
+    const to = latLngToVec3(
+      event.trajectory.endLat,
+      event.trajectory.endLng,
+      GLOBE_RADIUS * 1.01
+    );
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+    const dist = from.distanceTo(to);
+    mid.normalize().multiplyScalar(GLOBE_RADIUS * (1.3 + dist * 0.25));
+    return new THREE.QuadraticBezierCurve3(from, mid, to);
+  }, [event.trajectory]);
+
+  const durationSec = (event.endAt - event.startAt) / 1000;
+  const speed = 1 / Math.max(durationSec, 1);
+
+  useFrame((_, delta) => {
+    progressRef.current = Math.min(progressRef.current + delta * speed, 1);
+    const pos = curve.getPoint(progressRef.current);
+    if (dotRef.current) {
+      dotRef.current.position.copy(pos);
+    }
+  });
+
+  const opacity = progressRef.current > 0.8
+    ? (1 - progressRef.current) / 0.2
+    : 1;
+
+  return (
+    <mesh ref={dotRef} position={curve.getPoint(0)}>
+      <sphereGeometry args={[0.014 * (0.5 + (event.intensity ?? 0.5)), 8, 8]} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={opacity}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+interface OrbitalZoneLayerProps {
+  events: OrbitalEvent[];
+}
+
+function OrbitalZoneLayer({ events }: OrbitalZoneLayerProps) {
+  const now = Date.now();
+
+  const impactEvents   = events.filter(e => !e.cosmetic && e.startAt <= now && e.endAt > now);
+  const cosmeticEvents = events.filter(e =>  e.cosmetic && e.startAt <= now && e.endAt > now);
+
+  if (impactEvents.length === 0 && cosmeticEvents.length === 0) return null;
+
+  return (
+    <>
+      {impactEvents.map(event => (
+        <ImpactZone key={event.id} event={event} />
+      ))}
+      {cosmeticEvents.map(event => (
+        <CosmeticStreak key={event.id} event={event} />
       ))}
     </>
   );
@@ -970,12 +1144,13 @@ interface SceneProps {
   targetLng: number | null;
   battles: Battle[];
   livePulses: LivePulse[];
+  orbitalEvents: OrbitalEvent[];
   replayEvents?: WorldEvent[];
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
 }
 
-function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
   return (
     <>
       <CameraController
@@ -1009,6 +1184,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
         currentPlayerId={currentPlayerId}
       />
       <MiningPulseLayer pulses={livePulses} />
+      <OrbitalZoneLayer events={orbitalEvents} />
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
@@ -1099,6 +1275,7 @@ interface PlanetGlobeProps {
   className?: string;
   battles?: Battle[];
   livePulses?: LivePulse[];
+  orbitalEvents?: OrbitalEvent[];
   replayEvents?: WorldEvent[];
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
@@ -1117,6 +1294,7 @@ export default function PlanetGlobe({
   className,
   battles = [],
   livePulses = [],
+  orbitalEvents = [],
   replayEvents,
   replayTime,
   replayVisibleTypes,
@@ -1153,6 +1331,7 @@ export default function PlanetGlobe({
           targetLng={selectedParcel?.lng ?? null}
           battles={battles}
           livePulses={livePulses}
+          orbitalEvents={orbitalEvents}
           replayEvents={replayEvents}
           replayTime={replayTime}
           replayVisibleTypes={replayVisibleTypes}

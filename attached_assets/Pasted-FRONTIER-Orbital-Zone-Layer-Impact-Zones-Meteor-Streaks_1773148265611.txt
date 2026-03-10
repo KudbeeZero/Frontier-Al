@@ -1,0 +1,347 @@
+FRONTIER — Orbital Zone Layer: Impact Zones + Meteor Streaks on Globe
+Pass: Globe-OrbitalZones
+
+Context:
+The OrbitalEventToast card (shown in the UI) already displays active
+orbital events as a floating panel. But the events have no visual
+anchor on the 3D globe — the storm or strike has no location.
+
+This pass adds OrbitalZoneLayer inside the Globe Canvas:
+
+1. IMPACT EVENTS (ATMOSPHERIC_BURST, IMPACT_STRIKE — cosmetic:false):
+   - Render a pulsing semi-transparent dome/disc at trajectory.endLat/endLng
+   - Color matches event type (red for IMPACT_STRIKE, orange for ATMOSPHERIC_BURST)
+   - Disc slowly pulses in scale and opacity while the event is active
+   - A thin outer ring expands and contracts independently
+   - Intensity field (0-1) scales the disc radius
+
+2. COSMETIC STREAKS (METEOR_SHOWER, SINGLE_BOLIDE, COMET_PASS, ORBITAL_DEBRIS):
+   - Render an animated dot that travels from trajectory.startLat/Lng
+     to trajectory.endLat/Lng across the globe surface
+   - Uses a QuadraticBezierCurve3 lifted above the globe (height based
+     on distance, same pattern as BattleArcs)
+   - Different colors per type matching OrbitalCanvas STREAK_COLORS
+   - Self-removes when event.endAt has passed
+
+3. Both use the same latLngToVec3 already defined in PlanetGlobe.tsx —
+   no duplication needed since this component lives in the same file.
+
+DO NOT TOUCH: server files, storage.ts, wsServer.ts, routes.ts,
+OrbitalCanvas.tsx, OrbitalEventToast.tsx, GlobeEventOverlays,
+BattleArcs, CameraController, MiningPulseLayer, PlotOverlay,
+GlobeTerrain, AtmosphereGlow, StarField, ParcelHUD, FactionLegend,
+or any file not listed below.
+
+Files to modify:
+- client/src/components/game/PlanetGlobe.tsx
+- client/src/components/game/GameLayout.tsx
+
+---
+
+EDIT 1 — PlanetGlobe.tsx: Add OrbitalEvent import
+
+Find:
+import type { LandParcel, Player, Battle } from "@shared/schema";
+
+Replace with:
+import type { LandParcel, Player, Battle, OrbitalEvent, OrbitalEventType } from "@shared/schema";
+
+---
+
+EDIT 2 — PlanetGlobe.tsx: Add OrbitalZoneLayer component
+
+Add this entire block after the MiningPulseLayer component
+(or after BattleArcs if MiningPulseLayer has not been applied,
+or after CameraController if neither has been applied).
+Place it before the BIOME_DISPLAY_COLORS constant.
+
+// ── OrbitalZoneLayer ──────────────────────────────────────────────────────────
+// Renders active orbital events on the globe surface:
+//   - Impact events: pulsing zone disc at target coordinates
+//   - Cosmetic events: animated streak arc across the globe
+
+const ORBITAL_ZONE_COLORS: Record<string, string> = {
+  ATMOSPHERIC_BURST: "#ff6622",
+  IMPACT_STRIKE:     "#ff1744",
+  METEOR_SHOWER:     "#ff9944",
+  SINGLE_BOLIDE:     "#ffcc22",
+  COMET_PASS:        "#aaddff",
+  ORBITAL_DEBRIS:    "#aaaaaa",
+};
+
+// Base disc radius on globe surface (scaled by intensity)
+const ZONE_BASE_RADIUS = 0.12;
+
+interface ImpactZoneProps {
+  event: OrbitalEvent;
+}
+
+function ImpactZone({ event }: ImpactZoneProps) {
+  const discRef  = useRef<THREE.Mesh>(null!);
+  const ringRef  = useRef<THREE.Mesh>(null!);
+  const t        = useRef(0);
+
+  const pos    = useMemo(
+    () => latLngToVec3(event.trajectory.endLat, event.trajectory.endLng, GLOBE_RADIUS * 1.004),
+    [event.trajectory.endLat, event.trajectory.endLng]
+  );
+  const lookAt = useMemo(() => pos.clone().multiplyScalar(2), [pos]);
+  const color  = useMemo(
+    () => new THREE.Color(ORBITAL_ZONE_COLORS[event.type] ?? "#ffffff"),
+    [event.type]
+  );
+  const radius = ZONE_BASE_RADIUS * (0.6 + (event.intensity ?? 0.5) * 0.8);
+
+  useFrame((_, delta) => {
+    t.current += delta;
+
+    // Disc: slow breathe pulse
+    const breathe = 0.85 + Math.sin(t.current * 1.2) * 0.15;
+    if (discRef.current) {
+      discRef.current.scale.setScalar(breathe);
+      (discRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.22 + Math.sin(t.current * 1.2) * 0.08;
+    }
+
+    // Ring: faster expand-contract, slightly out of phase
+    const ringPulse = 0.9 + Math.sin(t.current * 2.1 + 1.0) * 0.2;
+    if (ringRef.current) {
+      ringRef.current.scale.setScalar(ringPulse);
+      (ringRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.55 + Math.sin(t.current * 2.1 + 1.0) * 0.2;
+    }
+  });
+
+  return (
+    <group position={pos}>
+      {/* Filled zone disc */}
+      <mesh ref={discRef} onUpdate={self => self.lookAt(lookAt)}>
+        <circleGeometry args={[radius, 48]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Outer pulsing ring */}
+      <mesh ref={ringRef} onUpdate={self => self.lookAt(lookAt)}>
+        <ringGeometry args={[radius * 0.85, radius * 1.05, 64]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.55}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Bright center pinpoint */}
+      <mesh onUpdate={self => self.lookAt(lookAt)}>
+        <circleGeometry args={[radius * 0.08, 16]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+interface CosmeticStreakProps {
+  event: OrbitalEvent;
+}
+
+function CosmeticStreak({ event }: CosmeticStreakProps) {
+  const dotRef      = useRef<THREE.Mesh>(null!);
+  const progressRef = useRef(0);
+
+  const color = useMemo(
+    () => new THREE.Color(ORBITAL_ZONE_COLORS[event.type] ?? "#ffffff"),
+    [event.type]
+  );
+
+  const curve = useMemo(() => {
+    const from = latLngToVec3(
+      event.trajectory.startLat,
+      event.trajectory.startLng,
+      GLOBE_RADIUS * 1.01
+    );
+    const to = latLngToVec3(
+      event.trajectory.endLat,
+      event.trajectory.endLng,
+      GLOBE_RADIUS * 1.01
+    );
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+    const dist = from.distanceTo(to);
+    // Lift arc above surface proportional to distance
+    mid.normalize().multiplyScalar(GLOBE_RADIUS * (1.3 + dist * 0.25));
+    return new THREE.QuadraticBezierCurve3(from, mid, to);
+  }, [event.trajectory]);
+
+  // Speed: traverse full arc over the event's lifetime
+  const durationSec = (event.endAt - event.startAt) / 1000;
+  const speed = 1 / Math.max(durationSec, 1);
+
+  useFrame((_, delta) => {
+    progressRef.current = Math.min(progressRef.current + delta * speed, 1);
+    const pos = curve.getPoint(progressRef.current);
+    if (dotRef.current) {
+      dotRef.current.position.copy(pos);
+    }
+  });
+
+  // Fade out in the final 20% of the journey
+  const opacity = progressRef.current > 0.8
+    ? (1 - progressRef.current) / 0.2
+    : 1;
+
+  return (
+    <mesh ref={dotRef} position={curve.getPoint(0)}>
+      <sphereGeometry args={[0.014 * (0.5 + (event.intensity ?? 0.5)), 8, 8]} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={opacity}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+interface OrbitalZoneLayerProps {
+  events: OrbitalEvent[];
+}
+
+function OrbitalZoneLayer({ events }: OrbitalZoneLayerProps) {
+  const now = Date.now();
+
+  // Split into impact zones and cosmetic streaks
+  const impactEvents = events.filter(
+    e => !e.cosmetic && e.startAt <= now && e.endAt > now
+  );
+  const cosmeticEvents = events.filter(
+    e => e.cosmetic && e.startAt <= now && e.endAt > now
+  );
+
+  if (impactEvents.length === 0 && cosmeticEvents.length === 0) return null;
+
+  return (
+    <>
+      {impactEvents.map(event => (
+        <ImpactZone key={event.id} event={event} />
+      ))}
+      {cosmeticEvents.map(event => (
+        <CosmeticStreak key={event.id} event={event} />
+      ))}
+    </>
+  );
+}
+
+---
+
+EDIT 3 — PlanetGlobe.tsx: Add orbitalEvents to SceneProps and Scene
+
+Find SceneProps interface. Add orbitalEvents prop:
+Find:
+  livePulses: LivePulse[];
+
+Add immediately after it:
+  orbitalEvents: OrbitalEvent[];
+
+Find the Scene function signature. Add orbitalEvents to destructure:
+Find:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+Replace with:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+NOTE: If prior passes have not all been applied, add orbitalEvents: OrbitalEvent[]
+to SceneProps alongside existing fields and add orbitalEvents to the
+Scene destructure accordingly without changing unrelated fields.
+
+---
+
+EDIT 4 — PlanetGlobe.tsx: Render OrbitalZoneLayer inside Scene
+
+Inside the Scene return, add OrbitalZoneLayer after MiningPulseLayer
+(or after AtmosphereGlow if prior passes not applied).
+
+Find:
+      <MiningPulseLayer pulses={livePulses} />
+
+Add immediately after it:
+      <OrbitalZoneLayer events={orbitalEvents} />
+
+NOTE: If MiningPulseLayer pass not applied, add after <AtmosphereGlow />
+
+---
+
+EDIT 5 — PlanetGlobe.tsx: Add orbitalEvents to PlanetGlobeProps
+
+Find PlanetGlobeProps. Add orbitalEvents as optional prop:
+Find:
+  livePulses?: LivePulse[];
+
+Add immediately after it:
+  orbitalEvents?: OrbitalEvent[];
+
+Find the PlanetGlobe function destructure:
+Find:
+  livePulses = [],
+
+Add immediately after it:
+  orbitalEvents = [],
+
+---
+
+EDIT 6 — PlanetGlobe.tsx: Pass orbitalEvents into Scene
+
+Find the Scene JSX inside the Canvas.
+Find:
+          livePulses={livePulses}
+
+Add immediately after it:
+          orbitalEvents={orbitalEvents}
+
+---
+
+EDIT 7 — GameLayout.tsx: Pass orbitalEvents to PlanetGlobe
+
+orbitalEvents is already available in GameLayout as the
+`orbitalEvents` variable from useOrbitalEngine() (line 65:
+const { events: orbitalEvents, impactEvents } = useOrbitalEngine()).
+
+Find the PlanetGlobe JSX:
+Find:
+              livePulses={livePulses}
+
+Add immediately after it:
+              orbitalEvents={orbitalEvents}
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- OrbitalEvent and OrbitalEventType imported from @shared/schema
+- OrbitalZoneLayer, ImpactZone, CosmeticStreak components exist
+  in PlanetGlobe.tsx
+- PlanetGlobeProps has orbitalEvents?: OrbitalEvent[]
+- SceneProps has orbitalEvents: OrbitalEvent[]
+- GameLayout passes orbitalEvents={orbitalEvents} to PlanetGlobe
+- When ATMOSPHERIC_BURST is active, a pulsing orange disc and ring
+  appear on the globe at the event's endLat/endLng coordinates
+- When IMPACT_STRIKE is active, a pulsing red zone appears on the globe
+- Cosmetic meteors/comets render as moving dots arcing across the globe
+- The OrbitalEventToast card and the globe zone are now visually
+  connected — same event, anchored in space
+- No changes to OrbitalCanvas.tsx or OrbitalEventToast.tsx
+- No changes to any server file
+- No changes to GlobeEventOverlays, BattleArcs, CameraController,
+  MiningPulseLayer, PlotOverlay, GlobeTerrain, AtmosphereGlow,
+  StarField, ParcelHUD, or FactionLegend

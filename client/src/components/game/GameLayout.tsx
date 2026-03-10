@@ -710,6 +710,7 @@ export function GameLayout() {
               className="absolute inset-0 w-full h-full"
               battles={gameState.battles}
               livePulses={livePulses}
+              orbitalEvents={orbitalEvents}
               replayEvents={replayEvents}
               replayTime={replayTime}
               replayVisibleTypes={replayVisibleTypes}
