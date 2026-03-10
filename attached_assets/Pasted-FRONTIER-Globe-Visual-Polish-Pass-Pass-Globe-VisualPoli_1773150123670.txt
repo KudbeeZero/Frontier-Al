@@ -1,0 +1,240 @@
+FRONTIER — Globe Visual Polish Pass
+Pass: Globe-VisualPolish-v2
+
+Context:
+The following have ALREADY been applied and must NOT be touched:
+  - vertexColors on both instancedMesh materials
+  - circleGeometry args={[0.5, 6]} on both meshes
+  - ACESFilmicToneMapping, toneMappingExposure: 1.15
+  - Custom shaderMaterial on GlobeTerrain (fully lit, no dark side)
+  - StarField dual-layer (10000 + 180 bright stars with vertex colors)
+  - CameraController, BattleArcs, MiningPulseLayer, OrbitalZoneLayer
+
+This pass makes three targeted improvements only:
+  1. Lift hex z-heights so tiles don't z-fight at close zoom
+  2. Add directional fill lights so hex colors catch light properly
+  3. Upgrade atmosphere glow with a rim shader for close-up visibility
+  4. Boost hex brightness constants so owned territory pops visually
+
+DO NOT TOUCH: any server file, storage.ts, wsServer.ts, routes.ts,
+shared schema, GameLayout.tsx, or any component other than
+PlanetGlobe.tsx. DO NOT change raycaster, click handling, hover
+logic, CameraController, BattleArcs, MiningPulseLayer,
+OrbitalZoneLayer, StarField, GlobeTerrain shader, or Canvas setup.
+
+File to modify: client/src/components/game/PlanetGlobe.tsx
+
+═══════════════════════════════════════════════════════
+EDIT 1 — Lift hex z-heights in useFrame animated loop
+═══════════════════════════════════════════════════════
+
+Find (inside useFrame loop, lines ~851-852):
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
+
+Replace with:
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
+
+═══════════════════════════════════════════════════════
+EDIT 2 — Lift hex z-heights in useEffect static pass
+═══════════════════════════════════════════════════════
+
+Find (inside useEffect loop, lines ~891-892):
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
+
+Replace with:
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
+
+═══════════════════════════════════════════════════════
+EDIT 3 — Add fill directional lights to Scene
+═══════════════════════════════════════════════════════
+
+The hex fill uses meshBasicMaterial which ignores lights — this
+edit adds directional lights that will benefit any future
+meshStandardMaterial usage and adds a warm tint to the scene
+environment that makes the globe feel more alive.
+
+Find in Scene function:
+      <ambientLight intensity={1.5} color="#ffffff" />
+
+Replace with:
+      <ambientLight intensity={1.8} color="#d8eaff" />
+      <directionalLight position={[8, 4, 5]}  intensity={1.6} color="#fff4e0" />
+      <directionalLight position={[-6, -2, -4]} intensity={1.2} color="#c0d4ff" />
+      <directionalLight position={[0,  8, 0]}  intensity={0.7} color="#e0eeff" />
+
+═══════════════════════════════════════════════════════
+EDIT 4 — Upgrade AtmosphereGlow with rim shader
+═══════════════════════════════════════════════════════
+
+The current flat meshBasicMaterial atmosphere is too faint and
+disappears at close zoom. Replace with a proper fresnel rim
+shader that stays visible at any distance.
+
+Find the entire AtmosphereGlow function:
+function AtmosphereGlow() {
+  return (
+    <>
+      {/* Tight inner rim — bright-ish blue at the planet edge */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.04, 64, 32]} />
+        <meshBasicMaterial
+          color="#6aabff"
+          transparent
+          opacity={0.10}
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Wide outer haze — very faint, bleeds further into space */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.14, 64, 32]} />
+        <meshBasicMaterial
+          color="#2255cc"
+          transparent
+          opacity={0.05}
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+    </>
+  );
+}
+
+Replace with:
+function AtmosphereGlow() {
+  const innerUniforms = useMemo(() => ({
+    glowColor:   { value: new THREE.Color(0.12, 0.48, 1.0) },
+    coefficient: { value: 0.62 },
+    power:       { value: 3.2 },
+  }), []);
+
+  const outerUniforms = useMemo(() => ({
+    glowColor:   { value: new THREE.Color(0.05, 0.68, 0.9) },
+    coefficient: { value: 0.48 },
+    power:       { value: 4.8 },
+  }), []);
+
+  const vertShader = `
+    varying vec3 vNormal;
+    varying vec3 vPositionNormal;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPositionNormal = normalize((modelViewMatrix * vec4(position, 1.0)).xyz);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const fragShader = `
+    uniform vec3 glowColor;
+    uniform float coefficient;
+    uniform float power;
+    varying vec3 vNormal;
+    varying vec3 vPositionNormal;
+    void main() {
+      float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
+      gl_FragColor = vec4(glowColor, intensity * 0.6);
+    }
+  `;
+
+  return (
+    <>
+      {/* Inner tight rim — fresnel blue at planet limb */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.05, 64, 32]} />
+        <shaderMaterial
+          uniforms={innerUniforms}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
+          transparent
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Outer wide haze — softer cyan-teal corona */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.18, 64, 32]} />
+        <shaderMaterial
+          uniforms={outerUniforms}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
+          transparent
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+    </>
+  );
+}
+
+═══════════════════════════════════════════════════════
+EDIT 5 — Boost hex fill opacity and owned-plot brightness
+═══════════════════════════════════════════════════════
+
+Find the fill instancedMesh material:
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.60}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+
+Replace with:
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.75}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+
+---
+
+Find in useFrame color logic:
+      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
+      } else {
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
+      }
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.3) : HOVER_COLOR;
+
+Replace with:
+      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
+      } else if (parcel?.ownerId) {
+        fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
+      } else {
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
+      }
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isSelected) fillColor = fillColor.clone().multiplyScalar(1.8);
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.35) : HOVER_COLOR;
+
+═══════════════════════════════════════════════════════
+Verification checklist:
+═══════════════════════════════════════════════════════
+- tsc passes with zero errors
+- Fill z-height is GLOBE_RADIUS * 1.006 in BOTH useFrame and useEffect
+- Border z-height is GLOBE_RADIUS * 1.004 in BOTH useFrame and useEffect
+- Scene has 4 lights: ambientLight + 3 directionalLights
+- AtmosphereGlow uses shaderMaterial with fresnel rim shader on both spheres
+- Fill opacity is 0.75
+- Player-owned plots use multiplyScalar(1.4 + sin...)
+- Enemy/faction owned plots use .multiplyScalar(1.25)
+- Selected plot applies additional 1.8x multiplier
+- GlobeTerrain shaderMaterial is UNCHANGED
+- StarField is UNCHANGED
+- Canvas toneMapping is UNCHANGED (ACESFilmic, 1.15)
+- No changes to raycaster, CameraController, BattleArcs,
+  MiningPulseLayer, OrbitalZoneLayer, or any server file

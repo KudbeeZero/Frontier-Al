@@ -584,28 +584,64 @@ function OrbitalZoneLayer({ events }: OrbitalZoneLayerProps) {
 // atmospheric rim — occluded by the planet at the center, visible at the limb.
 
 function AtmosphereGlow() {
+  const innerUniforms = useMemo(() => ({
+    glowColor:   { value: new THREE.Color(0.12, 0.48, 1.0) },
+    coefficient: { value: 0.62 },
+    power:       { value: 3.2 },
+  }), []);
+
+  const outerUniforms = useMemo(() => ({
+    glowColor:   { value: new THREE.Color(0.05, 0.68, 0.9) },
+    coefficient: { value: 0.48 },
+    power:       { value: 4.8 },
+  }), []);
+
+  const vertShader = `
+    varying vec3 vNormal;
+    varying vec3 vPositionNormal;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPositionNormal = normalize((modelViewMatrix * vec4(position, 1.0)).xyz);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const fragShader = `
+    uniform vec3 glowColor;
+    uniform float coefficient;
+    uniform float power;
+    varying vec3 vNormal;
+    varying vec3 vPositionNormal;
+    void main() {
+      float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
+      gl_FragColor = vec4(glowColor, intensity * 0.6);
+    }
+  `;
+
   return (
     <>
-      {/* Tight inner rim — bright-ish blue at the planet edge */}
+      {/* Inner tight rim — fresnel blue at planet limb */}
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.04, 64, 32]} />
-        <meshBasicMaterial
-          color="#6aabff"
+        <sphereGeometry args={[GLOBE_RADIUS * 1.05, 64, 32]} />
+        <shaderMaterial
+          uniforms={innerUniforms}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
           transparent
-          opacity={0.10}
           depthWrite={false}
           side={THREE.BackSide}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      {/* Wide outer haze — very faint, bleeds further into space */}
+      {/* Outer wide haze — softer cyan-teal corona */}
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.14, 64, 32]} />
-        <meshBasicMaterial
-          color="#2255cc"
+        <sphereGeometry args={[GLOBE_RADIUS * 1.18, 64, 32]} />
+        <shaderMaterial
+          uniforms={outerUniforms}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
           transparent
-          opacity={0.05}
           depthWrite={false}
           side={THREE.BackSide}
           blending={THREE.AdditiveBlending}
@@ -848,8 +884,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
         : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
 
-      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
-      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
 
       let fillColor: THREE.Color;
       const isHovered = hoveredIndexRef.current === i;
@@ -857,12 +893,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
         fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
       } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
-        fillColor = COLOR_PLAYER.clone().multiplyScalar(0.9 + Math.sin(pulseRef.current + i * 0.1) * 0.15);
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
+      } else if (parcel?.ownerId) {
+        fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
       const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
-      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.3) : HOVER_COLOR;
+      if (isSelected) fillColor = fillColor.clone().multiplyScalar(1.8);
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.35) : HOVER_COLOR;
       const showFill = isOwned || isHovered;
 
       const borderColor = isSelected
@@ -888,8 +927,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const isSelected = parcel?.id === selectedPlotId;
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
-      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.003);
-      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.001);
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
 
       let fillColor: THREE.Color;
       if (parcel?.activeBattleId) {
@@ -975,7 +1014,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.60}
+          opacity={0.75}
           depthWrite={false}
           side={THREE.DoubleSide}
         />
@@ -1196,7 +1235,10 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       />
       <StarField />
       <AtmosphereGlow />
-      <ambientLight intensity={1.5} color="#ffffff" />
+      <ambientLight intensity={1.8} color="#d8eaff" />
+      <directionalLight position={[8, 4, 5]}  intensity={1.6} color="#fff4e0" />
+      <directionalLight position={[-6, -2, -4]} intensity={1.2} color="#c0d4ff" />
+      <directionalLight position={[0,  8, 0]}  intensity={0.7} color="#e0eeff" />
       <group>
         <GlobeTerrain />
         <PlotOverlay
