@@ -8,7 +8,7 @@ import { db } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
 import { broadcastGameState } from "./wsServer";
-import { appendWorldEvent, listWorldEvents, getRecentWorldEvents, seedDemoWorldEvents } from "./worldEventStore";
+import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
 
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
@@ -619,17 +619,22 @@ export async function registerRoutes(
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
       try {
-        const mineParcel = await storage.getParcel(action.parcelId);
-        if (mineParcel) {
+        const minedParcel = await storage.getParcel(action.parcelId);
+        if (minedParcel) {
           appendWorldEvent({
-            type: "mine_action",
+            type: "resource_pulse",
             timestamp: Date.now(),
-            lat: mineParcel.lat,
-            lng: mineParcel.lng,
-            plotId: mineParcel.plotId,
+            lat: minedParcel.lat,
+            lng: minedParcel.lng,
+            plotId: minedParcel.plotId,
             playerId: action.playerId,
             severity: "low",
-            metadata: { plotId: mineParcel.plotId }
+            metadata: {
+              iron: result.iron,
+              fuel: result.fuel,
+              crystal: result.crystal,
+              biome: minedParcel.biome,
+            }
           });
         }
       } catch { /* non-critical */ }
@@ -666,8 +671,11 @@ export async function registerRoutes(
       // Log world event
       try {
         const targetParcelEvt = await storage.getParcel(action.targetParcelId);
-        const attackerEvt = await storage.getPlayer(action.attackerId).catch(() => null);
+        const attackerEvt = await storage.getPlayer(action.attackerId).catch(() => undefined);
         if (targetParcelEvt) {
+          const defenderName = targetParcelEvt.ownerId
+            ? (await storage.getPlayer(targetParcelEvt.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+            : "Unclaimed";
           appendWorldEvent({
             type: "battle_started",
             timestamp: Date.now(),
@@ -679,9 +687,9 @@ export async function registerRoutes(
             severity: "high",
             metadata: {
               battleId: battle.id,
-              targetParcelId: action.targetParcelId,
               attacker: attackerEvt?.name ?? "Unknown",
-              defender: (targetParcelEvt as any).ownerName ?? "Unclaimed"
+              defender: defenderName,
+              biome: targetParcelEvt.biome,
             }
           });
         }
@@ -919,20 +927,24 @@ export async function registerRoutes(
         const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
         if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
       }
+      res.json({ success: true, avatar });
       try {
-        const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+        const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => undefined);
         if (mintPlayerEvt) {
           appendWorldEvent({
-            type: "commander_minted",
+            type: "commander_deployed",
             timestamp: Date.now(),
             lat: 0, lng: 0,
             playerId: action.playerId,
             severity: "medium",
-            metadata: { playerName: mintPlayerEvt.name, tier: action.tier }
+            metadata: {
+              playerName: mintPlayerEvt.name,
+              tier: action.tier,
+              commanderName: avatar.name,
+            }
           });
         }
       } catch { /* non-critical */ }
-      res.json({ success: true, avatar });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
     } catch (error) {
@@ -961,6 +973,29 @@ export async function registerRoutes(
       res.json({ success: true, result });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
+      try {
+        const saParcel = await storage.getParcel(action.targetParcelId).catch(() => undefined);
+        const saPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        if (saParcel) {
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: saParcel.lat,
+            lng: saParcel.lng,
+            plotId: saParcel.plotId,
+            playerId: action.playerId,
+            severity: "high",
+            metadata: {
+              attackType: action.attackType,
+              attacker: saPlayer?.name ?? "Unknown",
+              defender: saParcel.ownerId
+                ? (await storage.getPlayer(saParcel.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+                : "Unclaimed",
+              special: true,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Special attack failed" });
@@ -1009,6 +1044,22 @@ export async function registerRoutes(
         fireBurn(satPlayer.address, SATELLITE_DEPLOY_COST_FRONTIER, `Satellite deploy`);
       }
       res.json({ success: true, satellite });
+      try {
+        const satPlayerEvt = await storage.getPlayer(action.playerId).catch(() => undefined);
+        appendWorldEvent({
+          type: "scan_ping",
+          timestamp: Date.now(),
+          endTimestamp: Date.now() + 60 * 60_000,
+          lat: 0,
+          lng: 0,
+          playerId: action.playerId,
+          severity: "low",
+          metadata: {
+            playerName: satPlayerEvt?.name ?? "Unknown",
+            source: "satellite",
+          }
+        });
+      } catch { /* non-critical */ }
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
     } catch (error) {
@@ -1091,10 +1142,6 @@ export async function registerRoutes(
     catch { res.status(500).json({ error: "Failed to fetch recent events" }); }
   });
 
-  app.post("/api/world/events/dev-seed", (_req, res) => {
-    try { seedDemoWorldEvents(); res.json({ success: true }); }
-    catch { res.status(500).json({ error: "Seed failed" }); }
-  });
 
   // Staggered background tasks — avoids hammering Neon with simultaneous queries
   setInterval(async () => {
@@ -1104,7 +1151,21 @@ export async function registerRoutes(
         try {
           const parcel = await storage.getParcel(battle.targetParcelId);
           if (parcel) {
-            appendWorldEvent({ type: "battle_resolved", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: battle.attackerId, severity: "high", metadata: { battleId: battle.id, outcome: battle.outcome } });
+            const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
+            appendWorldEvent({
+              type: "battle_resolved",
+              timestamp: Date.now(),
+              lat: parcel.lat,
+              lng: parcel.lng,
+              plotId: parcel.plotId,
+              playerId: battle.attackerId,
+              severity: battle.outcome === "attacker_wins" ? "high" : "medium",
+              metadata: {
+                battleId: battle.id,
+                outcome: battle.outcome,
+                attacker: resolvedAttacker?.name ?? "Unknown",
+              }
+            });
           }
         } catch { /* non-critical */ }
       }

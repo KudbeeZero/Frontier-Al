@@ -3,7 +3,7 @@ import { useWorldEvents, useLiveWorldEvents } from "@/hooks/useWorldEvents";
 import type { WorldEvent, WorldEventType } from "@shared/worldEvents";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, SkipBack, Zap, Swords, MapPin, Pickaxe, Shield, Radar, Radio, ArrowRight, Gem, ChevronDown, ChevronUp } from "lucide-react";
+import { Play, Pause, SkipBack, Swords, MapPin, Pickaxe, Shield, Radar, Radio, ArrowRight, Gem, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const EVENT_LABELS: Record<WorldEventType, string> = {
@@ -308,11 +308,6 @@ export function WorldIntelPanel({ className, onReplayStateChange, activeBattleCo
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [playing, speed, rangeMs]);
 
-  const handleSeedDemo = useCallback(async () => {
-    await fetch("/api/world/events/dev-seed", { method: "POST" });
-    setReplayOffsetMs(0);
-  }, []);
-
   const toggleType = (type: WorldEventType) => {
     setVisibleTypes(prev => {
       const next = new Set(prev);
@@ -366,14 +361,6 @@ export function WorldIntelPanel({ className, onReplayStateChange, activeBattleCo
               </div>
             )}
           </div>
-          {import.meta.env.DEV && (
-            <button
-              onClick={handleSeedDemo}
-              className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 rounded border border-border text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-            >
-              <Zap className="w-2.5 h-2.5" /> SEED
-            </button>
-          )}
         </div>
 
         {/* Threat meter */}
@@ -536,9 +523,6 @@ export function WorldIntelPanel({ className, onReplayStateChange, activeBattleCo
         {!isLoading && recentEvents.length === 0 && (
           <div className="text-[10px] font-mono text-muted-foreground text-center py-6 tracking-widest">
             NO SIGNALS DETECTED
-            {import.meta.env.DEV && (
-              <div className="mt-2 text-[9px] text-primary/50">Click SEED to populate</div>
-            )}
           </div>
         )}
         {recentEvents.map(event => (
