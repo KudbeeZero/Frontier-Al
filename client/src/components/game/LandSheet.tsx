@@ -443,10 +443,10 @@ export function LandSheet({
                       disabled={isDeliveringNft}
                       className="h-5 px-2 text-[10px] font-display uppercase"
                     >
-                      {isDeliveringNft ? "Claiming..." : "Claim NFT"}
+                      {isDeliveringNft ? "Claiming..." : nftInfo.inCustody ? "Claim NFT" : "NFT Claimed ✓"}
                     </Button>
                   )}
-                  {!nftInfo.inCustody && (
+                  {!nftInfo.inCustody && nftInfo.assetId && (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">In Wallet</Badge>
                   )}
                 </div>
