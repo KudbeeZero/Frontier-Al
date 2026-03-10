@@ -1,0 +1,309 @@
+FRONTIER — Mining Pulse: Expanding Ring on Mine Success
+Pass: Globe-MinePulse
+
+Context:
+When a mine action succeeds, fire a short-lived visual pulse at that
+parcel's location on the 3D globe — a bright ring that expands outward
+from the hex and fades to nothing over 600ms. Purely client-side.
+No server changes. No polling. Triggered immediately on mine onSuccess.
+
+Architecture:
+- GameLayout manages a livePulses state array: { id, lat, lng, startMs }[]
+- handleMine and handleMineParcel push a new pulse on onSuccess
+- A cleanup effect removes pulses older than 700ms
+- PlanetGlobe receives livePulses as an optional prop
+- A new MiningPulseLayer component inside the Canvas renders the rings
+- Each ring expands from scale 1→4 and fades opacity 1→0 over 600ms
+- Multiple simultaneous pulses (mass mine) all render independently
+
+DO NOT TOUCH: server files, storage.ts, wsServer.ts, routes.ts,
+shared/schema.ts, GlobeEventOverlays, BattleArcs, CameraController,
+PlotOverlay, GlobeTerrain, AtmosphereGlow, StarField, ParcelHUD,
+FactionLegend, or any file not listed below.
+
+Files to modify:
+- client/src/components/game/PlanetGlobe.tsx
+- client/src/components/game/GameLayout.tsx
+
+---
+
+EDIT 1 — PlanetGlobe.tsx: Add LivePulse type and MiningPulseLayer component
+
+Add this block directly after the BattleArcs component (or after
+CameraController if BattleArcs has not been applied yet), before
+the BIOME_DISPLAY_COLORS constant.
+
+// ── MiningPulseLayer ──────────────────────────────────────────────────────────
+// Renders short-lived expanding ring pulses at mined parcel locations.
+// Each pulse lives for PULSE_DURATION ms then is removed by GameLayout.
+
+export interface LivePulse {
+  id: string;
+  lat: number;
+  lng: number;
+  startMs: number;
+}
+
+const PULSE_DURATION = 600; // ms — must match GameLayout cleanup threshold
+
+interface SinglePulseProps {
+  pulse: LivePulse;
+}
+
+function SinglePulse({ pulse }: SinglePulseProps) {
+  const ringRef  = useRef<THREE.Mesh>(null!);
+  const glowRef  = useRef<THREE.Mesh>(null!);
+
+  const pos    = useMemo(() => latLngToVec3(pulse.lat, pulse.lng, GLOBE_RADIUS * 1.005), [pulse.lat, pulse.lng]);
+  const lookAt = useMemo(() => pos.clone().multiplyScalar(2), [pos]);
+
+  useFrame(() => {
+    const elapsed = Date.now() - pulse.startMs;
+    const t = Math.min(elapsed / PULSE_DURATION, 1); // 0 → 1
+
+    // Expand: scale 1 → 5
+    const scale = 1 + t * 4;
+    // Fade: opacity 1 → 0, with a fast initial flash
+    const opacity = Math.pow(1 - t, 1.5);
+
+    if (ringRef.current) {
+      ringRef.current.scale.setScalar(scale);
+      (ringRef.current.material as THREE.MeshBasicMaterial).opacity = opacity * 0.9;
+    }
+    if (glowRef.current) {
+      // Inner glow expands slower and fades faster
+      glowRef.current.scale.setScalar(1 + t * 1.8);
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = opacity * 0.5;
+    }
+  });
+
+  return (
+    <group position={pos}>
+      {/* Outer expanding ring */}
+      <mesh ref={ringRef} onUpdate={self => self.lookAt(lookAt)}>
+        <ringGeometry args={[0.018, 0.030, 32]} />
+        <meshBasicMaterial
+          color="#00ff6a"
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Inner solid glow flash */}
+      <mesh ref={glowRef} onUpdate={self => self.lookAt(lookAt)}>
+        <circleGeometry args={[0.018, 24]} />
+        <meshBasicMaterial
+          color="#80ffb0"
+          transparent
+          opacity={0.5}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+interface MiningPulseLayerProps {
+  pulses: LivePulse[];
+}
+
+function MiningPulseLayer({ pulses }: MiningPulseLayerProps) {
+  if (pulses.length === 0) return null;
+  return (
+    <>
+      {pulses.map(pulse => (
+        <SinglePulse key={pulse.id} pulse={pulse} />
+      ))}
+    </>
+  );
+}
+
+---
+
+EDIT 2 — PlanetGlobe.tsx: Add LivePulse import at the top
+
+Find:
+import type { LandParcel, Player, Battle } from "@shared/schema";
+
+Note: Do not re-import LivePulse from schema — it is defined locally
+in PlanetGlobe.tsx and exported from there. No schema change needed.
+
+---
+
+EDIT 3 — PlanetGlobe.tsx: Add livePulses to SceneProps and Scene
+
+Find the SceneProps interface. Add livePulses:
+Find the line:
+  battles: Battle[];
+
+Add immediately after it:
+  livePulses: LivePulse[];
+
+Find the Scene function signature. Add livePulses to destructure:
+Find:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+Replace with:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+NOTE: If prior passes (Globe-Camera, Globe-BattleArcs) have not been
+applied, add livePulses: LivePulse[] to SceneProps alongside existing
+fields and add livePulses to the Scene destructure accordingly.
+
+---
+
+EDIT 4 — PlanetGlobe.tsx: Render MiningPulseLayer inside Scene
+
+Inside the Scene return, add MiningPulseLayer after BattleArcs
+(or after AtmosphereGlow if BattleArcs pass not applied).
+
+Find:
+      <BattleArcs
+        battles={battles}
+        parcels={parcels}
+        players={players}
+        currentPlayerId={currentPlayerId}
+      />
+
+Add immediately after it:
+      <MiningPulseLayer pulses={livePulses} />
+
+NOTE: If BattleArcs pass has not been applied, add MiningPulseLayer
+after <AtmosphereGlow /> instead.
+
+---
+
+EDIT 5 — PlanetGlobe.tsx: Add livePulses to PlanetGlobeProps
+
+Find PlanetGlobeProps. Add livePulses as optional prop:
+Find:
+  battles?: Battle[];
+
+Add immediately after it:
+  livePulses?: LivePulse[];
+
+Find the PlanetGlobe function destructure:
+Find:
+  battles = [],
+
+Add immediately after it:
+  livePulses = [],
+
+---
+
+EDIT 6 — PlanetGlobe.tsx: Pass livePulses into Scene
+
+Find the Scene JSX inside the Canvas.
+Find:
+          battles={battles}
+
+Add immediately after it:
+          livePulses={livePulses}
+
+---
+
+EDIT 7 — GameLayout.tsx: Add livePulses state and cleanup
+
+Find the imports at the top of GameLayout.tsx.
+Find the line that imports from react:
+import { ... } from "react";
+
+Make sure useState, useEffect, useRef, and useCallback are all
+included in that import (they likely already are — only add what
+is missing, do not duplicate).
+
+Add this import after the existing PlanetGlobe import line:
+import type { LivePulse } from "@/components/game/PlanetGlobe";
+
+Then find where the component state declarations are (near the top
+of the GameLayout function body, alongside other useState calls).
+Add this state declaration alongside the other state:
+
+  const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
+
+Then add a cleanup effect that removes expired pulses.
+Add this after the livePulses useState line:
+
+  useEffect(() => {
+    if (livePulses.length === 0) return;
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setLivePulses(prev => prev.filter(p => now - p.startMs < 700));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [livePulses]);
+
+---
+
+EDIT 8 — GameLayout.tsx: Fire pulse in handleMine onSuccess
+
+Find the handleMine function. Inside the onSuccess callback,
+after the toast call, add the pulse fire.
+
+Find:
+          toast({ title: "Mining Complete", description: desc });
+
+Add immediately after it (still inside onSuccess):
+          if (selectedParcel) {
+            const pulse: LivePulse = {
+              id: `pulse-${Date.now()}-${Math.random()}`,
+              lat: selectedParcel.lat,
+              lng: selectedParcel.lng,
+              startMs: Date.now(),
+            };
+            setLivePulses(prev => [...prev, pulse]);
+          }
+
+---
+
+EDIT 9 — GameLayout.tsx: Fire pulse in handleMineParcel onSuccess
+
+Find the handleMineParcel function. Inside its onSuccess callback,
+after the toast call, add the same pulse fire using the local
+parcel variable (already in scope in handleMineParcel).
+
+Find inside handleMineParcel's onSuccess:
+          toast({ title: "Mining Complete", description: desc });
+
+Add immediately after it:
+          const pulse: LivePulse = {
+            id: `pulse-${Date.now()}-${Math.random()}`,
+            lat: parcel.lat,
+            lng: parcel.lng,
+            startMs: Date.now(),
+          };
+          setLivePulses(prev => [...prev, pulse]);
+
+---
+
+EDIT 10 — GameLayout.tsx: Pass livePulses to PlanetGlobe
+
+Find the PlanetGlobe JSX in GameLayout.
+Find:
+              battles={gameState.battles}
+
+Add immediately after it:
+              livePulses={livePulses}
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- LivePulse interface is exported from PlanetGlobe.tsx
+- MiningPulseLayer and SinglePulse components exist in PlanetGlobe.tsx
+- livePulses state exists in GameLayout
+- Cleanup useEffect removes pulses older than 700ms
+- handleMine fires a pulse on onSuccess
+- handleMineParcel fires a pulse on onSuccess
+- PlanetGlobe receives livePulses prop
+- Scene receives livePulses prop
+- MiningPulseLayer renders inside Scene
+- Mining on the 3D globe shows a green expanding ring at the parcel
+- Multiple simultaneous mines each show their own independent pulse
+- Pulses disappear cleanly after ~600ms with no lingering artifacts
+- No changes to any server file
+- No changes to GlobeEventOverlays, BattleArcs, CameraController,
+  PlotOverlay, GlobeTerrain, AtmosphereGlow, StarField, or ParcelHUD

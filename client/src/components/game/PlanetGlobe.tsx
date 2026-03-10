@@ -523,8 +523,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const fillSize   = GLOBE_RADIUS * 0.014;
-  const borderSize = GLOBE_RADIUS * 0.016;
+  const fillSize   = GLOBE_RADIUS * 0.022;
+  const borderSize = GLOBE_RADIUS * 0.025;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -570,13 +570,14 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       }
       const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
       if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.3) : HOVER_COLOR;
+      const showFill = isOwned || isHovered;
 
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
         : isOwned
-          ? fillColor.clone().multiplyScalar(1.6)
+          ? fillColor.clone().multiplyScalar(2.2)
           : BORDER_COLOR;
-      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * pulse, fillColor);
+      applyInstance(fillMeshRef.current, i, fillPos, showFill ? fillSize * sizeVar * pulse : 0, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
     }
 
@@ -608,9 +609,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
         : isOwned
-          ? fillColor.clone().multiplyScalar(1.6)
+          ? fillColor.clone().multiplyScalar(2.2)
           : BORDER_COLOR;
-      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar, fillColor);
+      applyInstance(fillMeshRef.current, i, fillPos, isOwned ? fillSize * sizeVar : 0, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar, borderColor);
 
     }
@@ -675,16 +676,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         />
       </instancedMesh>
 
-      {/* Fill layer — additive: black = invisible, faction colour = glowing territory */}
+      {/* Fill layer — normal blending: unowned tiles hidden via scale=0, faction colour shows clearly */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={1.0}
+          opacity={0.60}
           depthWrite={false}
           side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
     </>
