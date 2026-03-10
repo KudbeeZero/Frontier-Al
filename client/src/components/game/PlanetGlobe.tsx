@@ -579,6 +579,42 @@ function OrbitalZoneLayer({ events }: OrbitalZoneLayerProps) {
   );
 }
 
+// ── AtmosphereGlow ────────────────────────────────────────────────────────────
+// Two concentric BackSide spheres with additive blending create a faint blue
+// atmospheric rim — occluded by the planet at the center, visible at the limb.
+
+function AtmosphereGlow() {
+  return (
+    <>
+      {/* Tight inner rim — bright-ish blue at the planet edge */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.04, 64, 32]} />
+        <meshBasicMaterial
+          color="#6aabff"
+          transparent
+          opacity={0.10}
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Wide outer haze — very faint, bleeds further into space */}
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.14, 64, 32]} />
+        <meshBasicMaterial
+          color="#2255cc"
+          transparent
+          opacity={0.05}
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+    </>
+  );
+}
+
 const BIOME_DISPLAY_COLORS: Record<string, string> = {
   forest:   "#00ff41",
   desert:   "#ffae00",
@@ -1159,6 +1195,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
         controlsRef={controlsRef}
       />
       <StarField />
+      <AtmosphereGlow />
       <ambientLight intensity={1.5} color="#ffffff" />
       <group>
         <GlobeTerrain />
