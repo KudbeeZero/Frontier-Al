@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
@@ -435,6 +435,16 @@ export async function registerRoutes(
       broadcastGameState(gameState);
     } catch (error) {
       console.error("Error fetching game state:", error);
+      res.status(500).json({ error: "Failed to fetch game state" });
+    }
+  });
+
+  app.get("/api/game/slim-state", async (req, res) => {
+    try {
+      const slimState = await storage.getSlimGameState();
+      res.json(slimState);
+    } catch (error) {
+      console.error("Error fetching slim game state:", error);
       res.status(500).json({ error: "Failed to fetch game state" });
     }
   });

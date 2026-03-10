@@ -27,6 +27,9 @@ import type {
   OrbitalEvent,
   OrbitalEffect,
   OrbitalEffectType,
+  SlimGameState,
+  SlimParcel,
+  SlimPlayer,
 } from "@shared/schema";
 import {
   biomeBonuses,
@@ -115,6 +118,7 @@ function biomeFromLatitude(lat: number, plotId: number): BiomeType {
 
 export interface IStorage {
   getGameState(): Promise<GameState>;
+  getSlimGameState(): Promise<SlimGameState>;
   getParcel(id: string): Promise<LandParcel | undefined>;
   getPlayer(id: string): Promise<Player | undefined>;
   getBattle(id: string): Promise<Battle | undefined>;
@@ -373,6 +377,32 @@ export class MemStorage implements IStorage {
       claimedPlots,
       frontierTotalSupply: FRONTIER_TOTAL_SUPPLY,
       frontierCirculating: this.frontierCirculating,
+    };
+  }
+
+  async getSlimGameState(): Promise<SlimGameState> {
+    const full = await this.getGameState();
+    return {
+      parcels: full.parcels.map(p => ({
+        id: p.id,
+        plotId: p.plotId,
+        lat: p.lat,
+        lng: p.lng,
+        biome: p.biome,
+        ownerId: p.ownerId,
+        activeBattleId: p.activeBattleId,
+      })),
+      players: full.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        address: p.address,
+        isAI: p.isAI,
+      })),
+      battles: full.battles,
+      leaderboard: full.leaderboard,
+      claimedPlots: full.claimedPlots,
+      frontierCirculating: full.frontierCirculating,
+      lastUpdateTs: full.lastUpdateTs,
     };
   }
 
@@ -2044,6 +2074,81 @@ export class DbStorage implements IStorage {
       claimedPlots,
       frontierTotalSupply: FRONTIER_TOTAL_SUPPLY,
       frontierCirculating,
+    };
+  }
+
+  async getSlimGameState(): Promise<SlimGameState> {
+    await this.initialize();
+
+    const [allParcels, allPlayers, pendingBattles, recentBattles, [meta]] = await Promise.all([
+      this.db
+        .select({
+          id:             parcelsTable.id,
+          plotId:         parcelsTable.plotId,
+          lat:            parcelsTable.lat,
+          lng:            parcelsTable.lng,
+          biome:          parcelsTable.biome,
+          ownerId:        parcelsTable.ownerId,
+          activeBattleId: parcelsTable.activeBattleId,
+        })
+        .from(parcelsTable),
+      this.db
+        .select({
+          id:      playersTable.id,
+          name:    playersTable.name,
+          address: playersTable.address,
+          isAi:    playersTable.isAi,
+        })
+        .from(playersTable),
+      this.db
+        .select()
+        .from(battlesTable)
+        .where(eq(battlesTable.status, "pending")),
+      this.db
+        .select()
+        .from(battlesTable)
+        .where(eq(battlesTable.status, "resolved"))
+        .orderBy(desc(battlesTable.resolveTs))
+        .limit(20),
+      this.db.select().from(gameMeta).where(eq(gameMeta.id, 1)),
+    ]);
+
+    const claimedPlots = allParcels.filter(p => p.ownerId !== null).length;
+    const allPlayersFull = await this.db.select().from(playersTable);
+    const frontierCirculating = allPlayersFull.reduce(
+      (sum, p) => sum + fromMicroFRNTR(p.frntrBalanceMicro), 0
+    );
+
+    const slimParcels: SlimParcel[] = allParcels.map(r => ({
+      id:             r.id,
+      plotId:         r.plotId,
+      lat:            r.lat,
+      lng:            r.lng,
+      biome:          r.biome as BiomeType,
+      ownerId:        r.ownerId ?? null,
+      activeBattleId: r.activeBattleId ?? null,
+    }));
+
+    const slimPlayers: SlimPlayer[] = allPlayers.map(r => ({
+      id:      r.id,
+      name:    r.name,
+      address: r.address,
+      isAI:    r.isAi,
+    }));
+
+    const battles = [...pendingBattles, ...recentBattles].map(rowToBattle);
+
+    const allParcelsFull = await this.db.select().from(parcelsTable);
+    const leaderboard = computeLeaderboard(allPlayersFull, allParcelsFull);
+
+    return {
+      parcels:            slimParcels,
+      players:            slimPlayers,
+      battles,
+      leaderboard,
+      claimedPlots,
+      frontierCirculating,
+      lastUpdateTs:       Number(meta?.lastUpdateTs ?? 0),
     };
   }
 

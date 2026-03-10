@@ -295,6 +295,36 @@ export interface GameState {
   frontierCirculating: number;
 }
 
+/** Minimal parcel data broadcast to all clients for globe/map rendering. */
+export interface SlimParcel {
+  id: string;
+  plotId: number;
+  lat: number;
+  lng: number;
+  biome: BiomeType;
+  ownerId: string | null;
+  activeBattleId: string | null;
+}
+
+/** Minimal player data broadcast to all clients for color/name rendering. */
+export interface SlimPlayer {
+  id: string;
+  name: string;
+  address: string;
+  isAI: boolean;
+}
+
+/** Slim game state — broadcast to all clients on every dirty flush. */
+export interface SlimGameState {
+  parcels: SlimParcel[];
+  players: SlimPlayer[];
+  battles: Battle[];
+  leaderboard: LeaderboardEntry[];
+  claimedPlots: number;
+  frontierCirculating: number;
+  lastUpdateTs: number;
+}
+
 export const mineActionSchema = z.object({
   playerId: z.string(),
   parcelId: z.string(),
