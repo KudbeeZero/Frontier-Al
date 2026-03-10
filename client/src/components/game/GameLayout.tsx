@@ -12,7 +12,6 @@ import { BattlesPanel } from "./BattlesPanel";
 import { LeaderboardPanel } from "./LeaderboardPanel";
 import { CommanderPanel } from "./CommanderPanel";
 import { EconomicsPanel } from "./EconomicsPanel";
-import { OnboardingFlow } from "./OnboardingFlow";
 import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
@@ -39,7 +38,7 @@ import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 export function GameLayout() {
   const wallet = useWallet();
   const { isConnected, balance, walletStatus } = wallet;
-  const isOnboarded = !!localStorage.getItem("frontier_onboarded_v1");
+  const isOnboarded = true;
   const {
     signPurchaseAction,
     signClaimFrontierAction,
@@ -86,7 +85,6 @@ export function GameLayout() {
   const [activeTab, setActiveTab] = useState<NavTab>("map");
   const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
   const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings">("warroom");
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -120,10 +118,6 @@ export function GameLayout() {
   const deployDroneMutation = useDeployDrone();
   const deploySatelliteMutation = useDeploySatellite();
 
-  useEffect(() => {
-    const seen = localStorage.getItem("frontier_onboarding_done") || localStorage.getItem("frontier_onboarded_v1");
-    if (!seen) setShowOnboarding(true);
-  }, []);
 
   useEffect(() => {
     if (!wallet.address || !wallet.isConnected) return;
@@ -147,11 +141,6 @@ export function GameLayout() {
       .catch((err) => console.error("Failed to initialise player for address:", err));
   }, [wallet.address, wallet.isConnected]);
 
-  const handleOnboardingComplete = () => {
-    localStorage.setItem("frontier_onboarding_done", "true");
-    localStorage.setItem("frontier_onboarded_v1", "1");
-    setShowOnboarding(false);
-  };
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
@@ -536,10 +525,6 @@ export function GameLayout() {
         </div>
       </div>
     );
-  }
-
-  if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
   }
 
   if (showGamerTag && newPlayerId) {
