@@ -299,7 +299,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       {/* Border layer — dark grout color, sits just below fill, peeks out at hex edges */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
-        <meshBasicMaterial transparent opacity={0.95} depthWrite={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial transparent opacity={1.0} depthWrite={false} side={THREE.DoubleSide} />
       </instancedMesh>
 
       {/* Fill layer — biome/ownership colors, sits in front, unlit so no dark-side shadowing */}
@@ -382,20 +382,20 @@ function GlobeTerrain() {
       float dayBlend   = smoothstep(-0.12, 0.18, NdotL);
       float nightBlend = 1.0 - dayBlend;
 
-      // Lit side: boosted saturation + slight brightness lift; dark side: very dim
-      vec3 saturatedDay = saturate(dayCol.rgb, 1.55) * 1.12;
-      vec3 terrain = mix(dayCol.rgb * 0.055, saturatedDay, dayBlend);
+      // Lit side: ultra-saturated, bright terrain; dark side: subtle remnant
+      vec3 saturatedDay = saturate(dayCol.rgb, 1.75) * 1.48;
+      vec3 terrain = mix(dayCol.rgb * 0.02, saturatedDay, dayBlend);
 
-      // Night lights — heavily boosted for vivid city glow on dark side
-      vec3 nightGlow = saturate(nightCol.rgb, 1.9) * nightBlend * 5.2;
+      // Night lights — extremely vivid, professional neon-city glow
+      vec3 nightGlow = saturate(nightCol.rgb, 2.0) * nightBlend * 8.8;
 
-      // Wide, bright golden terminator crescent
+      // Bright, wide golden terminator with warm glow
       float crescent = smoothstep(-0.32, 0.0, NdotL) * smoothstep(0.32, 0.0, NdotL);
-      vec3 termColor = vec3(1.0, 0.62, 0.08) * crescent * 0.85;
+      vec3 termColor = vec3(1.0, 0.65, 0.0) * crescent * 1.15;
 
-      // Subtle specular shine on dayside
-      float spec = pow(max(0.0, NdotL), 8.0) * dayBlend * 0.15;
-      vec3 specGlow = vec3(1.0, 0.95, 0.85) * spec;
+      // Strong specular shine on dayside for professional gloss
+      float spec = pow(max(0.0, NdotL), 6.0) * dayBlend * 0.28;
+      vec3 specGlow = vec3(1.0, 0.98, 0.88) * spec;
 
       gl_FragColor = vec4(terrain + nightGlow + termColor + specGlow, 1.0);
     }
@@ -462,8 +462,8 @@ function DarkSideGlow() {
       vec3 violetCol = vec3(0.38, 0.0,  0.95);
       vec3 color = mix(cyanCol, violetCol, t * darkFactor);
 
-      float alpha = darkFactor * 0.60 + crescent * 0.92;
-      gl_FragColor = vec4(color, alpha * 1.05);
+      float alpha = darkFactor * 0.72 + crescent * 1.0;
+      gl_FragColor = vec4(color, alpha * 1.25);
     }
   `;
 
@@ -485,15 +485,15 @@ function DarkSideGlow() {
 
 function AtmosphereGlow() {
   const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.2, 0.85, 1.0) },
-    coefficient: { value: 0.68 },
-    power:       { value: 2.8 },
+    glowColor:   { value: new THREE.Color(0.4, 0.95, 1.0) },
+    coefficient: { value: 0.75 },
+    power:       { value: 2.2 },
   }), []);
 
   const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.2, 0.95, 1.0) },
-    coefficient: { value: 0.45 },
-    power:       { value: 4.5 },
+    glowColor:   { value: new THREE.Color(0.3, 1.0, 1.0) },
+    coefficient: { value: 0.52 },
+    power:       { value: 3.8 },
   }), []);
 
   const vertShader = `
@@ -513,7 +513,7 @@ function AtmosphereGlow() {
     varying vec3 vPositionNormal;
     void main() {
       float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity * 0.92);
+      gl_FragColor = vec4(glowColor, intensity);
     }
   `;
 
