@@ -666,7 +666,7 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
 // Geometry still exists for raycasting — click detection works even when invisible.
 const UNOWNED_DIM = new THREE.Color(0, 0, 0);
 // Fixed highlight shown when hovering over any tile (owned or unowned)
-const HOVER_COLOR  = new THREE.Color("#0a2040");
+const HOVER_COLOR  = new THREE.Color("#1a6fff");
 
 function getPlotColor(
   parcel: LandParcel | undefined,
@@ -870,11 +870,23 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     mesh.setColorAt(i, color);
   };
 
+  const prevHoveredRef = useRef<number | null>(null);
+
   useFrame((_, delta) => {
-    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current || animatedIndices.length === 0) return;
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current) return;
     pulseRef.current += delta * 2.5;
 
-    for (const i of animatedIndices) {
+    const currentHovered = hoveredIndexRef.current;
+    const prevHovered    = prevHoveredRef.current;
+
+    const toProcess = new Set<number>(animatedIndices);
+    if (currentHovered !== null) toProcess.add(currentHovered);
+    if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+    prevHoveredRef.current = currentHovered;
+
+    if (toProcess.size === 0) return;
+
+    for (const i of toProcess) {
       const coord = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
@@ -900,15 +912,17 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
       const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
-      if (isSelected) fillColor = fillColor.clone().multiplyScalar(1.8);
-      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.35) : HOVER_COLOR;
-      const showFill = isOwned || isHovered;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
+      if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
+      const showFill = isOwned || isHovered || isSelected;
 
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
-        : isOwned
-          ? fillColor.clone().multiplyScalar(2.2)
-          : BORDER_COLOR;
+        : isHovered
+          ? HOVER_COLOR.clone().multiplyScalar(2.0)
+          : isOwned
+            ? fillColor.clone().multiplyScalar(2.2)
+            : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, showFill ? fillSize * sizeVar * pulse : 0, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
     }
