@@ -36,6 +36,14 @@ export default defineConfig({
         target: "http://0.0.0.0:5000",
         changeOrigin: true,
       },
+      "/nft": {
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+      "/faction": {
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
     },
   },
 });
