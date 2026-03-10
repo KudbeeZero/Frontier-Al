@@ -1,0 +1,56 @@
+FRONTIER — Battle Arcs: Animated Attack Lines on the Globe
+Pass: Globe-BattleArcs
+
+Context:
+When a battle is pending, draw a glowing animated arc on the globe
+surface from the attacker's territory to the defender's parcel.
+The arc pulses and has a moving "projectile" dot that travels along it.
+When the battle resolves the arc fades out. Multiple concurrent arcs
+render simultaneously.
+
+Arc origin = the attacker's first owned parcel lat/lng (from
+player.ownedParcels[0] looked up in the parcels array).
+Arc destination = battle.targetParcelId lat/lng.
+Arc midpoint = lifted above the globe surface using a bezier control
+point scaled by the great-circle distance between the two points —
+longer distances = higher arc.
+
+Only pending battles render arcs. Resolved battles fade out over 1.5s.
+
+DO NOT TOUCH: server files, storage.ts, wsServer.ts, routes.ts,
+shared/schema.ts, PlotOverlay, GlobeTerrain, AtmosphereGlow,
+StarField, ParcelHUD, FactionLegend, GlobeEventOverlays, or
+CameraController.
+
+File to modify: client/src/components/game/PlanetGlobe.tsx
+New data flow: GameLayout.tsx passes battles prop to PlanetGlobe,
+PlanetGlobe passes it down to Scene.
+
+Files to modify:
+- client/src/components/game/PlanetGlobe.tsx
+- client/src/components/game/GameLayout.tsx
+
+---
+
+EDIT 1 — PlanetGlobe.tsx: Add BattleArcs component
+
+Add this entire component after the CameraController component
+and before the BIOME_DISPLAY_COLORS constant (or after
+CameraController if that was added in a prior pass — place it
+immediately after CameraController's closing brace).
+
+// ── BattleArcs ────────────────────────────────────────────────────────────────
+// Renders one glowing arc per pending battle from attacker origin to defender
+// target. A moving dot travels along each arc. Resolved battles fade out.
+
+interface ArcData {
+  battleId: string;
+  fromVec: THREE.Vector3;
+  toVec: THREE.Vector3;
+  isPlayerAttacker: boolean;
+  resolvedAt: number | null; // ms timestamp when resolved, null if still pending
+}
+
+interface BattleArcsProps {
+  battles: Battle[];
+  parc​​​​​​​​​​​​​​​​

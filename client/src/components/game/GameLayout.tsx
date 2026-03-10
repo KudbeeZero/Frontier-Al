@@ -680,6 +680,7 @@ export function GameLayout() {
               onMine={handleMine}
               onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
               className="absolute inset-0 w-full h-full"
+              battles={gameState.battles}
               replayEvents={replayEvents}
               replayTime={replayTime}
               replayVisibleTypes={replayVisibleTypes}
