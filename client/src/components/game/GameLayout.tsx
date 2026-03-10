@@ -56,6 +56,7 @@ export function GameLayout() {
     frontierAsaId,
     isOptedInToFrontier,
     treasuryAddress,
+    signOptInToPlotNft,
   } = useBlockchainActions();
   useGameSocket();
   const { data: gameState, isLoading, error } = useGameState();
@@ -373,24 +374,57 @@ export function GameLayout() {
   const handleDeliverNft = async () => {
     if (!ownedSelectedPlotId || !wallet.address || !nftInfo) return;
     setIsDeliveringNft(true);
-    try {
+
+    const attemptDeliver = async (): Promise<void> => {
       const res = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address: wallet.address }),
       });
       const data = await res.json();
+
       if (!res.ok) {
         toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
-      } else if (data.success) {
-        toast({ title: "NFT Delivered!", description: `Plot NFT (ASA ${nftInfo.assetId}) sent to your wallet. TX: ${data.txId?.slice(0, 8)}...` });
-        refetchNft();
-      } else if (data.reason === "not_opted_in") {
-        toast({ title: "Opt-In Required", description: `Opt into ASA ${nftInfo.assetId} in your wallet, then claim again.`, variant: "destructive" });
-      } else {
-        toast({ title: "Already Delivered", description: data.message || "NFT is already in your wallet." });
-        refetchNft();
+        return;
       }
+
+      if (data.success) {
+        toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+        refetchNft();
+        return;
+      }
+
+      if (data.reason === "not_opted_in") {
+        const optedIn = await signOptInToPlotNft(nftInfo.assetId);
+        if (optedIn) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const retryRes = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: wallet.address }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.success) {
+            toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+            refetchNft();
+          } else {
+            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try claiming again in a moment.", variant: "destructive" });
+          }
+        }
+        return;
+      }
+
+      if (data.reason === "not_in_custody") {
+        toast({ title: "Already In Your Wallet", description: data.message || "NFT is already delivered." });
+        refetchNft();
+        return;
+      }
+
+      toast({ title: "Claim Issue", description: data.message || "Unexpected state — try again.", variant: "destructive" });
+    };
+
+    try {
+      await attemptDeliver();
     } catch (err) {
       toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
     } finally {

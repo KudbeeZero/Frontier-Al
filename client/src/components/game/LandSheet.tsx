@@ -417,7 +417,14 @@ export function LandSheet({
                 <div className="flex items-center gap-1.5">
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
                   <span className="text-xs font-display uppercase tracking-wide text-primary">Plot NFT</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">ASA {nftInfo.assetId}</span>
+                  <a
+                    href={`https://explorer.perawallet.app/assets/${nftInfo.assetId}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-primary font-mono underline underline-offset-2"
+                  >
+                    ASA {nftInfo.assetId} ↗
+                  </a>
                 </div>
                 <div className="flex items-center gap-1">
                   <a

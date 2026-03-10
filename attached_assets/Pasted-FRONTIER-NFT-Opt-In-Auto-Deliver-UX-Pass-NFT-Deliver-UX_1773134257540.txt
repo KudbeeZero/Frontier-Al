@@ -1,0 +1,222 @@
+FRONTIER — NFT Opt-In + Auto-Deliver UX
+Pass: NFT-Deliver-UX
+
+Context:
+The Claim NFT button already exists in LandSheet.tsx and the
+handleDeliverNft handler already exists in GameLayout.tsx.
+The problem is UX — when a player gets the "not_opted_in" error,
+they have no in-game way to opt into the specific plot NFT ASA.
+They have to go into Pera wallet manually and find the ASA by ID.
+
+This pass adds:
+1. An "Opt In & Claim" flow — when deliver returns not_opted_in,
+   prompt the player to sign an opt-in transaction for the specific
+   ASA, then automatically retry the deliver call.
+2. A clearer NFT status display in LandSheet showing the ASA ID
+   as a tappable Pera deep-link so the player can manually opt-in
+   if they prefer.
+
+DO NOT TOUCH: server files, storage.ts, db-schema.ts, wsServer.ts,
+or any client file not listed below.
+
+Files to modify:
+- client/src/components/game/GameLayout.tsx
+- client/src/components/game/LandSheet.tsx
+- client/src/hooks/useBlockchainActions.ts
+
+---
+
+EDIT 1 — client/src/hooks/useBlockchainActions.ts
+
+Add a signOptInToPlotNft function that signs an opt-in transaction for
+a specific plot NFT ASA ID. This follows the exact same pattern as
+signOptInToFrontier (which opts into the FRONTIER ASA).
+
+Find the signOptInToFrontier function (around the line that reads
+"const signOptInToFrontier = useCallback(").
+
+After the closing of signOptInToFrontier (after its return statement
+inside useCallback, before the dependency array), add a new exported
+function. Find the return statement of the hook that exports
+signOptInToFrontier and add signOptInToPlotNft to it.
+
+Add this function alongside signOptInToFrontier:
+
+  const signOptInToPlotNft = useCallback(
+    async (assetId: number): Promise<boolean> => {
+      if (!address) {
+        toast({ title: "Wallet Required", description: "Connect your wallet first.", variant: "destructive" });
+        return false;
+      }
+      try {
+        await optInToASA(address, assetId);
+        toast({ title: "Opt-In Complete", description: `Opted into ASA ${assetId}. Claiming your NFT...` });
+        return true;
+      } catch (err: any) {
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Opt-In Cancelled", description: "You cancelled the opt-in." });
+        } else {
+          toast({ title: "Opt-In Failed", description: err instanceof Error ? err.message : "Opt-in failed", variant: "destructive" });
+        }
+        return false;
+      }
+    },
+    [address, toast]
+  );
+
+Add signOptInToPlotNft to the hook's return object alongside
+signOptInToFrontier.
+
+---
+
+EDIT 2 — client/src/components/game/GameLayout.tsx
+
+A) Import signOptInToPlotNft from useBlockchainActions.
+Find the destructuring of useBlockchainActions() near the top of
+GameLayout and add signOptInToPlotNft to it.
+
+B) Update handleDeliverNft to handle not_opted_in automatically
+by triggering an opt-in then retrying the deliver.
+
+Find the existing handleDeliverNft function. Replace its entire body:
+
+Find:
+  const handleDeliverNft = async () => {
+    if (!ownedSelectedPlotId || !wallet.address || !nftInfo) return;
+    setIsDeliveringNft(true);
+    try {
+      const res = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
+      } else if (data.success) {
+        toast({ title: "NFT Delivered!", description: `Plot NFT (ASA ${nftInfo.assetId}) sent to your wallet. TX: ${data.txId?.slice(0, 8)}...` });
+        refetchNft();
+      } else if (data.reason === "not_opted_in") {
+        toast({ title: "Opt-In Required", description: `Opt into ASA ${nftInfo.assetId} in your wallet, then claim again.`, variant: "destructive" });
+      } else {
+        toast({ title: "Already Delivered", description: data.message || "NFT is already in your wallet." });
+        refetchNft();
+      }
+    } catch (err) {
+      toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsDeliveringNft(false);
+    }
+  };
+
+Replace with:
+  const handleDeliverNft = async () => {
+    if (!ownedSelectedPlotId || !wallet.address || !nftInfo) return;
+    setIsDeliveringNft(true);
+
+    const attemptDeliver = async (): Promise<void> => {
+      const res = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
+        return;
+      }
+
+      if (data.success) {
+        toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+        refetchNft();
+        return;
+      }
+
+      if (data.reason === "not_opted_in") {
+        // Wallet hasn't opted into this ASA yet — prompt them to opt in,
+        // then automatically retry the deliver
+        const optedIn = await signOptInToPlotNft(nftInfo.assetId);
+        if (optedIn) {
+          // Small delay to let the opt-in transaction propagate
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Retry deliver once
+          const retryRes = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: wallet.address }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.success) {
+            toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+            refetchNft();
+          } else {
+            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try claiming again in a moment.", variant: "destructive" });
+          }
+        }
+        return;
+      }
+
+      if (data.reason === "not_in_custody") {
+        toast({ title: "Already In Your Wallet", description: data.message || "NFT is already delivered." });
+        refetchNft();
+        return;
+      }
+
+      toast({ title: "Claim Issue", description: data.message || "Unexpected state — try again.", variant: "destructive" });
+    };
+
+    try {
+      await attemptDeliver();
+    } catch (err) {
+      toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsDeliveringNft(false);
+    }
+  };
+
+---
+
+EDIT 3 — client/src/components/game/LandSheet.tsx
+
+Update the NFT section to show a Pera deep-link for the ASA ID so
+players can also manually opt in from Pera if they prefer.
+
+Find the NFT section block (starts with {nftInfo && (}:
+
+Find:
+                  <span className="text-[10px] text-muted-foreground font-mono">ASA {nftInfo.assetId}</span>
+
+Replace with:
+                  <a
+                    href={`https://explorer.perawallet.app/assets/${nftInfo.assetId}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-primary font-mono underline underline-offset-2"
+                  >
+                    ASA {nftInfo.assetId} ↗
+                  </a>
+
+Find the Claim NFT button label:
+                      {isDeliveringNft ? "Claiming..." : "Claim NFT"}
+
+Replace with:
+                      {isDeliveringNft ? "Claiming..." : nftInfo.inCustody ? "Claim NFT" : "NFT Claimed ✓"}
+
+And update the button to be visually distinct when already delivered.
+Find:
+                  {!nftInfo.inCustody && (
+
+Replace with:
+                  {!nftInfo.inCustody && nftInfo.assetId && (
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- signOptInToPlotNft is exported from useBlockchainActions
+- handleDeliverNft calls signOptInToPlotNft when server returns not_opted_in
+- After opt-in succeeds, deliver is retried automatically after 2s delay
+- LandSheet ASA ID is now a tappable link to Pera explorer
+- "Claim NFT" button shows "NFT Claimed ✓" when inCustody is false
+- No server files modified

@@ -441,6 +441,28 @@ export function useBlockchainActions() {
     [isReady, address, frontierAsaId, isOptedIn, toast]
   );
 
+  const signOptInToPlotNft = useCallback(
+    async (assetId: number): Promise<boolean> => {
+      if (!address) {
+        toast({ title: "Wallet Required", description: "Connect your wallet first.", variant: "destructive" });
+        return false;
+      }
+      try {
+        await optInToASA(address, assetId);
+        toast({ title: "Opt-In Complete", description: `Opted into ASA ${assetId}. Claiming your NFT...` });
+        return true;
+      } catch (err: any) {
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Opt-In Cancelled", description: "You cancelled the opt-in." });
+        } else {
+          toast({ title: "Opt-In Failed", description: err instanceof Error ? err.message : "Opt-in failed", variant: "destructive" });
+        }
+        return false;
+      }
+    },
+    [address, toast]
+  );
+
   return {
     isPending,
     lastTxId,
@@ -452,6 +474,7 @@ export function useBlockchainActions() {
     signPurchaseAction,
     signClaimFrontierAction,
     signOptInToFrontier,
+    signOptInToPlotNft,
     queueMineAction,
     queueUpgradeAction,
     queueAttackAction,
