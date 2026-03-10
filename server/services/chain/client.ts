@@ -23,6 +23,9 @@ export function assertChainConfig(): void {
   }
   const network = process.env.ALGORAND_NETWORK;
   if (!network) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[FRONTIER] ALGORAND_NETWORK must be set explicitly in production. Set to "mainnet" or "testnet".');
+    }
     console.warn('[FRONTIER] WARNING: ALGORAND_NETWORK not set. Defaulting to testnet.');
   } else {
     console.log(`[FRONTIER] Network: ${network}`);

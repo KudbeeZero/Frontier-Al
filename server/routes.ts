@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import algosdk from "algosdk";
 import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
 import { z } from "zod";
@@ -43,7 +44,8 @@ export async function registerRoutes(
       console.log(`[routes] Blockchain ready: ASA=${asaId}, Admin=${adminAddr}, ALGO=${balance.algo}`);
 
       // Bootstrap faction identity ASAs (idempotent — safe on every restart)
-      const factionBaseUrl = (process.env.PUBLIC_BASE_URL ?? "https://frontier-al.app").replace(/\/+$/, "");
+      const factionBaseUrl = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
+      if (!factionBaseUrl) throw new Error("[faction seed] PUBLIC_BASE_URL must be set — cannot seed faction metadata without a valid public URL");
       bootstrapFactionIdentities(factionBaseUrl).catch((err) =>
         console.error("[routes] Faction identity bootstrap failed:", err)
       );
@@ -322,7 +324,7 @@ export async function registerRoutes(
     }
 
     const { address } = req.body;
-    if (!address || typeof address !== "string" || address.length !== 58) {
+    if (!address || !algosdk.isValidAddress(address)) {
       return res.status(400).json({ error: "Valid Algorand address required in body.address" });
     }
 
@@ -367,7 +369,7 @@ export async function registerRoutes(
       if (!playerId || !address) {
         return res.status(400).json({ error: "playerId and address are required" });
       }
-      if (typeof address !== "string" || address.length !== 58) {
+      if (!address || !algosdk.isValidAddress(address)) {
         return res.status(400).json({ error: "Invalid Algorand address" });
       }
       await storage.updatePlayerAddress(playerId, address);
@@ -656,7 +658,7 @@ export async function registerRoutes(
         !player.address ||
         player.address === "PLAYER_WALLET" ||
         player.address.startsWith("AI_") ||
-        player.address.length !== 58
+        !algosdk.isValidAddress(player.address)
       ) {
         return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
       }
@@ -672,7 +674,7 @@ export async function registerRoutes(
         buyerAddress &&
         !buyerAddress.startsWith("AI_") &&
         buyerAddress !== "PLAYER_WALLET" &&
-        buyerAddress.length === 58;
+        algosdk.isValidAddress(buyerAddress);
 
       if (isHumanBuyer && db) {
         // ── Idempotency guard ────────────────────────────────────────────────
