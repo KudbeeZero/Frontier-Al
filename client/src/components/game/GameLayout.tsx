@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
-import { FlatMap } from "./FlatMap";
 import PlanetGlobe from "./PlanetGlobe";
 import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
@@ -20,7 +19,6 @@ import { WorldIntelPanel } from "./WorldIntelPanel";
 import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
-import { OrbitalCanvas } from "./OrbitalCanvas";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
@@ -31,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Map, Trophy } from "lucide-react";
+import { Coins, Shield, Globe, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -85,7 +83,6 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
-  const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
   const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings">("warroom");
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
@@ -682,69 +679,23 @@ export function GameLayout() {
         </div>
       ) : gameState ? (
         <>
-          {mapMode === "2d" ? (
-            <>
-              <FlatMap
-                parcels={gameState.parcels}
-                selectedParcelId={selectedParcelId}
-                currentPlayerId={player?.id || null}
-                onParcelSelect={setSelectedParcelId}
-                className="absolute inset-0 w-full h-full"
-                onLocateTerritory={handleLocateTerritory}
-                onFindEnemyTarget={handleFindEnemyTarget}
-                hasOwnedPlots={playerHasOwnedPlots}
-                players={gameState.players}
-              />
-              <OrbitalCanvas events={orbitalEvents} />
-            </>
-          ) : (
-            <PlanetGlobe
-              parcels={gameState.parcels}
-              players={gameState.players}
-              currentPlayerId={player?.id || null}
-              selectedParcelId={selectedParcelId}
-              onParcelSelect={setSelectedParcelId}
-              onAttack={handleAttackClick}
-              onMine={handleMine}
-              onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
-              className="absolute inset-0 w-full h-full"
-              battles={gameState.battles}
-              livePulses={livePulses}
-              orbitalEvents={orbitalEvents}
-              replayEvents={replayEvents}
-              replayTime={replayTime}
-              replayVisibleTypes={replayVisibleTypes}
-            />
-          )}
-
-          {activeTab === "map" && (
-            <div className="absolute bottom-20 left-4 z-20 flex gap-1 bg-card/80 backdrop-blur border border-border rounded-lg p-1">
-              <button
-                onClick={() => setMapMode("2d")}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
-                  mapMode === "2d"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Map className="w-3.5 h-3.5" />
-                2D
-              </button>
-              <button
-                onClick={() => setMapMode("3d")}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
-                  mapMode === "3d"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                3D
-              </button>
-            </div>
-          )}
+          <PlanetGlobe
+            parcels={gameState.parcels}
+            players={gameState.players}
+            currentPlayerId={player?.id || null}
+            selectedParcelId={selectedParcelId}
+            onParcelSelect={setSelectedParcelId}
+            onAttack={handleAttackClick}
+            onMine={handleMine}
+            onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+            className="absolute inset-0 w-full h-full"
+            battles={gameState.battles}
+            livePulses={livePulses}
+            orbitalEvents={orbitalEvents}
+            replayEvents={replayEvents}
+            replayTime={replayTime}
+            replayVisibleTypes={replayVisibleTypes}
+          />
         </>
       ) : null}
 

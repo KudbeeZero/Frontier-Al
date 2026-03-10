@@ -1,0 +1,161 @@
+FRONTIER — Remove 2D FlatMap, Globe Only
+Pass: Remove-FlatMap
+
+Context:
+The 2D FlatMap view is being retired. The 3D globe is the sole
+map renderer. This pass removes the mapMode state, the 2D/3D
+toggle buttons, the FlatMap branch, the OrbitalCanvas (2D only),
+and their imports from GameLayout.tsx.
+
+The FlatMap.tsx and OrbitalCanvas.tsx files themselves are NOT
+deleted — leave them on disk. Only GameLayout.tsx changes.
+
+handleLocateTerritory and handleFindEnemyTarget are KEPT — they
+set selectedParcelId which the globe fly-to already responds to.
+playerHasOwnedPlots is KEPT — still used elsewhere.
+lastLocatedOwnedId and lastLocatedEnemyId refs are KEPT.
+
+DO NOT TOUCH any file except GameLayout.tsx.
+DO NOT delete FlatMap.tsx or OrbitalCanvas.tsx.
+
+File to modify: client/src/components/game/GameLayout.tsx
+
+---
+
+EDIT 1 — Remove FlatMap and OrbitalCanvas imports
+
+Find:
+import { FlatMap } from "./FlatMap";
+
+Delete that entire line.
+
+Find:
+import { OrbitalCanvas } from "./OrbitalCanvas";
+
+Delete that entire line.
+
+---
+
+EDIT 2 — Remove mapMode state
+
+Find:
+  const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
+
+Delete that entire line.
+
+---
+
+EDIT 3 — Remove Map and Globe icon imports if only used by toggle
+
+Find:
+import { Coins, Shield, Globe, Map, Trophy } from "lucide-react";
+
+Replace with:
+import { Coins, Shield, Globe, Trophy } from "lucide-react";
+
+NOTE: Globe is still used on the loading/error screen (line ~581).
+Map was only used on the 2D toggle button. Remove only Map.
+If Globe is not used elsewhere, keep it — do not remove it here.
+Check before removing. If Trophy is not used elsewhere, keep it too.
+
+---
+
+EDIT 4 — Replace the mapMode ternary with PlanetGlobe directly
+
+Find the entire mapMode ternary block including the toggle buttons:
+
+Find:
+          {mapMode === "2d" ? (
+            <>
+              <FlatMap
+                parcels={gameState.parcels}
+                selectedParcelId={selectedParcelId}
+                currentPlayerId={player?.id || null}
+                onParcelSelect={setSelectedParcelId}
+                className="absolute inset-0 w-full h-full"
+                onLocateTerritory={handleLocateTerritory}
+                onFindEnemyTarget={handleFindEnemyTarget}
+                hasOwnedPlots={playerHasOwnedPlots}
+                players={gameState.players}
+              />
+              <OrbitalCanvas events={orbitalEvents} />
+            </>
+          ) : (
+            <PlanetGlobe
+              parcels={gameState.parcels}
+              players={gameState.players}
+              currentPlayerId={player?.id || null}
+              selectedParcelId={selectedParcelId}
+              onParcelSelect={setSelectedParcelId}
+              onAttack={handleAttackClick}
+              onMine={handleMine}
+              onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+              className="absolute inset-0 w-full h-full"
+              replayEvents={replayEvents}
+              replayTime={replayTime}
+              replayVisibleTypes={replayVisibleTypes}
+            />
+          )}
+
+          {activeTab === "map" && (
+            <div className="absolute bottom-20 left-4 z-20 flex gap-1 bg-card/80 backdrop-blur border border-border rounded-lg p-1">
+              <button
+                onClick={() => setMapMode("2d")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
+                  mapMode === "2d"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Map className="w-3.5 h-3.5" />
+                2D
+              </button>
+              <button
+                onClick={() => setMapMode("3d")}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
+                  mapMode === "3d"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                3D
+              </button>
+            </div>
+          )}
+
+Replace with:
+          <PlanetGlobe
+            parcels={gameState.parcels}
+            players={gameState.players}
+            currentPlayerId={player?.id || null}
+            selectedParcelId={selectedParcelId}
+            onParcelSelect={setSelectedParcelId}
+            onAttack={handleAttackClick}
+            onMine={handleMine}
+            onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+            className="absolute inset-0 w-full h-full"
+            replayEvents={replayEvents}
+            replayTime={replayTime}
+            replayVisibleTypes={replayVisibleTypes}
+          />
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- FlatMap import removed from GameLayout.tsx
+- OrbitalCanvas import removed from GameLayout.tsx
+- mapMode state removed from GameLayout.tsx
+- 2D/3D toggle buttons removed from the UI
+- PlanetGlobe renders directly with no conditional branch
+- Globe loads immediately as the only map view
+- handleLocateTerritory still exists and works
+- handleFindEnemyTarget still exists and works
+- playerHasOwnedPlots still computed
+- lastLocatedOwnedId and lastLocatedEnemyId refs still exist
+- FlatMap.tsx file still exists on disk (not deleted)
+- OrbitalCanvas.tsx file still exists on disk (not deleted)
+- No other files modified
