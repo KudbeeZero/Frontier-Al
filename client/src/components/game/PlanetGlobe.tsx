@@ -344,8 +344,8 @@ function GlobeTerrain() {
           map={albedoTex}
           emissiveMap={nightTex}
           emissive={new THREE.Color(0.3, 0.5, 1.0)}
-          emissiveIntensity={0.6}
-          roughness={0.6}
+          emissiveIntensity={1.2}
+          roughness={0.25}
           metalness={0.0}
         />
       </mesh>
@@ -565,10 +565,9 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
   return (
     <>
       <StarField />
-      <ambientLight intensity={1.4} color="#ffffff" />
-      <directionalLight position={[6, 4, 5]} intensity={2.5} color="#e8f4ff" />
-      <directionalLight position={[-4, -2, -3]} intensity={1.2} color="#8aaeff" />
-      <pointLight position={[0, 0, 0]} intensity={0.6} color="#4488ff" distance={10} />
+      <ambientLight intensity={4.5} color="#ffffff" />
+      <directionalLight position={[6, 4, 5]} intensity={0.9} color="#e8f4ff" />
+      <directionalLight position={[-4, -2, -3]} intensity={0.5} color="#aac4ff" />
       <group>
         <GlobeTerrain />
         <PlotOverlay
