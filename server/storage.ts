@@ -3507,6 +3507,8 @@ export class DbStorage implements IStorage {
 export const storage: IStorage = process.env.DATABASE_URL
   ? new DbStorage()
   : (() => {
-      console.warn("[STORAGE] No DATABASE_URL found — falling back to MemStorage. All game state is ephemeral and will reset on restart.");
-      return new MemStorage();
+      throw new Error(
+        "[FATAL] DATABASE_URL is not set. FRONTIER requires a PostgreSQL database to run. " +
+        "Set DATABASE_URL in Replit Secrets before starting the server."
+      );
     })();
