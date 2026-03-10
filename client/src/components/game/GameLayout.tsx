@@ -3,6 +3,7 @@ import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import { FlatMap } from "./FlatMap";
 import PlanetGlobe from "./PlanetGlobe";
+import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
@@ -90,6 +91,17 @@ export function GameLayout() {
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
+  const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
+
+  useEffect(() => {
+    if (livePulses.length === 0) return;
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setLivePulses(prev => prev.filter(p => now - p.startMs < 700));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [livePulses]);
+
   const lastLocatedOwnedId = useRef<string | null>(null);
   const lastLocatedEnemyId = useRef<string | null>(null);
   const [replayTime, setReplayTime] = useState<number>(Date.now());
@@ -164,6 +176,15 @@ export function GameLayout() {
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
             : "Resources extracted successfully.";
           toast({ title: "Mining Complete", description: desc });
+          if (selectedParcel) {
+            const pulse: LivePulse = {
+              id: `pulse-${Date.now()}-${Math.random()}`,
+              lat: selectedParcel.lat,
+              lng: selectedParcel.lng,
+              startMs: Date.now(),
+            };
+            setLivePulses(prev => [...prev, pulse]);
+          }
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
         onSettled: () => {
@@ -197,6 +218,13 @@ export function GameLayout() {
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
             : "Resources extracted successfully.";
           toast({ title: "Mining Complete", description: desc });
+          const pulse: LivePulse = {
+            id: `pulse-${Date.now()}-${Math.random()}`,
+            lat: parcel.lat,
+            lng: parcel.lng,
+            startMs: Date.now(),
+          };
+          setLivePulses(prev => [...prev, pulse]);
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
         onSettled: () => {
@@ -681,6 +709,7 @@ export function GameLayout() {
               onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
               className="absolute inset-0 w-full h-full"
               battles={gameState.battles}
+              livePulses={livePulses}
               replayEvents={replayEvents}
               replayTime={replayTime}
               replayVisibleTypes={replayVisibleTypes}
