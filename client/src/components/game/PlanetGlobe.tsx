@@ -340,13 +340,16 @@ function GlobeTerrain() {
     <>
       <mesh>
         <sphereGeometry args={[GLOBE_RADIUS, 128, 64]} />
-        <meshStandardMaterial
-          map={albedoTex}
-          emissiveMap={nightTex}
-          emissive={new THREE.Color(0.3, 0.5, 1.0)}
-          emissiveIntensity={1.2}
-          roughness={0.25}
-          metalness={0.0}
+        <meshBasicMaterial map={albedoTex} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.001, 128, 64]} />
+        <meshBasicMaterial
+          map={nightTex}
+          transparent
+          blending={THREE.AdditiveBlending}
+          opacity={0.55}
+          depthWrite={false}
         />
       </mesh>
       <mesh ref={cloudRef}>
@@ -565,9 +568,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
   return (
     <>
       <StarField />
-      <ambientLight intensity={4.5} color="#ffffff" />
-      <directionalLight position={[6, 4, 5]} intensity={0.9} color="#e8f4ff" />
-      <directionalLight position={[-4, -2, -3]} intensity={0.5} color="#aac4ff" />
+      <ambientLight intensity={1.0} color="#ffffff" />
       <group>
         <GlobeTerrain />
         <PlotOverlay
