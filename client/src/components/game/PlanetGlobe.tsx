@@ -71,9 +71,11 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
   swamp:    "#00ffcc",
 };
 
-// Dim hex tint for unowned plots — additive blending means this barely
-// brightens the terrain, creating a subtle clickable grid without hiding it.
-const UNOWNED_DIM = new THREE.Color("#030d1c");
+// Unowned tiles are fully invisible (black + additive = transparent).
+// Geometry still exists for raycasting — click detection works even when invisible.
+const UNOWNED_DIM = new THREE.Color(0, 0, 0);
+// Fixed highlight shown when hovering over any tile (owned or unowned)
+const HOVER_COLOR  = new THREE.Color("#0a2040");
 
 function getPlotColor(
   parcel: LandParcel | undefined,
@@ -150,8 +152,8 @@ function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
 
-// Additive blending: this tiny value creates a barely-visible honeycomb grid on terrain
-const BORDER_COLOR = new THREE.Color("#020810");
+// Unowned borders: pure black = invisible with additive blending (no limb ring effect)
+const BORDER_COLOR = new THREE.Color(0, 0, 0);
 
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
   const fillMeshRef  = useRef<THREE.InstancedMesh>(null!);
@@ -228,9 +230,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
-      if (isHovered) fillColor = fillColor.clone().multiplyScalar(1.3);
-
       const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.3) : HOVER_COLOR;
+
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
         : isOwned
@@ -272,6 +274,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar, borderColor);
+
     }
     fillMeshRef.current.instanceMatrix.needsUpdate = true;
     borderMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -340,48 +343,28 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   );
 }
 
-// Fixed sun direction in world space (globe does not rotate).
-// Points FROM the globe center TOWARD the sun.
-const SUN_DIR = new THREE.Vector3(1.0, 0.22, 0.55).normalize();
-
 function GlobeTerrain() {
   const albedoTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_albedo.png");
-  const nightTex  = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_night_lights.png");
-  const cloudsTex = useLoader(THREE.TextureLoader, "/textures/planets/ascendancy/planet_clouds.png");
-  const cloudRef  = useRef<THREE.Mesh>(null!);
 
   useEffect(() => {
-    [albedoTex, nightTex, cloudsTex].forEach(t => { if (t) t.colorSpace = THREE.SRGBColorSpace; });
-  }, [albedoTex, nightTex, cloudsTex]);
+    if (albedoTex) albedoTex.colorSpace = THREE.SRGBColorSpace;
+  }, [albedoTex]);
 
-  useFrame((_, delta) => {
-    if (cloudRef.current) cloudRef.current.rotation.y += delta * 0.018;
-  });
-
-  // Day/night terrain shader: lit side shows albedo, dark side shows
-  // boosted night-lights + a warm golden glow at the terminator.
   const terrainUniforms = useMemo(() => ({
     albedoMap: { value: albedoTex },
-    nightMap:  { value: nightTex },
-    sunDir:    { value: SUN_DIR },
-  }), [albedoTex, nightTex]);
+  }), [albedoTex]);
 
   const terrainVert = `
     varying vec2 vUv;
-    varying vec3 vWorldNormal;
     void main() {
       vUv = uv;
-      vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
 
   const terrainFrag = `
     uniform sampler2D albedoMap;
-    uniform sampler2D nightMap;
-    uniform vec3 sunDir;
     varying vec2 vUv;
-    varying vec3 vWorldNormal;
 
     // Boost colour saturation (renamed to avoid clash with GLSL built-in 'saturate')
     vec3 boostSat(vec3 c, float amount) {
@@ -390,32 +373,9 @@ function GlobeTerrain() {
     }
 
     void main() {
-      vec3 n       = normalize(vWorldNormal);
-      float NdotL  = dot(n, sunDir);
-
-      vec4 dayCol   = texture2D(albedoMap, vUv);
-      vec4 nightCol = texture2D(nightMap,  vUv);
-
-      // Smooth terminator band: fully dark at -0.12, fully lit at 0.18
-      float dayBlend   = smoothstep(-0.12, 0.18, NdotL);
-      float nightBlend = 1.0 - dayBlend;
-
-      // Day side: clean, rich colours — not overexposed
-      vec3 saturatedDay = boostSat(dayCol.rgb, 1.30) * 1.10;
-      vec3 terrain = mix(dayCol.rgb * 0.02, saturatedDay, dayBlend);
-
-      // Night lights — vivid but tasteful neon city glow
-      vec3 nightGlow = boostSat(nightCol.rgb, 1.8) * nightBlend * 5.5;
-
-      // Golden terminator at day/night boundary
-      float crescent = smoothstep(-0.30, 0.0, NdotL) * smoothstep(0.30, 0.0, NdotL);
-      vec3 termColor = vec3(1.0, 0.60, 0.0) * crescent * 0.80;
-
-      // Subtle oceanic specular on lit side
-      float spec = pow(max(0.0, NdotL), 12.0) * dayBlend * 0.18;
-      vec3 specGlow = vec3(0.85, 0.95, 1.0) * spec;
-
-      gl_FragColor = vec4(terrain + nightGlow + termColor + specGlow, 1.0);
+      vec4 dayCol = texture2D(albedoMap, vUv);
+      // Fully lit — no dark side, terrain visible everywhere
+      gl_FragColor = vec4(boostSat(dayCol.rgb, 1.25) * 1.05, 1.0);
     }
   `;
 
@@ -428,124 +388,6 @@ function GlobeTerrain() {
           vertexShader={terrainVert}
           fragmentShader={terrainFrag}
         />
-      </mesh>
-      <mesh ref={cloudRef}>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.007, 64, 32]} />
-        <meshBasicMaterial
-          map={cloudsTex}
-          transparent
-          opacity={0.14}
-          depthWrite={false}
-          side={THREE.FrontSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-    </>
-  );
-}
-
-/**
- * Additive inner glow on the dark hemisphere: deep cyan → violet,
- * with a bright crescent halo right at the terminator edge.
- */
-function DarkSideGlow() {
-  const uniforms = useMemo(() => ({
-    sunDir: { value: SUN_DIR },
-  }), []);
-
-  const vert = `
-    varying vec3 vWorldNormal;
-    void main() {
-      vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `;
-
-  const frag = `
-    uniform vec3 sunDir;
-    varying vec3 vWorldNormal;
-    void main() {
-      vec3 n      = normalize(vWorldNormal);
-      float NdotL = dot(n, sunDir);
-
-      // Ramp in across the terminator into the full dark side
-      float darkFactor = smoothstep(0.18, -0.55, NdotL);
-
-      // Extra crescent halo exactly at the terminator edge
-      float crescent = smoothstep(-0.18, 0.0, NdotL) * (1.0 - smoothstep(0.0, 0.18, NdotL));
-
-      // Gradient: cyan at terminator edge → deep violet in the darkest zone
-      float t = clamp(-NdotL * 0.5 + 0.5, 0.0, 1.0);
-      vec3 cyanCol   = vec3(0.0,  0.88, 1.0);
-      vec3 violetCol = vec3(0.38, 0.0,  0.95);
-      vec3 color = mix(cyanCol, violetCol, t * darkFactor);
-
-      float alpha = darkFactor * 0.38 + crescent * 0.70;
-      gl_FragColor = vec4(color, alpha);
-    }
-  `;
-
-  return (
-    <mesh>
-      <sphereGeometry args={[GLOBE_RADIUS * 1.002, 64, 32]} />
-      <shaderMaterial
-        uniforms={uniforms}
-        vertexShader={vert}
-        fragmentShader={frag}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        side={THREE.FrontSide}
-      />
-    </mesh>
-  );
-}
-
-function AtmosphereGlow() {
-  const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.0, 0.92, 1.0) },
-    coefficient: { value: 0.65 },
-    power:       { value: 3.0 },
-  }), []);
-
-  const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.0, 0.75, 1.0) },
-    coefficient: { value: 0.42 },
-    power:       { value: 5.5 },
-  }), []);
-
-  const vertShader = `
-    varying vec3 vNormal;
-    varying vec3 vPositionNormal;
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vPositionNormal = normalize((modelViewMatrix * vec4(position, 1.0)).xyz);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `;
-  const fragShader = `
-    uniform vec3 glowColor;
-    uniform float coefficient;
-    uniform float power;
-    varying vec3 vNormal;
-    varying vec3 vPositionNormal;
-    void main() {
-      float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity * 0.88);
-    }
-  `;
-
-  return (
-    <>
-      <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.08, 64, 32]} />
-        <shaderMaterial uniforms={innerUniforms} vertexShader={vertShader} fragmentShader={fragShader}
-          transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.20, 64, 32]} />
-        <shaderMaterial uniforms={outerUniforms} vertexShader={vertShader} fragmentShader={fragShader}
-          transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
       </mesh>
     </>
   );
@@ -702,10 +544,9 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
   return (
     <>
       <StarField />
-      <ambientLight intensity={1.0} color="#ffffff" />
+      <ambientLight intensity={1.5} color="#ffffff" />
       <group>
         <GlobeTerrain />
-        <DarkSideGlow />
         <PlotOverlay
           parcels={parcels}
           players={players}
@@ -721,7 +562,6 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
           />
         )}
       </group>
-      <AtmosphereGlow />
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
@@ -886,10 +726,6 @@ export default function PlanetGlobe({
         RESET
       </button>
 
-      <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{ background: "radial-gradient(ellipse at center, transparent 55%, rgba(2,4,14,0.7) 100%)" }}
-      />
     </div>
   );
 }
