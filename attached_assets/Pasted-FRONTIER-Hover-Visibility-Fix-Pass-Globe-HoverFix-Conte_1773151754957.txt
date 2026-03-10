@@ -1,0 +1,116 @@
+FRONTIER — Hover Visibility Fix
+Pass: Globe-HoverFix
+
+Context:
+Hovering over any globe plot currently shows nothing visible.
+Two bugs:
+
+BUG 1: The useFrame loop only iterates animatedIndices (owned/
+selected/battle plots). Hovered tiles that are unowned are never
+updated in the animation loop, so hover color is never applied.
+
+BUG 2: HOVER_COLOR = "#0a2040" is near-black. With AdditiveBlending
+on the hex mesh, adding near-black contributes almost zero light,
+making the hover invisible even when it does trigger.
+
+DO NOT TOUCH: any server file, routes.ts, storage.ts, schema,
+GameLayout.tsx, or anything outside PlanetGlobe.tsx.
+DO NOT change raycaster logic, click handling, CameraController,
+BattleArcs, MiningPulseLayer, OrbitalZoneLayer, or GlobeTerrain.
+
+File: client/src/components/game/PlanetGlobe.tsx
+
+═══════════════════════════════════════════════
+EDIT 1 — Fix HOVER_COLOR to a bright visible color
+═══════════════════════════════════════════════
+
+Find:
+const HOVER_COLOR  = new THREE.Color("#0a2040");
+
+Replace with:
+const HOVER_COLOR  = new THREE.Color("#1a6fff");
+
+═══════════════════════════════════════════════
+EDIT 2 — Expand useFrame to also process hovered plot
+═══════════════════════════════════════════════
+
+The useFrame guard currently bails out entirely if animatedIndices
+is empty. We need it to also run for the currently hovered index.
+
+Find:
+  useFrame((_, delta) => {
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current || animatedIndices.length === 0) return;
+    pulseRef.current += delta * 2.5;
+
+    for (const i of animatedIndices) {
+
+Replace with:
+  const prevHoveredRef = useRef<number | null>(null);
+
+  useFrame((_, delta) => {
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current) return;
+    pulseRef.current += delta * 2.5;
+
+    const currentHovered = hoveredIndexRef.current;
+    const prevHovered    = prevHoveredRef.current;
+
+    // Build the set of indices to animate this frame
+    const toProcess = new Set<number>(animatedIndices);
+    if (currentHovered !== null) toProcess.add(currentHovered);
+    // Always re-render the previously hovered tile to clear the highlight
+    if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+    prevHoveredRef.current = currentHovered;
+
+    if (toProcess.size === 0) return;
+
+    for (const i of toProcess) {
+
+═══════════════════════════════════════════════
+EDIT 3 — Make hover always show the fill tile
+═══════════════════════════════════════════════
+
+Find inside the for loop in useFrame:
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.3) : HOVER_COLOR;
+      const showFill = isOwned || isHovered;
+
+Replace with:
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
+      if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
+      const showFill = isOwned || isHovered || isSelected;
+
+═══════════════════════════════════════════════
+EDIT 4 — Make hovered border always visible
+═══════════════════════════════════════════════
+
+Find inside the for loop in useFrame:
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : isOwned
+          ? fillColor.clone().multiplyScalar(2.2)
+          : BORDER_COLOR;
+
+Replace with:
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : isHovered
+          ? HOVER_COLOR.clone().multiplyScalar(2.0)
+          : isOwned
+            ? fillColor.clone().multiplyScalar(2.2)
+            : BORDER_COLOR;
+
+═══════════════════════════════════════════════
+Verification checklist:
+═══════════════════════════════════════════════
+- tsc passes with zero errors
+- HOVER_COLOR is "#1a6fff" (bright blue)
+- prevHoveredRef declared with useRef<number | null>(null)
+- useFrame no longer bails out on animatedIndices.length === 0
+- toProcess Set includes currentHovered + prevHovered + animatedIndices
+- Hovering any unowned plot shows a blue border and fill tile
+- Hovering an owned plot shows a brightened version of its color
+- Previously hovered tile correctly clears when cursor moves away
+- Selected plot shows white border + bright fill
+- No changes to useEffect static pass
+- No changes to raycaster, click handling, or any server file
