@@ -490,6 +490,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
+          vertexColors
           transparent
           opacity={1.0}
           depthWrite={false}
@@ -502,6 +503,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
+          vertexColors
           transparent
           opacity={1.0}
           depthWrite={false}
