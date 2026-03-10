@@ -178,7 +178,7 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[92vh] flex flex-col backdrop-blur-md p-0 gap-0 overflow-hidden">
+      <DialogContent className="w-full max-w-2xl max-h-[92vh] flex flex-col backdrop-blur-md p-0 gap-0 overflow-hidden">
         {/* Header */}
         <DialogHeader className="px-6 pt-5 pb-0">
           <DialogTitle className="font-display text-xl uppercase tracking-wide flex items-center gap-2">
@@ -190,9 +190,9 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
         <div className="flex flex-col gap-4 p-6 overflow-y-auto flex-1">
           {/* VS Panel */}
           <div className="grid grid-cols-3 items-center gap-3 p-4 bg-card border border-border rounded-md">
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-1 min-w-0">
               <p className="font-display text-xs uppercase tracking-wide text-muted-foreground">Attacker</p>
-              <p className="font-display text-sm font-bold text-primary truncate">{attackerName}</p>
+              <p className="font-display text-sm font-bold text-primary truncate max-w-[90px] sm:max-w-full mx-auto">{attackerName}</p>
               {usedCommander && (
                 <Badge variant="outline" className="text-[9px] gap-1">
                   {usedCommander.tier === "sentinel" && <Shield className="w-2.5 h-2.5 text-blue-400" />}
@@ -201,7 +201,7 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
                   {usedCommander.name}
                 </Badge>
               )}
-              <p className="font-mono text-2xl font-bold text-primary">{Math.round(battle.attackerPower)}</p>
+              <p className="font-mono text-xl sm:text-2xl font-bold text-primary">{Math.round(battle.attackerPower)}</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Power</p>
             </div>
 
@@ -211,18 +211,18 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
               <span className="font-display text-[10px] uppercase text-muted-foreground">Plot #{battle.targetParcelId.slice(0, 4)}</span>
             </div>
 
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-1 min-w-0">
               <p className="font-display text-xs uppercase tracking-wide text-muted-foreground">Defender</p>
-              <p className="font-display text-sm font-bold text-destructive truncate">{defenderName}</p>
+              <p className="font-display text-sm font-bold text-destructive truncate max-w-[90px] sm:max-w-full mx-auto">{defenderName}</p>
               <div className="h-5" />
-              <p className="font-mono text-2xl font-bold text-destructive">{Math.round(battle.defenderPower)}</p>
+              <p className="font-mono text-xl sm:text-2xl font-bold text-destructive">{Math.round(battle.defenderPower)}</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Power</p>
             </div>
           </div>
 
           {/* Timer */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-wrap items-center justify-between text-xs gap-y-1">
               <span className="text-muted-foreground flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 {isResolved ? "Complete" : timerExpired ? "Processing..." : "Battle progress"}
@@ -242,7 +242,7 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
             <div className="px-3 py-2 border-b border-border bg-muted/30">
               <p className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Battle Log</p>
             </div>
-            <div ref={feedRef} className="p-3 space-y-2 max-h-64 overflow-y-auto">
+            <div ref={feedRef} className="p-3 space-y-2 max-h-48 sm:max-h-64 min-h-[140px] overflow-y-auto">
               {visibleEvents.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-6 italic">
                   Forces advancing... battle commencing
@@ -277,13 +277,13 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
           {isResolved && battle.outcome && (
             <div
               className={cn(
-                "p-5 rounded-md text-center border space-y-1",
+                "p-4 sm:p-5 rounded-md text-center border space-y-1",
                 attackerWins ? "bg-primary/10 border-primary/40" : "bg-destructive/10 border-destructive/40",
               )}
             >
               <div className="flex items-center justify-center gap-2">
-                <Trophy className={cn("w-6 h-6", attackerWins ? "text-primary" : "text-destructive")} />
-                <p className={cn("font-display text-2xl uppercase tracking-widest", attackerWins ? "text-primary" : "text-destructive")}>
+                <Trophy className={cn("w-5 h-5 sm:w-6 sm:h-6", attackerWins ? "text-primary" : "text-destructive")} />
+                <p className={cn("font-display text-xl sm:text-2xl uppercase tracking-widest", attackerWins ? "text-primary" : "text-destructive")}>
                   {attackerWins ? "Victory" : "Defeat"}
                 </p>
               </div>
@@ -303,7 +303,7 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
         </div>
 
         {/* Footer */}
-        <div className="px-6 pb-5">
+        <div className="px-4 sm:px-6 pb-4 sm:pb-5">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full font-display uppercase tracking-wide">
             <X className="w-4 h-4 mr-2" />
             Close
