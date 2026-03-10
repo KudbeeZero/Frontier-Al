@@ -5,7 +5,7 @@
 
 import * as THREE from "three";
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
-import { Canvas, useLoader, useFrame } from "@react-three/fiber";
+import { Canvas, useLoader, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, Player } from "@shared/schema";
@@ -58,6 +58,92 @@ function latLngToVec3(lat: number, lng: number, r: number): THREE.Vector3 {
      r * Math.cos(phi),
      r * Math.sin(phi) * Math.sin(theta)
   );
+}
+
+// ── CameraController ──────────────────────────────────────────────────────────
+// Handles two behaviors:
+//   1. Fly-to: smoothly animates camera to face a target lat/lng on the globe
+//   2. Idle auto-rotate: activates OrbitControls.autoRotate after 8s of no input
+
+interface CameraControllerProps {
+  targetLat: number | null;
+  targetLng: number | null;
+  controlsRef: React.RefObject<OrbitControlsImpl>;
+}
+
+function CameraController({ targetLat, targetLng, controlsRef }: CameraControllerProps) {
+  const { camera } = useThree();
+
+  const flyTarget  = useRef<THREE.Vector3 | null>(null);
+  const flyZoom    = useRef<number | null>(null);
+  const prevTarget = useRef<string>("");
+
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isIdle    = useRef(false);
+
+  const FLY_DISTANCE = GLOBE_RADIUS * 2.8;
+  const FLY_SPEED    = 0.055;
+  const FLY_DONE_SQ  = 0.0004;
+
+  useEffect(() => {
+    if (targetLat === null || targetLng === null) {
+      flyTarget.current = null;
+      flyZoom.current   = null;
+      return;
+    }
+    const key = `${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+    if (key === prevTarget.current) return;
+    prevTarget.current = key;
+
+    const surfaceVec = latLngToVec3(targetLat, targetLng, 1);
+    flyTarget.current = surfaceVec.clone().multiplyScalar(FLY_DISTANCE);
+    flyZoom.current   = FLY_DISTANCE;
+  }, [targetLat, targetLng]);
+
+  useEffect(() => {
+    const resetIdle = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      isIdle.current = false;
+      if (controlsRef.current) controlsRef.current.autoRotate = false;
+      idleTimer.current = setTimeout(() => {
+        isIdle.current = true;
+        if (controlsRef.current) controlsRef.current.autoRotate = true;
+      }, 8000);
+    };
+
+    window.addEventListener("pointerdown", resetIdle);
+    window.addEventListener("pointermove", resetIdle);
+    window.addEventListener("wheel",       resetIdle);
+    resetIdle();
+
+    return () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      window.removeEventListener("pointerdown", resetIdle);
+      window.removeEventListener("pointermove", resetIdle);
+      window.removeEventListener("wheel",       resetIdle);
+    };
+  }, [controlsRef]);
+
+  useFrame(() => {
+    if (!flyTarget.current) return;
+    if (controlsRef.current) controlsRef.current.autoRotate = false;
+
+    const target = flyTarget.current;
+    const distSq = camera.position.distanceToSquared(target);
+
+    if (distSq < FLY_DONE_SQ) {
+      camera.position.copy(target);
+      flyTarget.current = null;
+      flyZoom.current   = null;
+      return;
+    }
+
+    camera.position.lerp(target, FLY_SPEED);
+    camera.lookAt(0, 0, 0);
+    if (controlsRef.current) controlsRef.current.update();
+  });
+
+  return null;
 }
 
 const BIOME_DISPLAY_COLORS: Record<string, string> = {
@@ -619,14 +705,21 @@ interface SceneProps {
   selectedPlotId: string | null;
   onPlotSelect: (parcelId: string) => void;
   controlsRef: React.RefObject<OrbitControlsImpl>;
+  targetLat: number | null;
+  targetLng: number | null;
   replayEvents?: WorldEvent[];
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
 }
 
-function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
   return (
     <>
+      <CameraController
+        targetLat={targetLat}
+        targetLng={targetLng}
+        controlsRef={controlsRef}
+      />
       <StarField />
       <ambientLight intensity={1.5} color="#ffffff" />
       <group>
@@ -649,12 +742,14 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
-        minDistance={GLOBE_RADIUS * 1.8}
-        maxDistance={GLOBE_RADIUS * 5.5}
+        minDistance={GLOBE_RADIUS * 2.2}
+        maxDistance={GLOBE_RADIUS * 4.8}
         rotateSpeed={0.45}
-        zoomSpeed={1.1}
+        zoomSpeed={1.0}
         enableDamping
         dampingFactor={0.08}
+        autoRotate={false}
+        autoRotateSpeed={0.4}
       />
     </>
   );
@@ -780,6 +875,8 @@ export default function PlanetGlobe({
           selectedPlotId={selectedParcelId}
           onPlotSelect={onParcelSelect}
           controlsRef={controlsRef}
+          targetLat={selectedParcel?.lat ?? null}
+          targetLng={selectedParcel?.lng ?? null}
           replayEvents={replayEvents}
           replayTime={replayTime}
           replayVisibleTypes={replayVisibleTypes}

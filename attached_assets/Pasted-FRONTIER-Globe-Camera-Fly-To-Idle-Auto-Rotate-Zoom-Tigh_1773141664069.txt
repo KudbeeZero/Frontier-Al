@@ -1,0 +1,275 @@
+FRONTIER — Globe Camera: Fly-To + Idle Auto-Rotate + Zoom Tightening
+Pass: Globe-Camera
+
+Context:
+Three improvements to PlanetGlobe.tsx camera behavior:
+1. Fly-to — when selectedParcelId changes, smoothly animate the camera
+   to face that parcel's lat/lng position on the globe and zoom in to
+   a comfortable viewing distance. Uses useFrame lerp inside a dedicated
+   CameraController component inside the Canvas.
+2. Idle auto-rotate — if the player has not interacted with the globe
+   for 8 seconds, OrbitControls.autoRotate activates at a slow speed.
+   The moment they touch/click/scroll the globe, auto-rotate stops and
+   the 8-second timer resets.
+3. Zoom tightening — raise minDistance from GLOBE_RADIUS * 1.8 to
+   GLOBE_RADIUS * 2.2 to prevent the camera clipping into the surface,
+   and lower maxDistance from GLOBE_RADIUS * 5.5 to GLOBE_RADIUS * 4.8
+   to keep the full planet in frame at all zoom levels.
+
+DO NOT TOUCH: server files, storage.ts, wsServer.ts, routes.ts,
+shared/schema.ts, or any file other than PlanetGlobe.tsx.
+DO NOT change PlotOverlay, GlobeTerrain, AtmosphereGlow, StarField,
+ParcelHUD, FactionLegend, or GlobeEventOverlays logic.
+Additive changes only — only Scene and PlanetGlobe components change.
+
+File to modify:
+- client/src/components/game/PlanetGlobe.tsx
+
+---
+
+EDIT 1 — Add CameraController component
+
+Add this new component directly after the latLngToVec3 function
+(after its closing brace, before the BIOME_DISPLAY_COLORS constant).
+
+// ── CameraController ──────────────────────────────────────────────────────────
+// Handles two behaviors:
+//   1. Fly-to: smoothly animates camera to face a target lat/lng on the globe
+//   2. Idle auto-rotate: activates OrbitControls.autoRotate after 8s of no input
+
+interface CameraControllerProps {
+  targetLat: number | null;
+  targetLng: number | null;
+  controlsRef: React.RefObject<OrbitControlsImpl>;
+}
+
+function CameraController({ targetLat, targetLng, controlsRef }: CameraControllerProps) {
+  const { camera } = useThree();
+
+  // Fly-to state
+  const flyTarget    = useRef<THREE.Vector3 | null>(null);
+  const flyZoom      = useRef<number | null>(null);
+  const prevTarget   = useRef<string>("");
+
+  // Idle auto-rotate state
+  const idleTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isIdle       = useRef(false);
+
+  // Target camera distance when zoomed in on a selected parcel
+  const FLY_DISTANCE = GLOBE_RADIUS * 2.8;
+  // How fast to lerp toward the fly target (0–1 per frame, higher = faster)
+  const FLY_SPEED    = 0.055;
+  // How close (squared) before we consider fly-to complete
+  const FLY_DONE_SQ  = 0.0004;
+
+  // Recompute fly target when selectedParcel changes
+  useEffect(() => {
+    if (targetLat === null || targetLng === null) {
+      flyTarget.current = null;
+      flyZoom.current   = null;
+      return;
+    }
+    const key = `${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+    if (key === prevTarget.current) return;
+    prevTarget.current = key;
+
+    // Compute the world-space position on the globe surface
+    const surfaceVec = latLngToVec3(targetLat, targetLng, 1); // unit vector
+    // Camera target: pull back FLY_DISTANCE along that direction
+    flyTarget.current = surfaceVec.clone().multiplyScalar(FLY_DISTANCE);
+    flyZoom.current   = FLY_DISTANCE;
+  }, [targetLat, targetLng]);
+
+  // Idle detection — listen to pointer and wheel events on the canvas
+  useEffect(() => {
+    const resetIdle = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      isIdle.current = false;
+      if (controlsRef.current) controlsRef.current.autoRotate = false;
+      idleTimer.current = setTimeout(() => {
+        isIdle.current = true;
+        if (controlsRef.current) controlsRef.current.autoRotate = true;
+      }, 8000);
+    };
+
+    window.addEventListener("pointerdown", resetIdle);
+    window.addEventListener("pointermove", resetIdle);
+    window.addEventListener("wheel",       resetIdle);
+    // Start the idle timer immediately on mount
+    resetIdle();
+
+    return () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      window.removeEventListener("pointerdown", resetIdle);
+      window.removeEventListener("pointermove", resetIdle);
+      window.removeEventListener("wheel",       resetIdle);
+    };
+  }, [controlsRef]);
+
+  useFrame(() => {
+    if (!flyTarget.current) return;
+    // Temporarily disable auto-rotate during fly-to
+    if (controlsRef.current) controlsRef.current.autoRotate = false;
+
+    const target = flyTarget.current;
+    const distSq = camera.position.distanceToSquared(target);
+
+    if (distSq < FLY_DONE_SQ) {
+      // Arrived — snap exactly and clear
+      camera.position.copy(target);
+      flyTarget.current = null;
+      flyZoom.current   = null;
+      return;
+    }
+
+    // Lerp camera position toward the fly target
+    camera.position.lerp(target, FLY_SPEED);
+    // Keep camera looking at the globe centre
+    camera.lookAt(0, 0, 0);
+    // Update OrbitControls internal state so it doesn't snap back
+    if (controlsRef.current) controlsRef.current.update();
+  });
+
+  return null;
+}
+
+---
+
+EDIT 2 — Update SceneProps to include targetLat and targetLng
+
+Find the SceneProps interface:
+interface SceneProps {
+  parcels: LandParcel[];\n  players: Player[];
+  currentPlayerId: string | null;
+  selectedPlotId: string | null;
+  onPlotSelect: (parcelId: string) => void;
+  controlsRef: React.RefObject<OrbitControlsImpl>;
+  replayEvents?: WorldEvent[];
+  replayTime?: number;
+  replayVisibleTypes?: Set<string>;
+}
+
+Replace with:
+interface SceneProps {
+  parcels: LandParcel[];
+  players: Player[];
+  currentPlayerId: string | null;
+  selectedPlotId: string | null;
+  onPlotSelect: (parcelId: string) => void;
+  controlsRef: React.RefObject<OrbitControlsImpl>;
+  targetLat: number | null;
+  targetLng: number | null;
+  replayEvents?: WorldEvent[];
+  replayTime?: number;
+  replayVisibleTypes?: Set<string>;
+}
+
+---
+
+EDIT 3 — Update Scene function signature and add CameraController
+
+Find the Scene function signature:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+Replace with:
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+
+Then inside the Scene return, add CameraController as the first child
+after the opening fragment <>.
+
+Find:
+    <>
+      <StarField />
+
+Replace with:
+    <>
+      <CameraController
+        targetLat={targetLat}
+        targetLng={targetLng}
+        controlsRef={controlsRef}
+      />
+      <StarField />
+
+---
+
+EDIT 4 — Update OrbitControls: tighten zoom, add autoRotate config
+
+Find the OrbitControls block in Scene:
+      <OrbitControls
+        ref={controlsRef as any}
+        enablePan={false}
+        minDistance={GLOBE_RADIUS * 1.8}
+        maxDistance={GLOBE_RADIUS * 5.5}
+        rotateSpeed={0.45}
+        zoomSpeed={1.1}
+        enableDamping
+        dampingFactor={0.08}
+      />
+
+Replace with:
+      <OrbitControls
+        ref={controlsRef as any}
+        enablePan={false}
+        minDistance={GLOBE_RADIUS * 2.2}
+        maxDistance={GLOBE_RADIUS * 4.8}
+        rotateSpeed={0.45}
+        zoomSpeed={1.0}
+        enableDamping
+        dampingFactor={0.08}
+        autoRotate={false}
+        autoRotateSpeed={0.4}
+      />
+
+---
+
+EDIT 5 — Pass targetLat/targetLng from PlanetGlobe to Scene
+
+In the PlanetGlobe component, selectedParcel is already computed:
+  const selectedParcel = useMemo(
+    () => parcels.find(p => p.id === selectedParcelId),
+    [parcels, selectedParcelId]
+  );
+
+Find the Scene usage inside the Canvas:
+        <Scene
+          parcels={parcels}
+          players={players}
+          currentPlayerId={currentPlayerId}
+          selectedPlotId={selectedParcelId}
+          onPlotSelect={onParcelSelect}
+          controlsRef={controlsRef}
+          replayEvents={replayEvents}
+          replayTime={replayTime}
+          replayVisibleTypes={replayVisibleTypes}
+        />
+
+Replace with:
+        <Scene
+          parcels={parcels}
+          players={players}
+          currentPlayerId={currentPlayerId}
+          selectedPlotId={selectedParcelId}
+          onPlotSelect={onParcelSelect}
+          controlsRef={controlsRef}
+          targetLat={selectedParcel?.lat ?? null}
+          targetLng={selectedParcel?.lng ?? null}
+          replayEvents={replayEvents}
+          replayTime={replayTime}
+          replayVisibleTypes={replayVisibleTypes}
+        />
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- Tapping a parcel on the globe causes the camera to smoothly fly toward
+  it rather than staying in place
+- After 8 seconds of no interaction the globe begins slowly rotating
+- Moving the mouse or scrolling immediately stops auto-rotation and
+  resets the 8-second timer
+- minDistance prevents the camera from clipping into the globe surface
+- maxDistance prevents zooming so far out the globe becomes tiny
+- CameraController is the first child inside Scene's fragment
+- No changes to PlotOverlay, GlobeTerrain, AtmosphereGlow, StarField,
+  ParcelHUD, FactionLegend, or GlobeEventOverlays
+- No server files modified
