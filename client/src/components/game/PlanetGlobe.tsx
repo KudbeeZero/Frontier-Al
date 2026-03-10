@@ -1,5 +1,6 @@
 /**
- * PlanetGlobe.tsx — FRONTIER Tier 1 Globe
+ * PlanetGlobe.
+ * tsx — FRONTIER Tier 1 Globe
  */
 
 import * as THREE from "three";
@@ -60,14 +61,14 @@ function latLngToVec3(lat: number, lng: number, r: number): THREE.Vector3 {
 }
 
 const BIOME_DISPLAY_COLORS: Record<string, string> = {
-  forest:   "#2ecc71",
-  desert:   "#f39c12",
-  mountain: "#95a5a6",
-  plains:   "#27ae60",
-  water:    "#2980b9",
-  tundra:   "#bdc3c7",
-  volcanic: "#e74c3c",
-  swamp:    "#16a085",
+  forest:   "#00ff41",
+  desert:   "#ffae00",
+  mountain: "#9d8fff",
+  plains:   "#39ff14",
+  water:    "#00d4ff",
+  tundra:   "#b0e8ff",
+  volcanic: "#ff3d00",
+  swamp:    "#00ffcc",
 };
 
 function getPlotColor(
@@ -179,9 +180,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  // Equivalent of plotSize * 0.007/0.0125 scaling; border gap tightened (ring 0.78→0.6 equivalent).
-  const fillSize   = GLOBE_RADIUS * 0.014;
-  const borderSize = GLOBE_RADIUS * 0.016;
+  const fillSize   = GLOBE_RADIUS * 0.022;
+  const borderSize = GLOBE_RADIUS * 0.025;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -302,7 +302,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial transparent opacity={0.90} depthWrite={false} side={THREE.DoubleSide} />
       </instancedMesh>
 
-      {/* Fill layer — biome/ownership colors, sits in front */}
+      {/* Fill layer — biome/ownership colors, sits in front, unlit so no dark-side shadowing */}
       <instancedMesh
         ref={fillMeshRef}
         args={[undefined, undefined, PLOT_COUNT]}
@@ -311,14 +311,11 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         onClick={handleClick}
       >
         <circleGeometry args={[0.5, 6]} />
-        <meshPhongMaterial
+        <meshBasicMaterial
           transparent
-          opacity={0.92}
+          opacity={0.95}
           depthWrite={false}
           side={THREE.DoubleSide}
-          emissive={new THREE.Color(0.1, 0.1, 0.1)}
-          emissiveIntensity={0.3}
-          shininess={40}
         />
       </instancedMesh>
     </>
