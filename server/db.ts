@@ -6,8 +6,23 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set");
 }
 
+// Strip the sslmode param from the connection string — we configure SSL
+// explicitly below via the `ssl` object. Leaving sslmode=require in the URL
+// causes pg-connection-string to emit a SECURITY WARNING about upcoming
+// semantic changes in pg v9 / pg-connection-string v3, which pollutes logs.
+function sanitizeDbUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    // Non-URL connection strings (e.g. key=value format) — return as-is.
+    return url;
+  }
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: sanitizeDbUrl(process.env.DATABASE_URL),
   ssl: { rejectUnauthorized: false },
   max: 5,
   connectionTimeoutMillis: 15000,
