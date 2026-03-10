@@ -1,0 +1,164 @@
+FRONTIER — On-Chain Token Burn Wiring
+Pass: Token Burn Pass
+
+Context:
+Currently when players spend FRONTIER tokens (build improvements, mint Commanders, deploy drones/satellites, attack with crystal burn), the DB balance is deducted correctly but NO on-chain transaction fires. Tokens remain in the player's wallet on-chain indefinitely. This must be fixed before mainnet.
+
+The FRONTIER ASA has clawback authority set to the admin wallet on testnet. The fix is to add a clawbackFrontierAsa() function to server/services/chain/asa.ts that pulls the spend amount from the player's wallet using a clawback transaction, and wire it into every route handler that involves a FRONTIER spend.
+
+DO NOT TOUCH: storage.ts game logic, db-schema.ts, battle engine, wsServer.ts, server/index.ts, or any file not listed below. Only server/routes.ts and server/services/chain/asa.ts are to be modified.
+
+---
+
+Edit 1 — server/services/chain/asa.ts — Add clawbackFrontierAsa() function
+
+After the existing batchedTransferFrontierAsa export, add this new exported function:
+
+/**
+ * Clawback FRONTIER tokens from a player wallet back to the admin wallet.
+ * Used when a player spends tokens on in-game actions (build, attack, commander mint, etc).
+ * The admin wallet must be the clawback address on the FRONTIER ASA.
+ * Fire-and-forget safe — logs failure without throwing so game action is not blocked.
+ */
+export async function clawbackFrontierAsa(
+  fromAddress: string,
+  amount: number,
+  note?: string
+): Promise<string | null> {
+  const asaId = _frontierAsaId;
+  if (!asaId) {
+    console.warn('[chain/asa] clawbackFrontierAsa: ASA ID not set, skipping clawback');
+    return null;
+  }
+  if (amount <= 0) return null;
+
+  try {
+    const algod   = getAlgodClient();
+    const account = getAdminAccount();
+    const sp      = await algod.getTransactionParams().do();
+    const microAmount = BigInt(Math.round(amount * 1_000_000));
+
+    const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      sender:          account.addr.toString(),
+      receiver:        account.addr.toString(), // tokens return to admin
+      revocationTarget: fromAddress,            // clawback FROM player
+      amount:          microAmount,
+      assetIndex:      asaId,
+      suggestedParams: sp,
+      note:            new TextEncoder().encode(note ?? `FRONTIER burn: ${amount} from ${fromAddress}`),
+    });
+
+    const signed   = txn.signTxn(account.sk);
+    const response = await algod.sendRawTransaction(signed).do();
+    const txId     = response.txid || txn.txID();
+    await algosdk.waitForConfirmation(algod, txId, 4);
+
+    console.log(`[chain/asa] clawback ${amount} FRONTIER from ${fromAddress} txId=${txId}`);
+    return txId;
+  } catch (err) {
+    console.error(`[chain/asa] clawbackFrontierAsa failed for ${fromAddress}:`, err);
+    return null;
+  }
+}
+
+---
+
+Edit 2 — server/routes.ts — Import clawbackFrontierAsa
+
+Find the existing import line:
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa } from "./services/chain/asa";
+
+Replace with:
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
+
+---
+
+Edit 3 — server/routes.ts — Add helper function for fire-and-forget burn
+
+After the imports block and before the first route handler, add this helper:
+
+/**
+ * Fire-and-forget on-chain FRONTIER burn via clawback.
+ * Only fires for real wallets (not AI, not placeholder addresses).
+ * Game action is never blocked if this fails — DB is source of truth.
+ */
+function fireBurn(walletAddress: string, amount: number, note: string): void {
+  const asaId = getFrontierAsaId();
+  const isRealWallet =
+    walletAddress &&
+    walletAddress !== 'PLAYER_WALLET' &&
+    !walletAddress.startsWith('AI_') &&
+    algosdk.isValidAddress(walletAddress);
+
+  if (!asaId || !isRealWallet || amount <= 0) return;
+
+  clawbackFrontierAsa(walletAddress, amount, note)
+    .then(txId => { if (txId) console.log(`[burn] ${amount} FRONTIER from ${walletAddress} txId=${txId}`); })
+    .catch(err => console.error('[burn] clawback failed:', err));
+}
+
+---
+
+Edit 4 — server/routes.ts — Wire fireBurn() into every FRONTIER spend action
+
+For each of the following action handlers, get the player after the storage call succeeds and fire the burn. The pattern is the same for each — add the fireBurn call immediately after the storage call succeeds and before res.json().
+
+**app.post("/api/actions/build")**
+After: const parcel = await storage.buildImprovement(action);
+Add:
+  const buildPlayer = await storage.getPlayer(action.playerId);
+  if (buildPlayer && action.frontierCost > 0) {
+    fireBurn(buildPlayer.address, action.frontierCost, `Build improvement plotId=${parcel.plotId}`);
+  }
+
+Note: if action.frontierCost is not in the build action schema, use the storage result to determine cost — check what buildImprovement returns and use the FACILITY_INFO costFrontier value for the level built.
+
+**app.post("/api/actions/mint-avatar")** (Commander mint)
+After: const avatar = await storage.mintAvatar(action);
+Add:
+  const mintPlayer = await storage.getPlayer(action.playerId);
+  if (mintPlayer) {
+    const { COMMANDER_INFO } = await import('@shared/schema');
+    const cost = COMMANDER_INFO[action.tier]?.mintCostFrontier ?? 0;
+    if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+  }
+
+**app.post("/api/actions/deploy-drone")**
+After: const drone = await storage.deployDrone(action);
+Add:
+  const dronePlayer = await storage.getPlayer(action.playerId);
+  if (dronePlayer) {
+    const { DRONE_MINT_COST_FRONTIER } = await import('@shared/schema');
+    fireBurn(dronePlayer.address, DRONE_MINT_COST_FRONTIER, `Drone deploy`);
+  }
+
+**app.post("/api/actions/deploy-satellite")**
+After: const satellite = await storage.deploySatellite(action);
+Add:
+  const satPlayer = await storage.getPlayer(action.playerId);
+  if (satPlayer) {
+    const { SATELLITE_DEPLOY_COST_FRONTIER } = await import('@shared/schema');
+    fireBurn(satPlayer.address, SATELLITE_DEPLOY_COST_FRONTIER, `Satellite deploy`);
+  }
+
+**app.post("/api/actions/attack")** (crystal burn only — iron/fuel are not on-chain tokens)
+After: const battle = await storage.deployAttack(action);
+Add:
+  if (action.crystalBurned > 0) {
+    const attackPlayer = await storage.getPlayer(action.attackerId);
+    if (attackPlayer) fireBurn(attackPlayer.address, action.crystalBurned, `Crystal burn battleId=${battle.id}`);
+  }
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- clawbackFrontierAsa is exported from asa.ts
+- fireBurn helper exists in routes.ts
+- Build action fires clawback for FRONTIER cost
+- Commander mint fires clawback for mintCostFrontier
+- Drone deploy fires clawback for DRONE_MINT_COST_FRONTIER
+- Satellite deploy fires clawback for SATELLITE_DEPLOY_COST_FRONTIER
+- Attack fires clawback for crystalBurned if > 0
+- No game action is blocked if clawback fails — all burns are fire-and-forget
+- Only server/routes.ts and server/services/chain/asa.ts were modified

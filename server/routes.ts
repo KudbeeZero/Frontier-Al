@@ -13,7 +13,7 @@ import { appendWorldEvent, listWorldEvents, getRecentWorldEvents, seedDemoWorldE
 // ── Chain Service ─────────────────────────────────────────────────────────────
 // All algosdk usage is now isolated in server/services/chain/*.
 // Routes import ONLY from the service layer — never from algosdk directly.
-import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa } from "./services/chain/asa";
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
 import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
 import { mintLandNft, transferLandNft } from "./services/chain/land";
 import {
@@ -25,6 +25,26 @@ import {
 
 const algodClient    = getAlgodClient();
 const indexerClient  = getIndexerClient();
+
+/**
+ * Fire-and-forget on-chain FRONTIER burn via clawback.
+ * Only fires for real wallets (not AI, not placeholder addresses).
+ * Game action is never blocked if this fails — DB is source of truth.
+ */
+function fireBurn(walletAddress: string, amount: number, note: string): void {
+  const asaId = getFrontierAsaId();
+  const isRealWallet =
+    walletAddress &&
+    walletAddress !== 'PLAYER_WALLET' &&
+    !walletAddress.startsWith('AI_') &&
+    algosdk.isValidAddress(walletAddress);
+
+  if (!asaId || !isRealWallet || amount <= 0) return;
+
+  clawbackFrontierAsa(walletAddress, amount, note)
+    .then(txId => { if (txId) console.log(`[burn] ${amount} FRONTIER from ${walletAddress} txId=${txId}`); })
+    .catch(err => console.error('[burn] clawback failed:', err));
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -621,6 +641,10 @@ export async function registerRoutes(
     try {
       const action = attackActionSchema.parse(req.body);
       const battle = await storage.deployAttack(action);
+      if (action.crystalBurned && action.crystalBurned > 0) {
+        const attackPlayer = await storage.getPlayer(action.attackerId);
+        if (attackPlayer) fireBurn(attackPlayer.address, action.crystalBurned, `Crystal burn battleId=${battle.id}`);
+      }
       res.json({ success: true, battle });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
@@ -641,6 +665,15 @@ export async function registerRoutes(
     try {
       const action = buildActionSchema.parse(req.body);
       const parcel = await storage.buildImprovement(action);
+      const buildPlayer = await storage.getPlayer(action.playerId);
+      if (buildPlayer) {
+        const { FACILITY_INFO } = await import('@shared/schema');
+        const info = FACILITY_INFO[action.improvementType as keyof typeof FACILITY_INFO];
+        const built = parcel.improvements?.find((i: any) => i.type === action.improvementType);
+        const level = built?.level ?? 1;
+        const cost = info?.costFrontier?.[level - 1] ?? 0;
+        if (cost > 0) fireBurn(buildPlayer.address, cost, `Build improvement plotId=${parcel.plotId}`);
+      }
       res.json({ success: true, parcel });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
@@ -839,6 +872,12 @@ export async function registerRoutes(
     try {
       const action = mintAvatarActionSchema.parse(req.body);
       const avatar = await storage.mintAvatar(action);
+      const mintPlayer = await storage.getPlayer(action.playerId);
+      if (mintPlayer) {
+        const { COMMANDER_INFO } = await import('@shared/schema');
+        const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
+        if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+      }
       res.json({ success: true, avatar });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
@@ -878,6 +917,11 @@ export async function registerRoutes(
     try {
       const action = deployDroneActionSchema.parse(req.body);
       const drone = await storage.deployDrone(action);
+      const dronePlayer = await storage.getPlayer(action.playerId);
+      if (dronePlayer) {
+        const { DRONE_MINT_COST_FRONTIER } = await import('@shared/schema');
+        fireBurn(dronePlayer.address, DRONE_MINT_COST_FRONTIER, `Drone deploy`);
+      }
       res.json({ success: true, drone });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);
@@ -891,6 +935,11 @@ export async function registerRoutes(
     try {
       const action = deploySatelliteActionSchema.parse(req.body);
       const satellite = await storage.deploySatellite(action);
+      const satPlayer = await storage.getPlayer(action.playerId);
+      if (satPlayer) {
+        const { SATELLITE_DEPLOY_COST_FRONTIER } = await import('@shared/schema');
+        fireBurn(satPlayer.address, SATELLITE_DEPLOY_COST_FRONTIER, `Satellite deploy`);
+      }
       res.json({ success: true, satellite });
       const gameState = await storage.getGameState();
       broadcastGameState(gameState);

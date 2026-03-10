@@ -276,6 +276,53 @@ export function batchedTransferFrontierAsa(toAddress: string, amount: number): P
   return _batcher.queue(toAddress, amount);
 }
 
+/**
+ * Clawback FRONTIER tokens from a player wallet back to the admin wallet.
+ * Used when a player spends tokens on in-game actions (build, attack, commander mint, etc).
+ * The admin wallet must be the clawback address on the FRONTIER ASA.
+ * Fire-and-forget safe — logs failure without throwing so game action is not blocked.
+ */
+export async function clawbackFrontierAsa(
+  fromAddress: string,
+  amount: number,
+  note?: string
+): Promise<string | null> {
+  const asaId = _frontierAsaId;
+  if (!asaId) {
+    console.warn('[chain/asa] clawbackFrontierAsa: ASA ID not set, skipping clawback');
+    return null;
+  }
+  if (amount <= 0) return null;
+
+  try {
+    const algod   = getAlgodClient();
+    const account = getAdminAccount();
+    const sp      = await algod.getTransactionParams().do();
+    const microAmount = BigInt(Math.round(amount * 1_000_000));
+
+    const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      sender:          account.addr.toString(),
+      receiver:        account.addr.toString(),
+      revocationTarget: fromAddress,
+      amount:          microAmount,
+      assetIndex:      asaId,
+      suggestedParams: sp,
+      note:            new TextEncoder().encode(note ?? `FRONTIER burn: ${amount} from ${fromAddress}`),
+    });
+
+    const signed   = txn.signTxn(account.sk);
+    const response = await algod.sendRawTransaction(signed).do();
+    const txId     = response.txid || txn.txID();
+    await algosdk.waitForConfirmation(algod, txId, 4);
+
+    console.log(`[chain/asa] clawback ${amount} FRONTIER from ${fromAddress} txId=${txId}`);
+    return txId;
+  } catch (err) {
+    console.error(`[chain/asa] clawbackFrontierAsa failed for ${fromAddress}:`, err);
+    return null;
+  }
+}
+
 // ── ASA Transfer ──────────────────────────────────────────────────────────────
 
 export async function transferAsa(
