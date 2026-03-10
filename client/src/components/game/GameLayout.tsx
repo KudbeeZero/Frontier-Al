@@ -700,7 +700,16 @@ export function GameLayout() {
       ) : null}
 
       <div className="absolute top-0 left-0 right-0 z-40">
-        <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
+        <TopBar
+          isConnected={isConnected}
+          mobileMenuContent={mobileMenuContent}
+          mobileResources={player ? {
+            iron:     player.iron,
+            fuel:     player.fuel,
+            crystal:  player.crystal,
+            frontier: player.frontier,
+          } : null}
+        />
       </div>
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
@@ -719,7 +728,7 @@ export function GameLayout() {
       )}
 
       {player && (
-        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
+        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20 hidden sm:block", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
           <ResourceHUD
             iron={player.iron}
             fuel={player.fuel}
