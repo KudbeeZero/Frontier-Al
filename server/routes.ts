@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { getBattleReplay } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
@@ -1141,6 +1142,27 @@ export async function registerRoutes(
   app.get("/api/world/events/recent", (_req, res) => {
     try { res.json(getRecentWorldEvents()); }
     catch { res.status(500).json({ error: "Failed to fetch recent events" }); }
+  });
+
+  // Battle replay — returns the stored replay record for a resolved battle.
+  // Available for 24 hours after resolution. Returns 404 after expiry.
+  app.get("/api/battle/replay/:battleId", async (req, res) => {
+    try {
+      const { battleId } = req.params;
+      if (!battleId || typeof battleId !== "string") {
+        return res.status(400).json({ error: "battleId is required" });
+      }
+      const replay = await getBattleReplay(battleId);
+      if (!replay) {
+        return res.status(404).json({
+          error: "Replay not available",
+          reason: "Battle replay expires after 24 hours or Redis is not configured"
+        });
+      }
+      res.json(replay);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch battle replay" });
+    }
   });
 
 

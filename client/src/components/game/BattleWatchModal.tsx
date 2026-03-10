@@ -25,6 +25,23 @@ interface BattleEvent {
   side: "attacker" | "defender" | "neutral";
 }
 
+interface ReplayLog {
+  phase: string;
+  message: string;
+}
+
+interface BattleReplay {
+  attackerPower: number;
+  defenderPower: number;
+  randFactor: number;
+  outcome: "attacker_wins" | "defender_wins";
+  pillagedIron: number;
+  pillagedFuel: number;
+  pillagedCrystal: number;
+  resolvedAt: number;
+  log: ReplayLog[];
+}
+
 function generateEvents(
   battle: Battle,
   attackerName: string,
@@ -143,6 +160,22 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [open]);
+
+  const [replay, setReplay] = useState<BattleReplay | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !battle || battle.status !== "resolved") {
+      setReplay(null);
+      return;
+    }
+    setReplayLoading(true);
+    fetch(`/api/battle/replay/${battle.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => setReplay(data))
+      .catch(() => setReplay(null))
+      .finally(() => setReplayLoading(false));
+  }, [open, battle?.id, battle?.status]);
 
   if (!battle) return null;
 
@@ -272,6 +305,34 @@ export function BattleWatchModal({ open, onOpenChange, battle, players }: Battle
               ))}
             </div>
           </div>
+
+          {/* Real replay log — shown when Redis replay is available */}
+          {battle.status === "resolved" && (
+            <div className="mt-3 border border-border rounded-md p-3 space-y-1.5 bg-card/50">
+              <p className="font-display text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                Battle Analysis
+              </p>
+              {replayLoading && (
+                <p className="text-xs text-muted-foreground">Loading analysis...</p>
+              )}
+              {!replayLoading && replay && replay.log.map((entry, i) => (
+                <div key={i} className="text-xs text-muted-foreground font-mono leading-relaxed">
+                  <span className="text-primary/60 mr-2">[{entry.phase}]</span>
+                  {entry.message}
+                </div>
+              ))}
+              {!replayLoading && replay && (replay.pillagedIron > 0 || replay.pillagedFuel > 0 || replay.pillagedCrystal > 0) && (
+                <div className="text-xs text-amber-400 mt-1">
+                  Pillaged: {replay.pillagedIron} iron · {replay.pillagedFuel} fuel · {replay.pillagedCrystal} crystal
+                </div>
+              )}
+              {!replayLoading && !replay && battle.status === "resolved" && (
+                <p className="text-xs text-muted-foreground italic">
+                  Replay expired or unavailable (replays are stored for 24 hours)
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Outcome Banner */}
           {isResolved && battle.outcome && (

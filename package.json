@@ -47,6 +47,7 @@
     "@react-three/fiber": "^8.17.10",
     "@tanstack/react-query": "^5.60.5",
     "@types/three": "^0.170.0",
+    "@upstash/redis": "^1.36.4",
     "algosdk": "^3.5.2",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { saveBattleReplay, type BattleReplayRecord } from "../services/redis";
 import type {
   LandParcel,
   Player,
@@ -1550,6 +1551,33 @@ export class DbStorage implements IStorage {
             timestamp:   now,
           }, tx);
         }
+
+        // ── Save replay to Redis (fire-and-forget, 24-hour TTL) ──────────
+        const replayRecord: BattleReplayRecord = {
+          battleId:       battleRow.id,
+          attackerName:   attackerRow.name,
+          defenderName:   battleRow.defenderId
+            ? (allAiPlayers.find((p: any) => p.id === battleRow.defenderId)?.name ?? "Defender")
+            : "Unclaimed",
+          attackerPower:  battleRow.attackerPower * (1 + randFactor / 100),
+          defenderPower:  battleRow.defenderPower,
+          randFactor,
+          outcome:        outcome as "attacker_wins" | "defender_wins",
+          plotId:         targetRow.plotId,
+          biome:          targetRow.biome,
+          pillagedIron:   attackerWins ? Math.floor(targetRow.ironStored    * PILLAGE_RATE) : 0,
+          pillagedFuel:   attackerWins ? Math.floor(targetRow.fuelStored    * PILLAGE_RATE) : 0,
+          pillagedCrystal: attackerWins ? Math.floor(targetRow.crystalStored * PILLAGE_RATE) : 0,
+          resolvedAt:     now,
+          log: [
+            { phase: "power_calc", message: `Attacker power: ${(battleRow.attackerPower * (1 + randFactor / 100)).toFixed(2)} vs Defender power: ${battleRow.defenderPower.toFixed(2)}` },
+            { phase: "resolution", message: `Rand factor: ${randFactor > 0 ? "+" : ""}${randFactor}% — Outcome: ${outcome}` },
+            attackerWins
+              ? { phase: "resolution", message: `${attackerRow.name} conquered plot #${targetRow.plotId}. Pillaged ${Math.floor(targetRow.ironStored * PILLAGE_RATE)} iron, ${Math.floor(targetRow.fuelStored * PILLAGE_RATE)} fuel.` }
+              : { phase: "resolution", message: `Defense held at plot #${targetRow.plotId}. ${attackerRow.name}'s attack was repelled.` },
+          ],
+        };
+        saveBattleReplay(replayRecord).catch(() => {});
 
         await this.bumpLastTs(now, tx);
         resolved.push(rowToBattle({ ...battleRow, status: "resolved", outcome, randFactor }));

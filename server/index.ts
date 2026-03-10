@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { hydrateWorldEventsFromRedis } from "./worldEventStore";
 import { assertChainConfig } from "./services/chain/client";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -88,6 +89,8 @@ app.use((req, res, next) => {
   assertChainConfig();
   const { initWsServer } = await import("./wsServer");
   initWsServer(httpServer, storage);
+  // Hydrate world event feed from Redis (no-op if Redis unavailable)
+  await hydrateWorldEventsFromRedis();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

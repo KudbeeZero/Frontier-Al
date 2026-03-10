@@ -1,0 +1,413 @@
+PASS: Upstash-Redis-BattleReplay-WorldEvents
+
+# Context
+FRONTIER production MMO. Adding Upstash Redis for two purposes:
+  1. Persist world events across server restarts (replaces the in-memory array in worldEventStore.ts)
+  2. Store battle replay logs for 24 hours so players can watch any recent battle
+
+Two Replit secrets will already be set before this prompt runs:
+  UPSTASH_REDIS_REST_URL  — from the Upstash console
+  UPSTASH_REDIS_REST_TOKEN — from the Upstash console
+
+If those secrets are missing, all Redis operations must fail silently and
+fall back to the existing in-memory behaviour. The game must never crash
+or throw an unhandled error because Redis is unavailable.
+
+─────────────────────────────────────────────────────────────────────────
+# Step 1 — Install the Upstash Redis client
+─────────────────────────────────────────────────────────────────────────
+
+In package.json, add to dependencies:
+  "@upstash/redis": "^1.34.0"
+
+─────────────────────────────────────────────────────────────────────────
+# Step 2 — Create server/services/redis.ts  (NEW FILE)
+─────────────────────────────────────────────────────────────────────────
+
+Create this file exactly:
+
+/**
+ * server/services/redis.ts
+ *
+ * Upstash Redis client for FRONTIER.
+ * Used for:
+ *   - World event persistence (survives server restarts)
+ *   - Battle replay log storage (24-hour TTL)
+ *
+ * All exports fail silently if UPSTASH_REDIS_REST_URL is not set.
+ * The game never depends on Redis being available — it is an enhancement layer only.
+ */
+
+import { Redis } from "@upstash/redis";
+
+const BATTLE_REPLAY_TTL_S  = 86_400;       // 24 hours in seconds
+const WORLD_EVENT_TTL_S    = 86_400;       // 24 hours
+const WORLD_EVENT_ZSET_KEY = "frontier:world_events";
+const MAX_ZSET_MEMBERS     = 2000;         // cap the sorted set size
+
+let _redis: Redis | null = null;
+
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
+  const url   = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    _redis = new Redis({ url, token });
+    return _redis;
+  } catch {
+    return null;
+  }
+}
+
+// ── Battle Replay ────────────────────────────────────────────────────────────
+
+export interface BattleReplayRecord {
+  battleId:      string;
+  attackerName:  string;
+  defenderName:  string;
+  attackerPower: number;
+  defenderPower: number;
+  randFactor:    number;
+  outcome:       "attacker_wins" | "defender_wins";
+  plotId:        number;
+  biome:         string;
+  pillagedIron:  number;
+  pillagedFuel:  number;
+  pillagedCrystal: number;
+  resolvedAt:    number;
+  log: Array<{ phase: string; message: string }>;
+}
+
+export async function saveBattleReplay(record: BattleReplayRecord): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.set(
+      `frontier:battle:replay:${record.battleId}`,
+      JSON.stringify(record),
+      { ex: BATTLE_REPLAY_TTL_S }
+    );
+  } catch {
+    // Non-fatal — game continues without replay storage
+  }
+}
+
+export async function getBattleReplay(battleId: string): Promise<BattleReplayRecord | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    const raw = await r.get<string>(`frontier:battle:replay:${battleId}`);
+    if (!raw) return null;
+    return typeof raw === "string" ? JSON.parse(raw) : raw as BattleReplayRecord;
+  } catch {
+    return null;
+  }
+}
+
+// ── World Event Persistence ──────────────────────────────────────────────────
+
+export async function redisAppendWorldEvent(event: {
+  id: string;
+  timestamp: number;
+  [key: string]: unknown;
+}): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    // Store as a sorted set member, scored by timestamp for range queries
+    await r.zadd(WORLD_EVENT_ZSET_KEY, {
+      score: event.timestamp,
+      member: JSON.stringify(event),
+    });
+    // Trim to MAX_ZSET_MEMBERS — remove oldest entries beyond the cap
+    await r.zremrangebyrank(WORLD_EVENT_ZSET_KEY, 0, -(MAX_ZSET_MEMBERS + 1));
+    // Refresh the key TTL on every write so active servers never expire it
+    await r.expire(WORLD_EVENT_ZSET_KEY, WORLD_EVENT_TTL_S);
+  } catch {
+    // Non-fatal
+  }
+}
+
+export async function redisGetWorldEvents(
+  startTs: number,
+  endTs: number = Date.now()
+): Promise<unknown[]> {
+  const r = getRedis();
+  if (!r) return [];
+  try {
+    const members = await r.zrangebyscore(
+      WORLD_EVENT_ZSET_KEY,
+      startTs,
+      endTs
+    );
+    return (members as string[]).map((m) => {
+      try { return JSON.parse(m); } catch { return null; }
+    }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+─────────────────────────────────────────────────────────────────────────
+# Step 3 — Update server/worldEventStore.ts
+─────────────────────────────────────────────────────────────────────────
+
+Replace the entire file with this:
+
+import { randomUUID } from "crypto";
+import type { WorldEvent, WorldEventFilters } from "@shared/worldEvents";
+import { redisAppendWorldEvent, redisGetWorldEvents } from "./services/redis";
+
+const MAX_EVENTS = 5000;
+// In-memory store remains as the primary/fallback layer.
+// Redis is written to in parallel for persistence across restarts.
+const store: WorldEvent[] = [];
+
+export function appendWorldEvent(
+  event: Omit<WorldEvent, "id"> & { id?: string }
+): WorldEvent {
+  const full: WorldEvent = { ...event, id: event.id ?? randomUUID() };
+  store.push(full);
+  if (store.length > MAX_EVENTS) store.splice(0, store.length - MAX_EVENTS);
+  // Fire-and-forget Redis write — never blocks game logic
+  redisAppendWorldEvent(full).catch(() => {});
+  return full;
+}
+
+export function listWorldEvents(filters: WorldEventFilters = {}): WorldEvent[] {
+  let result = [...store];
+  if (filters.start !== undefined) result = result.filter(e => e.timestamp >= filters.start!);
+  if (filters.end   !== undefined) result = result.filter(e => e.timestamp <= filters.end!);
+  if (filters.types && filters.types.length > 0) {
+    result = result.filter(e => filters.types!.includes(e.type));
+  }
+  result.sort((a, b) => b.timestamp - a.timestamp);
+  if (filters.limit) result = result.slice(0, filters.limit);
+  return result;
+}
+
+export function getRecentWorldEvents(ms = 15 * 60 * 1000): WorldEvent[] {
+  return listWorldEvents({ start: Date.now() - ms, limit: 200 });
+}
+
+/**
+ * Called once at server startup to hydrate the in-memory store from Redis.
+ * This recovers world events that were written before the last restart.
+ * Safe to call even if Redis is unavailable — returns immediately.
+ */
+export async function hydrateWorldEventsFromRedis(): Promise<void> {
+  try {
+    const since = Date.now() - 24 * 60 * 60 * 1000; // last 24 hours
+    const events = await redisGetWorldEvents(since);
+    for (const e of events as WorldEvent[]) {
+      if (e && e.id && !store.find((s) => s.id === e.id)) {
+        store.push(e);
+      }
+    }
+    store.sort((a, b) => a.timestamp - b.timestamp);
+    if (store.length > MAX_EVENTS) store.splice(0, store.length - MAX_EVENTS);
+    if (events.length > 0) {
+      console.log(`[worldEventStore] Hydrated ${events.length} events from Redis`);
+    }
+  } catch {
+    // Non-fatal — in-memory store starts empty if Redis unavailable
+  }
+}
+
+─────────────────────────────────────────────────────────────────────────
+# Step 4 — Call hydrateWorldEventsFromRedis() at server startup
+─────────────────────────────────────────────────────────────────────────
+
+In server/index.ts, add this import near the top with the other imports:
+  import { hydrateWorldEventsFromRedis } from "./worldEventStore";
+
+Inside the async IIFE, BEFORE the line `await registerRoutes(httpServer, app)`, add:
+  // Hydrate world event feed from Redis (no-op if Redis unavailable)
+  await hydrateWorldEventsFromRedis();
+
+─────────────────────────────────────────────────────────────────────────
+# Step 5 — Save battle replay inside resolveBattles() in server/storage/db.ts
+─────────────────────────────────────────────────────────────────────────
+
+In server/storage/db.ts, add this import at the top of the file with the
+other imports:
+  import { saveBattleReplay, type BattleReplayRecord } from "../services/redis";
+
+Inside the resolveBattles() method, find the line near the end of the
+transaction that pushes to the resolved array:
+  resolved.push(rowToBattle({ ...battleRow, status: "resolved", outcome, randFactor }));
+
+IMMEDIATELY BEFORE that line, add this block:
+
+        // ── Save replay to Redis (fire-and-forget, 24-hour TTL) ──────────
+        const replayRecord: BattleReplayRecord = {
+          battleId:       battleRow.id,
+          attackerName:   attackerRow.name,
+          defenderName:   battleRow.defenderId
+            ? (allAiPlayers.find((p: any) => p.id === battleRow.defenderId)?.name ?? "Defender")
+            : "Unclaimed",
+          attackerPower:  battleRow.attackerPower * (1 + randFactor / 100),
+          defenderPower:  battleRow.defenderPower,
+          randFactor,
+          outcome:        outcome as "attacker_wins" | "defender_wins",
+          plotId:         targetRow.plotId,
+          biome:          targetRow.biome,
+          pillagedIron:   attackerWins ? Math.floor(targetRow.ironStored    * PILLAGE_RATE) : 0,
+          pillagedFuel:   attackerWins ? Math.floor(targetRow.fuelStored    * PILLAGE_RATE) : 0,
+          pillagedCrystal: attackerWins ? Math.floor(targetRow.crystalStored * PILLAGE_RATE) : 0,
+          resolvedAt:     now,
+          log: [
+            { phase: "power_calc", message: `Attacker power: ${(battleRow.attackerPower * (1 + randFactor / 100)).toFixed(2)} vs Defender power: ${battleRow.defenderPower.toFixed(2)}` },
+            { phase: "resolution", message: `Rand factor: ${randFactor > 0 ? "+" : ""}${randFactor}% — Outcome: ${outcome}` },
+            attackerWins
+              ? { phase: "resolution", message: `${attackerRow.name} conquered plot #${targetRow.plotId}. Pillaged ${Math.floor(targetRow.ironStored * PILLAGE_RATE)} iron, ${Math.floor(targetRow.fuelStored * PILLAGE_RATE)} fuel.` }
+              : { phase: "resolution", message: `Defense held at plot #${targetRow.plotId}. ${attackerRow.name}'s attack was repelled.` },
+          ],
+        };
+        saveBattleReplay(replayRecord).catch(() => {});
+
+─────────────────────────────────────────────────────────────────────────
+# Step 6 — Add the replay API endpoint in server/routes.ts
+─────────────────────────────────────────────────────────────────────────
+
+In server/routes.ts, add this import at the top with the other imports:
+  import { getBattleReplay } from "./services/redis";
+
+In server/routes.ts, find the existing endpoint:
+  app.get("/api/world/events/recent", ...)
+
+AFTER that endpoint block, add this new endpoint:
+
+  // Battle replay — returns the stored replay record for a resolved battle.
+  // Available for 24 hours after resolution. Returns 404 after expiry.
+  app.get("/api/battle/replay/:battleId", async (req, res) => {
+    try {
+      const { battleId } = req.params;
+      if (!battleId || typeof battleId !== "string") {
+        return res.status(400).json({ error: "battleId is required" });
+      }
+      const replay = await getBattleReplay(battleId);
+      if (!replay) {
+        return res.status(404).json({
+          error: "Replay not available",
+          reason: "Battle replay expires after 24 hours or Redis is not configured"
+        });
+      }
+      res.json(replay);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch battle replay" });
+    }
+  });
+
+─────────────────────────────────────────────────────────────────────────
+# Step 7 — Update BattleWatchModal.tsx to fetch and display the real replay
+─────────────────────────────────────────────────────────────────────────
+
+In client/src/components/game/BattleWatchModal.tsx:
+
+Add these imports at the top (with existing imports):
+  import { useEffect, useState, useRef } from "react";
+
+Add a new interface near the top of the file (after existing interfaces):
+
+interface ReplayLog {
+  phase: string;
+  message: string;
+}
+
+interface BattleReplay {
+  attackerPower: number;
+  defenderPower: number;
+  randFactor: number;
+  outcome: "attacker_wins" | "defender_wins";
+  pillagedIron: number;
+  pillagedFuel: number;
+  pillagedCrystal: number;
+  resolvedAt: number;
+  log: ReplayLog[];
+}
+
+Inside the BattleWatchModal component function, AFTER the existing useState
+and useEffect for the clock interval, add:
+
+  const [replay, setReplay] = useState<BattleReplay | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
+
+  // Fetch the real replay log when the modal opens for a resolved battle
+  useEffect(() => {
+    if (!open || !battle || battle.status !== "resolved") {
+      setReplay(null);
+      return;
+    }
+    setReplayLoading(true);
+    fetch(`/api/battle/replay/${battle.id}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => setReplay(data))
+      .catch(() => setReplay(null))
+      .finally(() => setReplayLoading(false));
+  }, [open, battle?.id, battle?.status]);
+
+In the JSX, find the section that renders the battle event feed (the list
+of BattleEvent items with attacker/defender/neutral sides). After the
+existing feed, add a new section that shows the real replay log when
+available. Add this block inside the scrollable content div, after the
+existing events feed:
+
+  {/* Real replay log — shown when Redis replay is available */}
+  {battle.status === "resolved" && (
+    <div className="mt-3 border border-border rounded-md p-3 space-y-1.5 bg-card/50">
+      <p className="font-display text-xs uppercase tracking-wide text-muted-foreground mb-2">
+        Battle Analysis
+      </p>
+      {replayLoading && (
+        <p className="text-xs text-muted-foreground">Loading analysis...</p>
+      )}
+      {!replayLoading && replay && replay.log.map((entry, i) => (
+        <div key={i} className="text-xs text-muted-foreground font-mono leading-relaxed">
+          <span className="text-primary/60 mr-2">[{entry.phase}]</span>
+          {entry.message}
+        </div>
+      ))}
+      {!replayLoading && replay && (replay.pillagedIron > 0 || replay.pillagedFuel > 0 || replay.pillagedCrystal > 0) && (
+        <div className="text-xs text-amber-400 mt-1">
+          Pillaged: {replay.pillagedIron} iron · {replay.pillagedFuel} fuel · {replay.pillagedCrystal} crystal
+        </div>
+      )}
+      {!replayLoading && !replay && battle.status === "resolved" && (
+        <p className="text-xs text-muted-foreground italic">
+          Replay expired or unavailable (replays are stored for 24 hours)
+        </p>
+      )}
+    </div>
+  )}
+
+─────────────────────────────────────────────────────────────────────────
+# DO NOT TOUCH
+─────────────────────────────────────────────────────────────────────────
+- Do NOT modify shared/schema.ts
+- Do NOT modify server/storage/interface.ts
+- Do NOT modify server/storage/mem.ts
+- Do NOT modify server/engine/battle/resolve.ts or tuning.ts
+- Do NOT modify server/services/chain/* (any chain service file)
+- Do NOT modify server/wsServer.ts
+- Do NOT modify server/db-schema.ts
+- Do NOT modify any existing API endpoints
+- Do NOT change the existing generateEvents() function in BattleWatchModal.tsx
+  (it remains as the live battle feed during pending battles)
+- Do NOT add Redis as a hard dependency — every Redis call must be wrapped
+  in try/catch and the game must work identically if Redis is unavailable
+
+─────────────────────────────────────────────────────────────────────────
+# VERIFY
+─────────────────────────────────────────────────────────────────────────
+[ ] npx tsc --noEmit reports zero errors
+[ ] server/services/redis.ts exists and exports: saveBattleReplay, getBattleReplay,
+    redisAppendWorldEvent, redisGetWorldEvents, BattleReplayRecord
+[ ] worldEventStore.ts imports from ./services/redis and calls redisAppendWorldEvent
+[ ] worldEventStore.ts exports hydrateWorldEventsFromRedis
+[ ] server/index.ts calls hydrateWorldEventsFromRedis() before registerRoutes()
+[ ] server/storage/db.ts imports saveBattleReplay and calls it inside resolveBattles()
+[ ] GET /api/battle/replay/:battleId endpoint exists in routes.ts
+[ ] BattleWatchModal.tsx fetches /api/battle/replay/:battleId when battle is resolved
+[ ] If UPSTASH_REDIS_REST_URL is not set, server starts normally with no errors
