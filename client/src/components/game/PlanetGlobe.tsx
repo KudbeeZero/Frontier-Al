@@ -364,6 +364,13 @@ function GlobeTerrain() {
     uniform vec3 sunDir;
     varying vec2 vUv;
     varying vec3 vWorldNormal;
+
+    // Boost colour saturation by pulling toward/away from the grey axis
+    vec3 saturate(vec3 c, float amount) {
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      return mix(vec3(lum), c, amount);
+    }
+
     void main() {
       vec3 n       = normalize(vWorldNormal);
       float NdotL  = dot(n, sunDir);
@@ -375,15 +382,16 @@ function GlobeTerrain() {
       float dayBlend   = smoothstep(-0.12, 0.18, NdotL);
       float nightBlend = 1.0 - dayBlend;
 
-      // Lit side: full albedo; dark side: very dim
-      vec3 terrain = mix(dayCol.rgb * 0.055, dayCol.rgb, dayBlend);
+      // Lit side: boosted saturation + slight brightness lift; dark side: very dim
+      vec3 saturatedDay = saturate(dayCol.rgb, 1.55) * 1.12;
+      vec3 terrain = mix(dayCol.rgb * 0.055, saturatedDay, dayBlend);
 
-      // Night lights — boosted and visible deep into dark hemisphere
-      vec3 nightGlow = nightCol.rgb * nightBlend * 2.6;
+      // Night lights — heavily boosted for visible city glow on dark side
+      vec3 nightGlow = saturate(nightCol.rgb, 1.8) * nightBlend * 3.5;
 
-      // Warm golden terminator crescent
-      float crescent = smoothstep(-0.28, 0.0, NdotL) * smoothstep(0.28, 0.0, NdotL);
-      vec3 termColor = vec3(1.0, 0.58, 0.12) * crescent * 0.45;
+      // Wide, bright golden terminator crescent
+      float crescent = smoothstep(-0.32, 0.0, NdotL) * smoothstep(0.32, 0.0, NdotL);
+      vec3 termColor = vec3(1.0, 0.62, 0.08) * crescent * 0.70;
 
       gl_FragColor = vec4(terrain + nightGlow + termColor, 1.0);
     }
@@ -450,8 +458,8 @@ function DarkSideGlow() {
       vec3 violetCol = vec3(0.38, 0.0,  0.95);
       vec3 color = mix(cyanCol, violetCol, t * darkFactor);
 
-      float alpha = darkFactor * 0.30 + crescent * 0.55;
-      gl_FragColor = vec4(color, alpha * 0.95);
+      float alpha = darkFactor * 0.48 + crescent * 0.78;
+      gl_FragColor = vec4(color, alpha);
     }
   `;
 
@@ -473,15 +481,15 @@ function DarkSideGlow() {
 
 function AtmosphereGlow() {
   const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.0, 0.65, 1.0) },
-    coefficient: { value: 0.58 },
-    power:       { value: 3.8 },
+    glowColor:   { value: new THREE.Color(0.0, 0.75, 1.0) },
+    coefficient: { value: 0.62 },
+    power:       { value: 3.2 },
   }), []);
 
   const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.0, 0.82, 0.95) },
-    coefficient: { value: 0.38 },
-    power:       { value: 5.5 },
+    glowColor:   { value: new THREE.Color(0.1, 0.90, 1.0) },
+    coefficient: { value: 0.40 },
+    power:       { value: 5.0 },
   }), []);
 
   const vertShader = `
@@ -501,7 +509,7 @@ function AtmosphereGlow() {
     varying vec3 vPositionNormal;
     void main() {
       float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity * 0.65);
+      gl_FragColor = vec4(glowColor, intensity * 0.80);
     }
   `;
 

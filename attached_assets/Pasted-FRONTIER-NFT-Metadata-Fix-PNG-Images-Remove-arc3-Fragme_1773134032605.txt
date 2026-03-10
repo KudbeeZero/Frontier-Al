@@ -1,0 +1,93 @@
+FRONTIER — NFT Metadata Fix: PNG Images + Remove #arc3 Fragment
+Pass: NFT-Meta-Fix
+
+Context:
+Three issues are preventing NFT images from appearing in Pera wallet:
+1. The assetURL baked on-chain ends with #arc3 — Pera's URL fetcher may
+   fail on fragment URLs. Remove the fragment from new mints.
+2. The metadata endpoint serves image as SVG. Pera's libmagic validator
+   often misidentifies SVG as text/xml and drops the image silently. PNG
+   is required for reliable wallet display.
+3. The metadata response uses image_mimetype which is not a standard ARC-3
+   field name — the correct field is image_integrity (optional) and the
+   mime type should be inferred from the URL. Clean this up.
+
+PNG files have already been added to client/public/nft/biomes/ alongside
+the existing SVGs. No file generation needed.
+
+DO NOT TOUCH: storage.ts, db-schema.ts, wsServer.ts, any client component
+files, or any other server file not listed below.
+
+Files to modify:
+- server/services/chain/land.ts
+- server/routes.ts
+
+---
+
+EDIT 1 — server/services/chain/land.ts
+
+Remove the #arc3 fragment from the assetURL in the makeAssetCreateTxnWithSuggestedParamsFromObject call.
+
+Find:
+    assetURL:       `${baseUrl}/nft/metadata/${plotId}#arc3`,
+
+Replace with:
+    assetURL:       `${baseUrl}/nft/metadata/${plotId}`,
+
+---
+
+EDIT 2 — server/routes.ts
+
+Update the /nft/metadata/:plotId endpoint to serve PNG images and clean
+up the metadata JSON to be strict ARC-3 compliant.
+
+Find the res.json({ ... }) call inside the /nft/metadata/:plotId handler.
+It currently contains image_mimetype. Replace the entire res.json block:
+
+Find:
+      res.setHeader("Content-Type", "application/json");
+      res.json({
+        name:         `Frontier Plot #${parcel.plotId}`,
+        description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.svg`,
+        image_mimetype: "image/svg+xml",
+        external_url: `${baseUrl}/plot/${parcel.plotId}`,
+        properties: {
+          plotId:            parcel.plotId,
+          biome:             parcel.biome,
+          coordinates:       { lat: parcel.lat, lng: parcel.lng },
+          richness:          parcel.richness,
+          purchasePriceAlgo: parcel.purchasePriceAlgo,
+          version:           1,
+        },
+      });
+
+Replace with:
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.json({
+        name:         `Frontier Plot #${parcel.plotId}`,
+        description:  `A ${parcel.biome} land parcel on the Frontier globe. Richness: ${parcel.richness}%. Own, mine, upgrade, and battle for territory on the Algorand blockchain.`,
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
+        external_url: `${baseUrl}/plot/${parcel.plotId}`,
+        properties: {
+          plotId:            parcel.plotId,
+          biome:             parcel.biome,
+          lat:               parcel.lat,
+          lng:               parcel.lng,
+          richness:          parcel.richness,
+          purchasePriceAlgo: parcel.purchasePriceAlgo,
+          version:           1,
+        },
+      });
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- GET /nft/metadata/1 returns JSON with image ending in .png not .svg
+- GET /nft/metadata/1 returns JSON with no image_mimetype field
+- GET /nft/metadata/1 returns Cache-Control: public, max-age=86400 header
+- assetURL in mintLandNft no longer contains #arc3
+- GET /nft/biomes/volcanic.png returns 200 (confirms PNG file is being served)
+- No client files modified

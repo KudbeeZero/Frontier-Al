@@ -275,16 +275,17 @@ export async function registerRoutes(
 
       // ARC-3 style metadata — keep lean; mutable game state is excluded.
       res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, max-age=86400");
       res.json({
         name:         `Frontier Plot #${parcel.plotId}`,
-        description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
-        image:        `${baseUrl}/nft/biomes/${parcel.biome}.svg`,
-        image_mimetype: "image/svg+xml",
+        description:  `A ${parcel.biome} land parcel on the Frontier globe. Richness: ${parcel.richness}%. Own, mine, upgrade, and battle for territory on the Algorand blockchain.`,
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
         external_url: `${baseUrl}/plot/${parcel.plotId}`,
         properties: {
           plotId:            parcel.plotId,
           biome:             parcel.biome,
-          coordinates:       { lat: parcel.lat, lng: parcel.lng },
+          lat:               parcel.lat,
+          lng:               parcel.lng,
           richness:          parcel.richness,
           purchasePriceAlgo: parcel.purchasePriceAlgo,
           version:           1,
