@@ -344,7 +344,13 @@ export async function registerRoutes(
       // Verify the caller's wallet has opted into this specific plot NFT ASA
       const optedIn = await isAddressOptedIn(address, assetId);
       if (!optedIn) {
-        return res.json({ success: false, reason: "not_opted_in", message: `Opt into ASA ${assetId} in your wallet first`, assetId });
+        return res.json({
+          success: false,
+          reason: "not_opted_in",
+          message: `Add asset ${assetId} to your Pera wallet to receive your Plot NFT. Your land ownership is already recorded.`,
+          assetId,
+          hint: "opt_in_required"
+        });
       }
 
       // Transfer the NFT from admin to the buyer
@@ -753,7 +759,14 @@ export async function registerRoutes(
         }
       }
 
-      res.json({ success: true, parcel, nftAssetId });
+      res.json({
+        success: true,
+        parcel,
+        nft: {
+          status: "minting",
+          message: "Your Plot NFT is being minted. Add it to your Pera wallet once you receive the asset ID."
+        }
+      });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Purchase failed" });

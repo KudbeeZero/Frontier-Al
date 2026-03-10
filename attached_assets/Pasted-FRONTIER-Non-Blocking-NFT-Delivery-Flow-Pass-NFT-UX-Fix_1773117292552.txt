@@ -1,0 +1,84 @@
+FRONTIER — Non-Blocking NFT Delivery Flow
+Pass: NFT UX Fix Pass
+
+Context:
+Currently the NFT delivery flow blocks on the buyer opting into each individual Plot ASA before the NFT can be transferred. This is bad UX for a game. The fix is to make NFT delivery completely non-blocking — the game purchase succeeds immediately, land ownership is recorded in the DB, and the NFT delivers silently in the background. The UI shows a hint with the ASA ID so the player can optionally add it to their wallet. Nothing in the purchase flow should wait on blockchain delivery.
+
+DO NOT TOUCH: storage.ts, db-schema.ts, server/index.ts, battle engine, wsServer.ts, or any file not listed below. Only server/routes.ts and server/services/chain/land.ts are to be modified.
+
+---
+
+Edit 1 — server/routes.ts — Soften the opt-in gate on /api/nft/deliver/:plotId
+
+Find the opt-in check block inside app.post("/api/nft/deliver/:plotId") (around line 342):
+
+const optedIn = await isAddressOptedIn(address, assetId);
+if (!optedIn) {
+  return res.json({ success: false, reason: "not_opted_in", message: `Opt into ASA ${assetId} in your wallet first`, assetId });
+}
+
+Replace with:
+
+const optedIn = await isAddressOptedIn(address, assetId);
+if (!optedIn) {
+  return res.json({
+    success: false,
+    reason: "not_opted_in",
+    message: `Add asset ${assetId} to your Pera wallet to receive your Plot NFT. Your land ownership is already recorded.`,
+    assetId,
+    hint: "opt_in_required"
+  });
+}
+
+---
+
+Edit 2 — server/routes.ts — Return minting status in purchase response
+
+Inside app.post("/api/actions/purchase"), find the purchase success response (around line 760–770). Replace the existing success response with:
+
+res.json({
+  success: true,
+  parcel,
+  nft: {
+    status: "minting",
+    message: "Your Plot NFT is being minted. Add it to your Pera wallet once you receive the asset ID."
+  }
+});
+
+---
+
+Edit 3 — server/services/chain/land.ts — Add attemptDelivery helper
+
+First, confirm this import exists at the top of land.ts, add it if missing:
+import { isAddressOptedIn } from "./asa";
+
+Then after the closing brace of the existing transferLandNft function, add this new exported function:
+
+/**
+ * Attempt delivery of a custody-held NFT. Returns success/failure without throwing.
+ * Called on a background retry loop — safe to call multiple times.
+ */
+export async function attemptDelivery(
+  assetId: AssetId,
+  toAddress: string,
+  plotId: number
+): Promise<{ delivered: boolean; reason?: string }> {
+  try {
+    const optedIn = await isAddressOptedIn(toAddress, assetId);
+    if (!optedIn) return { delivered: false, reason: "not_opted_in" };
+    await transferLandNft({ assetId, toAddress, note: `FRONTIER Plot #${plotId} delivery` });
+    return { delivered: true };
+  } catch (err) {
+    console.error(`[chain/land] attemptDelivery failed plotId=${plotId}:`, err);
+    return { delivered: false, reason: "transfer_failed" };
+  }
+}
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- Purchase a plot — game records ownership immediately regardless of NFT opt-in status
+- /api/nft/deliver/:plotId returns hint: "opt_in_required" with the assetId when not opted in
+- No purchase flow is blocked by NFT delivery status
+- Only server/routes.ts and server/services/chain/land.ts were modified
