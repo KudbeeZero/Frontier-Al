@@ -5,7 +5,7 @@
 
 import * as THREE from "three";
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
-import { Canvas, useLoader, useThree, useFrame } from "@react-three/fiber";
+import { Canvas, useLoader, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, Player } from "@shared/schema";
@@ -95,46 +95,97 @@ function getPlotColor(
 }
 
 function StarField() {
-  const meshRef = useRef<THREE.Points>(null!);
-  const count = 6000;
+  const MAIN_COUNT   = 10000;
+  const BRIGHT_COUNT = 180;
 
-  const { positions, sizes } = useMemo(() => {
-    const positions = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const r = 80 + Math.random() * 60;
+  const { mainGeo, brightGeo } = useMemo(() => {
+    const mPos = new Float32Array(MAIN_COUNT * 3);
+    const mCol = new Float32Array(MAIN_COUNT * 3);
+    const bPos = new Float32Array(BRIGHT_COUNT * 3);
+    const bCol = new Float32Array(BRIGHT_COUNT * 3);
+
+    for (let i = 0; i < MAIN_COUNT; i++) {
+      const r     = 65 + Math.random() * 90;
       const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.cos(phi);
-      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-      sizes[i] = 0.3 + Math.random() * 1.2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      mPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      mPos[i * 3 + 1] = r * Math.cos(phi);
+      mPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+      const t = Math.random();
+      if (t < 0.52) {
+        // Blue-white hot stars (O/B class)
+        mCol[i*3] = 0.72 + Math.random() * 0.28;
+        mCol[i*3+1] = 0.84 + Math.random() * 0.16;
+        mCol[i*3+2] = 1.0;
+      } else if (t < 0.78) {
+        // Pure white (A/F class)
+        const v = 0.85 + Math.random() * 0.15;
+        mCol[i*3] = v; mCol[i*3+1] = v; mCol[i*3+2] = v;
+      } else if (t < 0.93) {
+        // Warm yellow-white (G/K class, sun-like)
+        mCol[i*3] = 1.0;
+        mCol[i*3+1] = 0.85 + Math.random() * 0.12;
+        mCol[i*3+2] = 0.52 + Math.random() * 0.22;
+      } else {
+        // Deep orange-red (M class, cool giants)
+        mCol[i*3] = 1.0;
+        mCol[i*3+1] = 0.35 + Math.random() * 0.30;
+        mCol[i*3+2] = 0.15 + Math.random() * 0.18;
+      }
     }
-    return { positions, sizes };
+
+    for (let i = 0; i < BRIGHT_COUNT; i++) {
+      const r     = 58 + Math.random() * 14;
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      bPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      bPos[i * 3 + 1] = r * Math.cos(phi);
+      bPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      // Mix of pure white and icy blue-white for prominent stars
+      if (Math.random() < 0.55) {
+        bCol[i*3] = 1.0; bCol[i*3+1] = 1.0; bCol[i*3+2] = 1.0;
+      } else {
+        bCol[i*3] = 0.78; bCol[i*3+1] = 0.9; bCol[i*3+2] = 1.0;
+      }
+    }
+
+    const mGeo = new THREE.BufferGeometry();
+    mGeo.setAttribute("position", new THREE.BufferAttribute(mPos, 3));
+    mGeo.setAttribute("color",    new THREE.BufferAttribute(mCol, 3));
+
+    const bGeo = new THREE.BufferGeometry();
+    bGeo.setAttribute("position", new THREE.BufferAttribute(bPos, 3));
+    bGeo.setAttribute("color",    new THREE.BufferAttribute(bCol, 3));
+
+    return { mainGeo: mGeo, brightGeo: bGeo };
   }, []);
 
-  useFrame((_, delta) => {
-    if (meshRef.current) meshRef.current.rotation.y += delta * 0.003;
-  });
-
-  const geometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
-    return geo;
-  }, [positions, sizes]);
-
   return (
-    <points ref={meshRef} geometry={geometry}>
-      <pointsMaterial
-        color="#a8d4ff"
-        size={0.12}
-        sizeAttenuation
-        transparent
-        opacity={0.8}
-        depthWrite={false}
-      />
-    </points>
+    <>
+      {/* Background star field — small, numerous, coloured */}
+      <points geometry={mainGeo}>
+        <pointsMaterial
+          vertexColors
+          size={0.08}
+          sizeAttenuation
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+        />
+      </points>
+      {/* Foreground bright stars — fewer, larger, more prominent */}
+      <points geometry={brightGeo}>
+        <pointsMaterial
+          vertexColors
+          size={0.26}
+          sizeAttenuation
+          transparent
+          opacity={1.0}
+          depthWrite={false}
+        />
+      </points>
+    </>
   );
 }
 
@@ -155,13 +206,16 @@ function getPlotSizeVariant(plotId: number): number {
 // Unowned borders: pure black = invisible with additive blending (no limb ring effect)
 const BORDER_COLOR = new THREE.Color(0, 0, 0);
 
+// Pre-compute sphere used for hit-testing (analytic intersection, no mesh needed)
+const HIT_SPHERE = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS);
+
 function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect }: PlotOverlayProps) {
-  const fillMeshRef  = useRef<THREE.InstancedMesh>(null!);
+  const fillMeshRef   = useRef<THREE.InstancedMesh>(null!);
   const borderMeshRef = useRef<THREE.InstancedMesh>(null!);
-  const readyRef = useRef(false);
-  const { raycaster, mouse, camera } = useThree();
-  const pulseRef = useRef(0);
-  const pointerDownState = useRef<{ mouse: THREE.Vector2; cam: THREE.Camera } | null>(null);
+  const readyRef      = useRef(false);
+  const pulseRef      = useRef(0);
+  // Store intersection point at pointer-down to detect drag vs click
+  const pointerDownPt = useRef<THREE.Vector3 | null>(null);
   const hoveredIndexRef = useRef<number | null>(null);
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
@@ -171,6 +225,28 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     parcels.forEach(p => m.set(p.plotId, p));
     return m;
   }, [parcels]);
+
+  // Flat Float32Array of every plot's 3D position — used for O(n) nearest-neighbor on clicks/hover
+  const plotPositions3D = useMemo(() => {
+    const arr = new Float32Array(plotCoords.length * 3);
+    for (let i = 0; i < plotCoords.length; i++) {
+      const v = latLngToVec3(plotCoords[i].lat, plotCoords[i].lng, GLOBE_RADIUS);
+      arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z;
+    }
+    return arr;
+  }, [plotCoords]);
+
+  // Returns the index of the plot center closest to a world-space point
+  const nearestPlot = useCallback((px: number, py: number, pz: number): number => {
+    let minD2 = Infinity, best = 0;
+    const pos = plotPositions3D;
+    for (let i = 0; i < PLOT_COUNT; i++) {
+      const dx = pos[i*3] - px, dy = pos[i*3+1] - py, dz = pos[i*3+2] - pz;
+      const d2 = dx*dx + dy*dy + dz*dz;
+      if (d2 < minD2) { minD2 = d2; best = i; }
+    }
+    return best;
+  }, [plotPositions3D]);
 
   const animatedIndices = useMemo(() => {
     const indices: number[] = [];
@@ -283,34 +359,48 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     readyRef.current = true;
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, fillSize, borderSize]);
 
+  // Sphere-based hover — fires on the invisible coverage sphere, always hits the globe surface
   const handlePointerMove = useCallback((e: any) => {
-    if (!fillMeshRef.current) return;
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(fillMeshRef.current);
-    hoveredIndexRef.current = intersects.length > 0 ? (intersects[0].instanceId ?? null) : null;
-  }, [raycaster, mouse, camera]);
+    const p = e.point as THREE.Vector3;
+    hoveredIndexRef.current = nearestPlot(p.x, p.y, p.z);
+  }, [nearestPlot]);
 
-  const handlePointerDown = useCallback(() => {
-    pointerDownState.current = { mouse: mouse.clone(), cam: camera.clone() };
-  }, [mouse, camera]);
+  const handlePointerLeave = useCallback(() => {
+    hoveredIndexRef.current = null;
+  }, []);
 
+  const handlePointerDown = useCallback((e: any) => {
+    pointerDownPt.current = (e.point as THREE.Vector3).clone();
+  }, []);
+
+  // Click fires from the invisible coverage sphere — find nearest plot, fire if it has a parcel
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
-    if (!pointerDownState.current) return;
-    raycaster.setFromCamera(pointerDownState.current.mouse, pointerDownState.current.cam);
-    const intersects = raycaster.intersectObject(fillMeshRef.current);
-    pointerDownState.current = null;
-    if (!intersects.length) return;
-    const instanceId = intersects[0].instanceId;
-    if (instanceId === undefined) return;
-    const coord = plotCoords[instanceId];
+    // Ignore if the pointer moved significantly (orbit drag)
+    if ((e.delta as number) > 6) return;
+    const p = e.point as THREE.Vector3;
+    const idx = nearestPlot(p.x, p.y, p.z);
+    const coord = plotCoords[idx];
     const parcel = plotIdToParcel.get(coord.plotId);
     if (parcel) onPlotSelect(parcel.id);
-  }, [raycaster, camera, plotCoords, plotIdToParcel, onPlotSelect]);
+  }, [nearestPlot, plotCoords, plotIdToParcel, onPlotSelect]);
 
   return (
     <>
-      {/* Border ring — barely-visible honeycomb grid; glows with ownership color on claimed tiles */}
+      {/* Invisible sphere covering the full planet — catches every pointer event reliably,
+          even in gaps between hex tiles and at oblique viewing angles.
+          Geometry intersects cleanly; material is fully transparent and writes no depth. */}
+      <mesh
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+      >
+        <sphereGeometry args={[GLOBE_RADIUS * 1.01, 48, 24]} />
+        <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.FrontSide} />
+      </mesh>
+
+      {/* Border ring — glows with ownership color on claimed tiles */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
@@ -323,13 +413,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       </instancedMesh>
 
       {/* Fill layer — additive: black = invisible, faction colour = glowing territory */}
-      <instancedMesh
-        ref={fillMeshRef}
-        args={[undefined, undefined, PLOT_COUNT]}
-        onPointerMove={handlePointerMove}
-        onPointerDown={handlePointerDown}
-        onClick={handleClick}
-      >
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           transparent
