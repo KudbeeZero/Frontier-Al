@@ -296,9 +296,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
   return (
     <>
-      {/* Border layer — dark grout color, sits just below fill, peeks out at edges */}
+      {/* Border layer — dark grout color, sits just below fill, peeks out at hex edges */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
-        <planeGeometry args={[1, 1]} />
+        <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial transparent opacity={0.90} depthWrite={false} side={THREE.DoubleSide} />
       </instancedMesh>
 
@@ -310,7 +310,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         onPointerDown={handlePointerDown}
         onClick={handleClick}
       >
-        <planeGeometry args={[1, 1]} />
+        <circleGeometry args={[0.5, 6]} />
         <meshPhongMaterial
           transparent
           opacity={0.92}
