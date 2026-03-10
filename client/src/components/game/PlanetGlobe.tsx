@@ -71,15 +71,19 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
   swamp:    "#00ffcc",
 };
 
+// Dim hex tint for unowned plots — additive blending means this barely
+// brightens the terrain, creating a subtle clickable grid without hiding it.
+const UNOWNED_DIM = new THREE.Color("#030d1c");
+
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
   players: Player[]
 ): THREE.Color {
-  // With AdditiveBlending, black = fully transparent.
-  // Only owned / contested plots should emit visible light.
-  if (!parcel) return new THREE.Color(0x000000);
-  if (!parcel.ownerId) return new THREE.Color(0x000000); // terrain shows through
+  // With AdditiveBlending, UNOWNED_DIM adds a very faint teal tint that
+  // makes the grid visible + clickable without drowning the terrain texture.
+  if (!parcel) return UNOWNED_DIM;
+  if (!parcel.ownerId) return UNOWNED_DIM;
   if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
   const owner = players.find(p => p.id === parcel.ownerId);
   if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
@@ -226,9 +230,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       }
       if (isHovered) fillColor = fillColor.clone().multiplyScalar(1.3);
 
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
-        : (fillColor.r + fillColor.g + fillColor.b > 0.01)
+        : isOwned
           ? fillColor.clone().multiplyScalar(1.6)
           : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * pulse, fillColor);
@@ -259,9 +264,10 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
 
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
       const borderColor = isSelected
         ? new THREE.Color("#ffffff")
-        : (fillColor.r + fillColor.g + fillColor.b > 0.01)
+        : isOwned
           ? fillColor.clone().multiplyScalar(1.6)
           : BORDER_COLOR;
       applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar, fillColor);
@@ -377,8 +383,8 @@ function GlobeTerrain() {
     varying vec2 vUv;
     varying vec3 vWorldNormal;
 
-    // Boost colour saturation by pulling toward/away from the grey axis
-    vec3 saturate(vec3 c, float amount) {
+    // Boost colour saturation (renamed to avoid clash with GLSL built-in 'saturate')
+    vec3 boostSat(vec3 c, float amount) {
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       return mix(vec3(lum), c, amount);
     }
@@ -395,11 +401,11 @@ function GlobeTerrain() {
       float nightBlend = 1.0 - dayBlend;
 
       // Day side: clean, rich colours — not overexposed
-      vec3 saturatedDay = saturate(dayCol.rgb, 1.30) * 1.10;
+      vec3 saturatedDay = boostSat(dayCol.rgb, 1.30) * 1.10;
       vec3 terrain = mix(dayCol.rgb * 0.02, saturatedDay, dayBlend);
 
       // Night lights — vivid but tasteful neon city glow
-      vec3 nightGlow = saturate(nightCol.rgb, 1.8) * nightBlend * 5.5;
+      vec3 nightGlow = boostSat(nightCol.rgb, 1.8) * nightBlend * 5.5;
 
       // Golden terminator at day/night boundary
       float crescent = smoothstep(-0.30, 0.0, NdotL) * smoothstep(0.30, 0.0, NdotL);
