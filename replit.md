@@ -28,7 +28,13 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - `server/index.ts`: Express server entry point with production port handling.
 - `server/routes.ts`: All API route handlers — imports ONLY from chain service layer.
 - `server/static.ts`: Critical SPA routing logic for production.
-- `server/storage.ts`: Game state (DB storage + MemStorage fallback).
+- `server/storage.ts`: Thin barrel re-export; delegates to decomposed module.
+- `server/storage/interface.ts`: `IStorage` interface definition.
+- `server/storage/game-rules.ts`: Pure functions — biome logic, row converters, leaderboard, coordinates.
+- `server/storage/seeder.ts`: `seedDatabase(db)` — one-time world seeding + schema migrations.
+- `server/storage/ai-engine.ts`: `runAITurn(db, ops)` — AI faction logic with injected `AiOps`.
+- `server/storage/mem.ts`: `MemStorage` in-memory implementation.
+- `server/storage/db.ts`: `DbStorage` PostgreSQL implementation.
 - `server/services/chain/`: Chain service layer (all algosdk usage isolated here).
   - `client.ts`: algodClient, indexerClient, admin account/address.
   - `asa.ts`: FRONTIER ASA management + batched transfers.
