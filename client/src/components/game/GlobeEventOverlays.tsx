@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import type { WorldEvent } from "@shared/worldEvents";
 
 const GLOBE_RADIUS = 2;
@@ -30,6 +31,19 @@ const EVENT_COLORS: Record<string, string> = {
   faction_movement:   "#ffeb3b",
   resource_pulse:     "#4caf50",
   mine_action:        "#78909c",
+};
+
+const EVENT_LABELS: Partial<Record<string, string>> = {
+  land_claimed:       "TERRITORY CLAIMED",
+  battle_started:     "BATTLE INITIATED",
+  battle_resolved:    "BATTLE RESOLVED",
+  commander_deployed: "COMMANDER ACTIVE",
+  commander_minted:   "COMMANDER MINTED",
+  scan_ping:          "SCAN PING",
+  jammer_zone:        "JAMMING ZONE",
+  faction_movement:   "FACTION MOVEMENT",
+  resource_pulse:     "RESOURCE PULSE",
+  mine_action:        "MINING OP",
 };
 
 const EVENT_SIZES: Partial<Record<string, number>> = {
@@ -63,9 +77,9 @@ function PulseMarker({ event, replayTime, size = 0.012 }: PulseMarkerProps) {
   const lookAt = useMemo(() => pos.clone().multiplyScalar(2), [pos]);
   const color  = useMemo(() => new THREE.Color(EVENT_COLORS[event.type] ?? "#ffffff"), [event.type]);
 
-  const age      = (replayTime - event.timestamp) / 1000;
-  const isRecent = age < 30;
-  const isBattle = event.type === "battle_started";
+  const age        = (replayTime - event.timestamp) / 1000;
+  const isRecent   = age < 30;
+  const isBattle   = event.type === "battle_started";
   const isRingOnly = event.type === "scan_ping";
   const pulseSpeed = isBattle ? (isRecent ? 5 : 3) : (isRecent ? 3 : 1.5);
 
@@ -83,14 +97,14 @@ function PulseMarker({ event, replayTime, size = 0.012 }: PulseMarkerProps) {
     }
   });
 
-  const ringInner = size;
-  const ringOuter = size * 1.8;
+  const ringInner = size ?? 0.012;
+  const ringOuter = (size ?? 0.012) * 1.8;
 
   return (
     <group position={pos}>
       {!isRingOnly && (
         <mesh ref={meshRef} onUpdate={self => self.lookAt(lookAt)}>
-          <circleGeometry args={[size, 16]} />
+          <circleGeometry args={[size ?? 0.012, 16]} />
           <meshBasicMaterial color={color} transparent opacity={0.85} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       )}
@@ -146,6 +160,64 @@ function ArcMarker({ event, isBattle = false }: ArcMarkerProps) {
   return <primitive object={lineObj} />;
 }
 
+function EventCard({ event, replayTime }: { event: WorldEvent; replayTime: number }) {
+  const pos = useMemo(
+    () => latLngToVec3(event.lat, event.lng, GLOBE_RADIUS * 1.06),
+    [event.lat, event.lng]
+  );
+
+  const color = EVENT_COLORS[event.type] ?? "#ffffff";
+  const label = EVENT_LABELS[event.type] ?? event.type.toUpperCase();
+  const age   = Math.round((replayTime - event.timestamp) / 1000);
+  const ageStr = age < 60 ? `${age}s` : age < 3600 ? `${Math.round(age / 60)}m` : `${Math.round(age / 3600)}h`;
+
+  const detail = (() => {
+    const m = event.metadata;
+    if (event.type === "battle_started")   return `${m.attacker ?? "?"} → ${m.defender ?? "?"}`;
+    if (event.type === "battle_resolved")  return m.outcome === "attacker_wins" ? "ATTACKER WINS" : "DEFENDER WINS";
+    if (event.type === "land_claimed")     return m.playerName ? String(m.playerName) : `#${event.plotId}`;
+    if (event.type === "faction_movement") return `${event.factionId ?? "?"} ADVANCING`;
+    if (event.type === "jammer_zone")      return `${event.factionId ?? "?"} r=${(m.radius as number) ?? 0}`;
+    if (event.type === "resource_pulse")   return `Fe:${m.iron ?? 0} Fu:${m.fuel ?? 0}`;
+    return `${event.lat.toFixed(1)}°, ${event.lng.toFixed(1)}°`;
+  })();
+
+  const isCritical = event.severity === "critical" || event.severity === "high";
+
+  return (
+    <Html position={pos} center distanceFactor={4} zIndexRange={[10, 20]} occlude={false}>
+      <div
+        style={{
+          pointerEvents: "none",
+          userSelect: "none",
+          fontFamily: "monospace",
+          fontSize: "9px",
+          letterSpacing: "0.12em",
+          lineHeight: "1.4",
+          whiteSpace: "nowrap",
+          padding: "4px 7px",
+          borderRadius: "3px",
+          background: `rgba(2, 4, 14, 0.82)`,
+          border: `1px solid ${color}50`,
+          boxShadow: `0 0 12px ${color}30`,
+          color: color,
+          opacity: 0.92,
+          transform: "translateY(-4px)",
+        }}
+      >
+        {isCritical && (
+          <span style={{ color: "#ff1744", marginRight: "4px" }}>⬤</span>
+        )}
+        <span style={{ color: `${color}99`, marginRight: "4px" }}>
+          {label}
+        </span>
+        <span style={{ color: "#ffffff" }}>{detail}</span>
+        <span style={{ color: `${color}60`, marginLeft: "6px" }}>{ageStr}</span>
+      </div>
+    </Html>
+  );
+}
+
 interface GlobeEventOverlaysProps {
   events: WorldEvent[];
   replayTime: number;
@@ -162,28 +234,32 @@ export function GlobeEventOverlays({ events, replayTime, visibleTypes }: GlobeEv
     });
   }, [events, replayTime, visibleTypes]);
 
+  // Show cards only for the 8 most recent visible events to avoid clutter
+  const cardEvents = useMemo(() => {
+    return [...visible]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 8);
+  }, [visible]);
+
   return (
     <>
       {visible.map(event => {
-        const size         = EVENT_SIZES[event.type] ?? 0.012;
-        const hasBattleArc = event.type === "battle_started" &&
-          event.metadata.fromLat !== undefined &&
-          event.metadata.fromLng !== undefined;
-        const hasFactionArc = event.type === "faction_movement";
-
+        const size = EVENT_SIZES[event.type] ?? 0.012;
+        if (event.type === "faction_movement") {
+          return (
+            <group key={event.id}>
+              <ArcMarker event={event} />
+              <PulseMarker event={event} replayTime={replayTime} size={0.010} />
+            </group>
+          );
+        }
         return (
-          <group key={event.id}>
-            {/* Pulse marker for all non-pure-arc events */}
-            {!hasFactionArc && (
-              <PulseMarker event={event} replayTime={replayTime} size={size} />
-            )}
-            {/* Arc for faction movement */}
-            {hasFactionArc && <ArcMarker event={event} isBattle={false} />}
-            {/* Arc for battle_started when origin coords present */}
-            {hasBattleArc && <ArcMarker event={event} isBattle={true} />}
-          </group>
+          <PulseMarker key={event.id} event={event} replayTime={replayTime} size={size} />
         );
       })}
+      {cardEvents.map(event => (
+        <EventCard key={`card-${event.id}`} event={event} replayTime={replayTime} />
+      ))}
     </>
   );
 }

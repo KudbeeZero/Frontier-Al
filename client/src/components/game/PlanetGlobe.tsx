@@ -601,6 +601,68 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
   );
 }
 
+interface GlobeHUDProps {
+  activeBattleCount: number;
+  replayTime?: number;
+}
+
+function GlobeHUD({ activeBattleCount, replayTime }: GlobeHUDProps) {
+  const now = replayTime ?? Date.now();
+  const utc = new Date(now).toISOString().slice(11, 19) + " UTC";
+  const lat  = "22.14°N";
+  const lng  = "045°21'37.73\"E";
+  const alt  = "3745115M";
+  const gsd  = "1404.42M";
+
+  return (
+    <>
+      {/* Bottom-left telemetry */}
+      <div
+        className="absolute bottom-28 left-4 z-20 pointer-events-none select-none"
+        style={{ fontFamily: "monospace", fontSize: 9, letterSpacing: "0.15em", lineHeight: "1.8", color: "rgba(0,229,255,0.55)" }}
+      >
+        <div>38P NS 3942 7798</div>
+        <div>{lat} {lng}</div>
+      </div>
+
+      {/* Bottom-right telemetry */}
+      <div
+        className="absolute bottom-28 right-4 z-20 pointer-events-none select-none text-right"
+        style={{ fontFamily: "monospace", fontSize: 9, letterSpacing: "0.15em", lineHeight: "1.8", color: "rgba(0,229,255,0.55)" }}
+      >
+        <div>GSD: {gsd} NIIR</div>
+        <div>ALT: {alt} SUN: -20</div>
+      </div>
+
+      {/* Top-right: REC indicator + timestamp */}
+      <div
+        className="absolute top-4 right-4 z-20 pointer-events-none select-none flex items-center gap-2"
+        style={{ fontFamily: "monospace", fontSize: 9, letterSpacing: "0.15em", color: "rgba(0,229,255,0.5)" }}
+      >
+        {activeBattleCount > 0 && (
+          <span style={{ color: "#ff1744", display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%", background: "#ff1744",
+              display: "inline-block", animation: "pulse 1.2s infinite"
+            }} />
+            REC
+          </span>
+        )}
+        <span>{utc}</span>
+      </div>
+
+      {/* Top-left: classification watermark (offset right of faction legend) */}
+      <div
+        className="absolute top-4 left-20 z-20 pointer-events-none select-none"
+        style={{ fontFamily: "monospace", fontSize: 8, letterSpacing: "0.25em", color: "rgba(0,229,255,0.35)" }}
+      >
+        <div>CRET // SI-TK // NOFORN</div>
+        <div>176 OPS-4179</div>
+      </div>
+    </>
+  );
+}
+
 interface PlanetGlobeProps {
   parcels: LandParcel[];
   players: Player[];
@@ -614,6 +676,7 @@ interface PlanetGlobeProps {
   replayEvents?: WorldEvent[];
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
+  activeBattleCount?: number;
 }
 
 export default function PlanetGlobe({
@@ -629,6 +692,7 @@ export default function PlanetGlobe({
   replayEvents,
   replayTime,
   replayVisibleTypes,
+  activeBattleCount = 0,
 }: PlanetGlobeProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null!);
 
@@ -662,6 +726,8 @@ export default function PlanetGlobe({
           replayVisibleTypes={replayVisibleTypes}
         />
       </Canvas>
+
+      <GlobeHUD activeBattleCount={activeBattleCount} replayTime={replayTime} />
 
       <FactionLegend players={players} />
 
