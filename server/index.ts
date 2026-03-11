@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { hydrateWorldEventsFromRedis } from "./worldEventStore";
+import { warmUpDb } from "./db";
 import { assertChainConfig } from "./services/chain/client";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -89,6 +90,8 @@ app.use((req, res, next) => {
   assertChainConfig();
   const { initWsServer } = await import("./wsServer");
   initWsServer(httpServer, storage);
+  // Wake up Neon DB before accepting traffic (handles cold-start timeouts)
+  await warmUpDb();
   // Hydrate world event feed from Redis (no-op if Redis unavailable)
   await hydrateWorldEventsFromRedis();
   await registerRoutes(httpServer, app);

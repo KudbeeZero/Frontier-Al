@@ -432,7 +432,7 @@ export async function registerRoutes(
 
   app.get("/api/game/state", async (req, res) => {
     try {
-      const gameState = await storage.getGameState();
+      const gameState = await withDbRetry(() => storage.getGameState(), "getGameState");
       res.json(gameState);
       broadcastGameState(gameState);
     } catch (error) {
@@ -443,7 +443,7 @@ export async function registerRoutes(
 
   app.get("/api/game/slim-state", async (req, res) => {
     try {
-      const slimState = await storage.getSlimGameState();
+      const slimState = await withDbRetry(() => storage.getSlimGameState(), "getSlimGameState");
       res.json(slimState);
     } catch (error) {
       console.error("Error fetching slim game state:", error);
