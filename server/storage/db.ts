@@ -175,11 +175,18 @@ export class DbStorage implements IStorage {
     const MS_PER_DAY = 86_400_000;
 
     for (const row of damaged) {
-      const lastClaim = Number(row.lastFrontierClaimTs) || 0;
-      const elapsedMs = now - lastClaim;
+      // Use lastMineTs as the elapsed reference — it reflects actual player
+      // activity. Falls back to lastFrontierClaimTs for plots never mined.
+      const lastActivity = Math.max(
+        Number(row.lastMineTs) || 0,
+        Number(row.lastFrontierClaimTs) || 0
+      );
+      const elapsedMs = now - lastActivity;
       if (elapsedMs <= 0) continue;
 
-      const repairRate = (row as any).influenceRepairRate ?? 2.0;
+      // 24 pts/day = 1 pt/hr passive repair.
+      // One lost battle (15 dmg) fully repairs in ~15 hrs idle.
+      const repairRate = (row as any).influenceRepairRate ?? 24.0;
       const repairAmount = (elapsedMs / MS_PER_DAY) * repairRate;
       const currentInfluence = (row as any).influence ?? 100;
       const newInfluence = Math.min(100, currentInfluence + repairAmount);
@@ -569,11 +576,12 @@ export class DbStorage implements IStorage {
       const activeSatellites = playerSatellites.filter(s => s.status === "active" && s.expiresAt > now);
       const satelliteMult = activeSatellites.length > 0 ? 1 + SATELLITE_YIELD_BONUS : 1;
 
-      const biomeBonus  = biomeBonuses[parcel.biome];
-      const richMult    = parcel.richness / 100;
-      const ironYield   = Math.floor(BASE_YIELD.iron   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
-      const fuelYield   = Math.floor(BASE_YIELD.fuel   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
-      const crystalYield= Math.floor(BASE_YIELD.crystal * richMult * satelliteMult);
+      const biomeBonus   = biomeBonuses[parcel.biome];
+      const richMult     = parcel.richness / 100;
+      const influenceMult = (parcel.influence ?? 100) / 100;
+      const ironYield    = Math.floor(BASE_YIELD.iron    * biomeBonus.ironMod    * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
+      const fuelYield    = Math.floor(BASE_YIELD.fuel    * biomeBonus.fuelMod    * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
+      const crystalYield = Math.floor(BASE_YIELD.crystal * biomeBonus.crystalMod * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
 
       const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
       const remaining   = parcel.storageCapacity - totalStored;
@@ -583,7 +591,16 @@ export class DbStorage implements IStorage {
       const finalIron    = Math.floor(ironYield    * ratio);
       const finalFuel    = Math.floor(fuelYield    * ratio);
       const finalCrystal = Math.floor(crystalYield * ratio);
-      const newRichness  = parcel.richness > 20 ? Math.max(20, parcel.richness - 1) : parcel.richness;
+
+      // Richness depletes by 0.5 per mine (applied every other mine via floor).
+      // Floor raised to 40 so depleted plots still feel worth mining.
+      const newRichness = parcel.richness > 40
+        ? Math.max(40, parcel.richness - 0.5)
+        : parcel.richness;
+
+      // Active influence repair: each mine restores +2 influence (capped at 100).
+      const currentInfluence = parcel.influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + 2);
 
       await Promise.all([
         tx.update(parcelsTable)
@@ -593,6 +610,7 @@ export class DbStorage implements IStorage {
             crystalStored: parcel.crystalStored + finalCrystal,
             lastMineTs:    now,
             richness:      newRichness,
+            influence:     newInfluence,
           })
           .where(eq(parcelsTable.id, parcel.id)),
         tx.update(playersTable)
@@ -889,7 +907,7 @@ export class DbStorage implements IStorage {
       if      (action.improvementType === "turret")       newDefense  += 3;
       else if (action.improvementType === "shield_gen")   newDefense  += 5;
       else if (action.improvementType === "fortress")   { newDefense  += 8; newCapacity += 50; }
-      else if (action.improvementType === "storage_depot") newCapacity += 100;
+      else if (action.improvementType === "storage_depot") newCapacity += 200;
 
       const newFpd = calculateFrontierPerDay(newImprovements);
 

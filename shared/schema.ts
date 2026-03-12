@@ -13,15 +13,17 @@ export const biomeColors: Record<BiomeType, string> = {
   swamp: "#3a5a2a",
 };
 
-export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: number }> = {
-  forest: { yieldMod: 1.2, defenseMod: 1.1 },
-  desert: { yieldMod: 0.8, defenseMod: 0.9 },
-  mountain: { yieldMod: 0.6, defenseMod: 1.3 },
-  plains: { yieldMod: 1.0, defenseMod: 1.0 },
-  water: { yieldMod: 0.5, defenseMod: 0.7 },
-  tundra: { yieldMod: 0.7, defenseMod: 1.2 },
-  volcanic: { yieldMod: 1.5, defenseMod: 0.8 },
-  swamp: { yieldMod: 0.9, defenseMod: 0.6 },
+export const biomeBonuses: Record<BiomeType, {
+  ironMod: number; fuelMod: number; crystalMod: number; defenseMod: number;
+}> = {
+  volcanic: { ironMod: 1.8, fuelMod: 0.6, crystalMod: 2.5, defenseMod: 0.8 },
+  mountain: { ironMod: 2.0, fuelMod: 0.4, crystalMod: 0.5, defenseMod: 1.3 },
+  desert:   { ironMod: 0.6, fuelMod: 2.5, crystalMod: 0.3, defenseMod: 0.9 },
+  forest:   { ironMod: 1.2, fuelMod: 1.0, crystalMod: 1.5, defenseMod: 1.1 },
+  plains:   { ironMod: 1.0, fuelMod: 1.0, crystalMod: 1.0, defenseMod: 1.0 },
+  tundra:   { ironMod: 0.8, fuelMod: 1.8, crystalMod: 0.8, defenseMod: 1.2 },
+  swamp:    { ironMod: 0.7, fuelMod: 0.9, crystalMod: 2.0, defenseMod: 0.6 },
+  water:    { ironMod: 0.3, fuelMod: 0.3, crystalMod: 3.0, defenseMod: 0.7 },
 };
 
 export type DefenseImprovementType = "turret" | "shield_gen" | "storage_depot" | "radar" | "fortress";
@@ -42,7 +44,7 @@ export const DEFENSE_IMPROVEMENT_INFO: Record<DefenseImprovementType, {
 }> = {
   turret: { name: "Turret", description: "Automated defense turret", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense per level" },
   shield_gen: { name: "Shield Generator", description: "Energy shield for base", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense per level" },
-  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+100 capacity per level" },
+  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 capacity per level" },
   radar: { name: "Radar Array", description: "Early warning system", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "See incoming attacks" },
   fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
 };
@@ -377,8 +379,8 @@ export type ClaimFrontierAction = z.infer<typeof claimFrontierActionSchema>;
 
 export const MINE_COOLDOWN_MS = 5 * 60 * 1000;
 export const BATTLE_DURATION_MS = 10 * 60 * 1000;
-export const BASE_YIELD = { iron: 10, fuel: 5, crystal: 1 };
-export const BASE_STORAGE_CAPACITY = 200;
+export const BASE_YIELD = { iron: 20, fuel: 12, crystal: 4 };
+export const BASE_STORAGE_CAPACITY = 800;
 export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
   defense: { iron: 50, fuel: 25 },
   yield: { iron: 75, fuel: 50 },

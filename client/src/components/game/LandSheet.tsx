@@ -160,24 +160,34 @@ export function LandSheet({
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Defense</span>
               <span className="font-mono text-sm font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
             </div>
-            <div className="text-center">
+            <div className={cn(
+              "p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center transition-colors",
+              (parcel.influence ?? 100) > 66 ? "hover:border-green-500/40"
+                : (parcel.influence ?? 100) > 33 ? "hover:border-yellow-500/40"
+                : "hover:border-red-500/40 border-red-500/30"
+            )}>
               <div className={cn(
-                "w-4 h-4 mx-auto mb-1 rounded-full border-2",
-                (parcel.influence ?? 100) > 66
-                  ? "border-green-500 bg-green-500/20"
-                  : (parcel.influence ?? 100) > 33
-                  ? "border-yellow-500 bg-yellow-500/20"
-                  : "border-red-500 bg-red-500/20"
-              )} />
+                "w-4 h-4 mx-auto mb-1 rounded-sm",
+                (parcel.influence ?? 100) > 66 ? "text-green-400"
+                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
+                  : "text-red-400"
+              )}>
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+                  <path d="M8 1L10 6H15L11 9.5L12.5 14.5L8 11.5L3.5 14.5L5 9.5L1 6H6L8 1Z"/>
+                </svg>
+              </div>
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Influence</span>
               <span className={cn(
                 "font-mono text-sm font-bold",
                 (parcel.influence ?? 100) > 66 ? "text-green-400"
                   : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
                   : "text-red-400"
               )}>
-                {parcel.influence ?? 100}
+                {parcel.influence ?? 100}%
               </span>
-              <p className="text-[10px] text-muted-foreground uppercase">Influence</p>
+              {(parcel.influence ?? 100) < 20 && (
+                <p className="text-[8px] text-red-400 uppercase font-bold mt-0.5">⚠ Blocked</p>
+              )}
             </div>
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
               <MapPin className="w-4 h-4 mx-auto mb-1 text-amber-500" />

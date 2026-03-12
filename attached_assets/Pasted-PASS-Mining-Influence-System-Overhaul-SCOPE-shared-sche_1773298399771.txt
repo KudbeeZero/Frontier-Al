@@ -1,0 +1,369 @@
+PASS: Mining & Influence System Overhaul
+SCOPE: shared/schema.ts, server/storage/db.ts, server/storage/mem.ts, client/src/components/game/LandSheet.tsx
+DO NOT TOUCH: any other file, battle engine resolution logic, orbital event system, FRONTIER accumulation logic, WebSocket server, chain services, routes.ts, or any other component.
+
+════════════════════════════════════════
+CONTEXT
+════════════════════════════════════════
+Three systems need fixing:
+
+1. Mining yields are too low — crystal rounds to zero at almost any richness,
+   biomes all produce the same resource types, storage fills in 28 minutes,
+   and plots hit the depletion floor after 5 hours with no recovery.
+
+2. Influence repair rate (2 pts/day) means one lost battle takes 7.5 days to
+   recover. Players will be permanently damaged. The repair timer is also
+   wired to lastFrontierClaimTs (wrong timestamp). Influence also has no
+   effect on resource mining — it only gates FRONTIER generation, making it
+   an invisible stat during normal play.
+
+3. The influence UI card is an unstyled naked div that shows a raw number
+   with no % sign, no progress bar, and no warning when yield is blocked.
+   It does not match the other stat cards.
+
+════════════════════════════════════════
+EDIT 1 — shared/schema.ts
+Replace biomeBonuses type and values
+════════════════════════════════════════
+
+FIND this exact block:
+  export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: number }> = {
+    forest: { yieldMod: 1.2, defenseMod: 1.1 },
+    desert: { yieldMod: 0.8, defenseMod: 0.9 },
+    mountain: { yieldMod: 0.6, defenseMod: 1.3 },
+    plains: { yieldMod: 1.0, defenseMod: 1.0 },
+    water: { yieldMod: 0.5, defenseMod: 0.7 },
+    tundra: { yieldMod: 0.7, defenseMod: 1.2 },
+    volcanic: { yieldMod: 1.5, defenseMod: 0.8 },
+    swamp: { yieldMod: 0.9, defenseMod: 0.6 },
+  };
+
+REPLACE WITH:
+  export const biomeBonuses: Record<BiomeType, {
+    ironMod: number; fuelMod: number; crystalMod: number; defenseMod: number;
+  }> = {
+    volcanic: { ironMod: 1.8, fuelMod: 0.6, crystalMod: 2.5, defenseMod: 0.8 },
+    mountain: { ironMod: 2.0, fuelMod: 0.4, crystalMod: 0.5, defenseMod: 1.3 },
+    desert:   { ironMod: 0.6, fuelMod: 2.5, crystalMod: 0.3, defenseMod: 0.9 },
+    forest:   { ironMod: 1.2, fuelMod: 1.0, crystalMod: 1.5, defenseMod: 1.1 },
+    plains:   { ironMod: 1.0, fuelMod: 1.0, crystalMod: 1.0, defenseMod: 1.0 },
+    tundra:   { ironMod: 0.8, fuelMod: 1.8, crystalMod: 0.8, defenseMod: 1.2 },
+    swamp:    { ironMod: 0.7, fuelMod: 0.9, crystalMod: 2.0, defenseMod: 0.6 },
+    water:    { ironMod: 0.3, fuelMod: 0.3, crystalMod: 3.0, defenseMod: 0.7 },
+  };
+
+════════════════════════════════════════
+EDIT 2 — shared/schema.ts
+Update BASE_YIELD, BASE_STORAGE_CAPACITY, storage_depot effect text, and influenceRepairRate default
+════════════════════════════════════════
+
+FIND:
+  export const BASE_YIELD = { iron: 10, fuel: 5, crystal: 1 };
+  export const BASE_STORAGE_CAPACITY = 200;
+
+REPLACE WITH:
+  export const BASE_YIELD = { iron: 20, fuel: 12, crystal: 4 };
+  export const BASE_STORAGE_CAPACITY = 800;
+
+FIND:
+  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+100 capacity per level" },
+
+REPLACE WITH:
+  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 capacity per level" },
+
+════════════════════════════════════════
+EDIT 3 — server/storage/db.ts
+Update mineResources to use per-resource biome mods, new depletion floor,
+active influence repair, and influence yield multiplier
+════════════════════════════════════════
+
+FIND this exact block inside mineResources:
+      const biomeBonus  = biomeBonuses[parcel.biome];
+      const richMult    = parcel.richness / 100;
+      const ironYield   = Math.floor(BASE_YIELD.iron   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
+      const fuelYield   = Math.floor(BASE_YIELD.fuel   * biomeBonus.yieldMod * richMult * parcel.yieldMultiplier * satelliteMult);
+      const crystalYield= Math.floor(BASE_YIELD.crystal * richMult * satelliteMult);
+
+      const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
+      const remaining   = parcel.storageCapacity - totalStored;
+      const totalYield  = ironYield + fuelYield + crystalYield;
+      const ratio       = remaining < totalYield ? remaining / totalYield : 1;
+
+      const finalIron    = Math.floor(ironYield    * ratio);
+      const finalFuel    = Math.floor(fuelYield    * ratio);
+      const finalCrystal = Math.floor(crystalYield * ratio);
+      const newRichness  = parcel.richness > 20 ? Math.max(20, parcel.richness - 1) : parcel.richness;
+
+      await Promise.all([
+        tx.update(parcelsTable)
+          .set({
+            ironStored:    parcel.ironStored    + finalIron,
+            fuelStored:    parcel.fuelStored    + finalFuel,
+            crystalStored: parcel.crystalStored + finalCrystal,
+            lastMineTs:    now,
+            richness:      newRichness,
+          })
+          .where(eq(parcelsTable.id, parcel.id)),
+
+REPLACE WITH:
+      const biomeBonus   = biomeBonuses[parcel.biome];
+      const richMult     = parcel.richness / 100;
+      const influenceMult = (parcel.influence ?? 100) / 100;
+      const ironYield    = Math.floor(BASE_YIELD.iron    * biomeBonus.ironMod    * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
+      const fuelYield    = Math.floor(BASE_YIELD.fuel    * biomeBonus.fuelMod    * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
+      const crystalYield = Math.floor(BASE_YIELD.crystal * biomeBonus.crystalMod * richMult * influenceMult * parcel.yieldMultiplier * satelliteMult);
+
+      const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
+      const remaining   = parcel.storageCapacity - totalStored;
+      const totalYield  = ironYield + fuelYield + crystalYield;
+      const ratio       = remaining < totalYield ? remaining / totalYield : 1;
+
+      const finalIron    = Math.floor(ironYield    * ratio);
+      const finalFuel    = Math.floor(fuelYield    * ratio);
+      const finalCrystal = Math.floor(crystalYield * ratio);
+
+      // Richness depletes by 0.5 per mine (applied every other mine via floor).
+      // Floor raised to 40 so depleted plots still feel worth mining.
+      const newRichness = parcel.richness > 40
+        ? Math.max(40, parcel.richness - 0.5)
+        : parcel.richness;
+
+      // Active influence repair: each mine restores +2 influence (capped at 100).
+      const currentInfluence = parcel.influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + 2);
+
+      await Promise.all([
+        tx.update(parcelsTable)
+          .set({
+            ironStored:    parcel.ironStored    + finalIron,
+            fuelStored:    parcel.fuelStored    + finalFuel,
+            crystalStored: parcel.crystalStored + finalCrystal,
+            lastMineTs:    now,
+            richness:      newRichness,
+            influence:     newInfluence,
+          })
+          .where(eq(parcelsTable.id, parcel.id)),
+
+════════════════════════════════════════
+EDIT 4 — server/storage/db.ts
+Fix repairInfluence: correct repair rate and use lastMineTs as elapsed reference
+════════════════════════════════════════
+
+FIND this exact block:
+    for (const row of damaged) {
+      const lastClaim = Number(row.lastFrontierClaimTs) || 0;
+      const elapsedMs = now - lastClaim;
+      if (elapsedMs <= 0) continue;
+
+      const repairRate = (row as any).influenceRepairRate ?? 2.0;
+      const repairAmount = (elapsedMs / MS_PER_DAY) * repairRate;
+      const currentInfluence = (row as any).influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + repairAmount);
+
+      if (newInfluence - currentInfluence >= 0.5) {
+        await this.db
+          .update(parcelsTable)
+          .set({ influence: Math.round(newInfluence) })
+          .where(eq(parcelsTable.id, row.id));
+      }
+    }
+
+REPLACE WITH:
+    for (const row of damaged) {
+      // Use lastMineTs as the elapsed reference — it reflects actual player
+      // activity. Falls back to lastFrontierClaimTs for plots never mined.
+      const lastActivity = Math.max(
+        Number(row.lastMineTs) || 0,
+        Number(row.lastFrontierClaimTs) || 0
+      );
+      const elapsedMs = now - lastActivity;
+      if (elapsedMs <= 0) continue;
+
+      // 24 pts/day = 1 pt/hr passive repair.
+      // One lost battle (15 dmg) fully repairs in ~15 hrs idle.
+      const repairRate = (row as any).influenceRepairRate ?? 24.0;
+      const repairAmount = (elapsedMs / MS_PER_DAY) * repairRate;
+      const currentInfluence = (row as any).influence ?? 100;
+      const newInfluence = Math.min(100, currentInfluence + repairAmount);
+
+      if (newInfluence - currentInfluence >= 0.5) {
+        await this.db
+          .update(parcelsTable)
+          .set({ influence: Math.round(newInfluence) })
+          .where(eq(parcelsTable.id, row.id));
+      }
+    }
+
+════════════════════════════════════════
+EDIT 5 — server/storage/db.ts
+Update storage_depot buildImprovement to award +200 capacity
+════════════════════════════════════════
+
+FIND:
+      else if (action.improvementType === "storage_depot") newCapacity += 100;
+
+REPLACE WITH:
+      else if (action.improvementType === "storage_depot") newCapacity += 200;
+
+════════════════════════════════════════
+EDIT 6 — server/storage/mem.ts
+Mirror mining logic changes in MemStorage
+════════════════════════════════════════
+
+FIND this exact block inside mineResources in mem.ts:
+    const biomeBonus = biomeBonuses[parcel.biome];
+    const richnessMultiplier = parcel.richness / 100;
+    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
+    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
+    const crystalYield = Math.floor(BASE_YIELD.crystal * richnessMultiplier * satelliteMult);
+
+    const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
+    const remaining = parcel.storageCapacity - totalStored;
+    const totalYield = ironYield + fuelYield + crystalYield;
+
+    const ratio = remaining < totalYield ? remaining / totalYield : 1;
+    const finalIron = Math.floor(ironYield * ratio);
+    const finalFuel = Math.floor(fuelYield * ratio);
+    const finalCrystal = Math.floor(crystalYield * ratio);
+
+    parcel.ironStored += finalIron;
+    parcel.fuelStored += finalFuel;
+    parcel.crystalStored += finalCrystal;
+    parcel.lastMineTs = now;
+
+    player.totalIronMined += finalIron;
+    player.totalFuelMined += finalFuel;
+    player.totalCrystalMined += finalCrystal;
+
+    if (parcel.richness > 20) {
+      parcel.richness = Math.max(20, parcel.richness - 1);
+    }
+
+REPLACE WITH:
+    const biomeBonus = biomeBonuses[parcel.biome];
+    const richnessMultiplier = parcel.richness / 100;
+    const influenceMult = (parcel.influence ?? 100) / 100;
+    const ironYield    = Math.floor(BASE_YIELD.iron    * biomeBonus.ironMod    * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
+    const fuelYield    = Math.floor(BASE_YIELD.fuel    * biomeBonus.fuelMod    * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
+    const crystalYield = Math.floor(BASE_YIELD.crystal * biomeBonus.crystalMod * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
+
+    const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
+    const remaining = parcel.storageCapacity - totalStored;
+    const totalYield = ironYield + fuelYield + crystalYield;
+
+    const ratio = remaining < totalYield ? remaining / totalYield : 1;
+    const finalIron    = Math.floor(ironYield    * ratio);
+    const finalFuel    = Math.floor(fuelYield    * ratio);
+    const finalCrystal = Math.floor(crystalYield * ratio);
+
+    parcel.ironStored    += finalIron;
+    parcel.fuelStored    += finalFuel;
+    parcel.crystalStored += finalCrystal;
+    parcel.lastMineTs     = now;
+
+    player.totalIronMined    += finalIron;
+    player.totalFuelMined    += finalFuel;
+    player.totalCrystalMined += finalCrystal;
+
+    // Richness depletes by 0.5 per mine, floor raised to 40.
+    if (parcel.richness > 40) {
+      parcel.richness = Math.max(40, parcel.richness - 0.5);
+    }
+    // Active influence repair: +2 per mine, capped at 100.
+    parcel.influence = Math.min(100, (parcel.influence ?? 100) + 2);
+
+════════════════════════════════════════
+EDIT 7 — server/storage/mem.ts
+Update storage_depot capacity bonus in buildImprovement
+════════════════════════════════════════
+
+FIND in mem.ts:
+    } else if (action.improvementType === "storage_depot") {
+      parcel.storageCapacity += 100;
+
+REPLACE WITH:
+    } else if (action.improvementType === "storage_depot") {
+      parcel.storageCapacity += 200;
+
+════════════════════════════════════════
+EDIT 8 — client/src/components/game/LandSheet.tsx
+Replace the naked influence div with a proper styled card
+════════════════════════════════════════
+
+FIND this exact block:
+            <div className="text-center">
+              <div className={cn(
+                "w-4 h-4 mx-auto mb-1 rounded-full border-2",
+                (parcel.influence ?? 100) > 66
+                  ? "border-green-500 bg-green-500/20"
+                  : (parcel.influence ?? 100) > 33
+                  ? "border-yellow-500 bg-yellow-500/20"
+                  : "border-red-500 bg-red-500/20"
+              )} />
+              <span className={cn(
+                "font-mono text-sm font-bold",
+                (parcel.influence ?? 100) > 66 ? "text-green-400"
+                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
+                  : "text-red-400"
+              )}>
+                {parcel.influence ?? 100}
+              </span>
+              <p className="text-[10px] text-muted-foreground uppercase">Influence</p>
+            </div>
+
+REPLACE WITH:
+            <div className={cn(
+              "p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center transition-colors",
+              (parcel.influence ?? 100) > 66 ? "hover:border-green-500/40"
+                : (parcel.influence ?? 100) > 33 ? "hover:border-yellow-500/40"
+                : "hover:border-red-500/40 border-red-500/30"
+            )}>
+              <div className={cn(
+                "w-4 h-4 mx-auto mb-1 rounded-sm",
+                (parcel.influence ?? 100) > 66 ? "text-green-400"
+                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
+                  : "text-red-400"
+              )}>
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+                  <path d="M8 1L10 6H15L11 9.5L12.5 14.5L8 11.5L3.5 14.5L5 9.5L1 6H6L8 1Z"/>
+                </svg>
+              </div>
+              <span className=\"text-[9px] text-muted-foreground block font-display uppercase tracking-wide\">Influence</span>
+              <span className={cn(
+                "font-mono text-sm font-bold",
+                (parcel.influence ?? 100) > 66 ? "text-green-400"
+                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
+                  : "text-red-400"
+              )}>
+                {parcel.influence ?? 100}%
+              </span>
+              {(parcel.influence ?? 100) < 20 && (
+                <p className="text-[8px] text-red-400 uppercase font-bold mt-0.5">⚠ Blocked</p>
+              )}
+            </div>
+
+════════════════════════════════════════
+VERIFICATION CHECKLIST
+════════════════════════════════════════
+1. Run: npx tsc --noEmit
+   Expected: zero errors
+
+2. Confirm biomeBonuses in shared/schema.ts now has ironMod / fuelMod / crystalMod fields (not yieldMod)
+
+3. Confirm db.ts mineResources uses biomeBonus.ironMod, biomeBonus.fuelMod, biomeBonus.crystalMod
+
+4. Confirm mem.ts mineResources mirrors the same logic
+
+5. Confirm richness floor is 40 (not 20) in both db.ts and mem.ts
+
+6. Confirm influence is incremented by 2 on each mine in both db.ts and mem.ts
+
+7. Confirm repairInfluence uses Math.max(lastMineTs, lastFrontierClaimTs) as the elapsed reference
+
+8. Confirm repair rate default is 24.0 (not 2.0)
+
+9. Confirm storage_depot awards +200 in both db.ts and mem.ts
+
+10. Confirm LandSheet.tsx influence card shows % suffix and ⚠ Blocked warning below 20
+
+DO NOT modify any other file. DO NOT touch battle resolution, FRONTIER accumulation, orbital events, or any route handler.

@@ -94,6 +94,7 @@ export function BaseInfoPanel({
   const isEnemy = parcel.ownerId && (!player || parcel.ownerId !== player.id);
   const canMine = isOwned && Date.now() - parcel.lastMineTs >= MINE_COOLDOWN_MS;
   const biomeBonus = biomeBonuses[parcel.biome];
+  const avgYieldPct = Math.round(((biomeBonus.ironMod + biomeBonus.fuelMod + biomeBonus.crystalMod) / 3 - 1) * 100);
 
   return (
     <div className={cn(
@@ -136,7 +137,7 @@ export function BaseInfoPanel({
           <StatRow icon={Pickaxe} label="Iron Stored" value={parcel.ironStored} colorClass="text-iron" testId="stat-iron" />
           <StatRow icon={Fuel} label="Fuel Stored" value={parcel.fuelStored} colorClass="text-fuel" testId="stat-fuel" />
           <StatRow icon={Shield} label="Defense Bonus" value={`+${Math.round((biomeBonus.defenseMod - 1) * 100)}%`} testId="stat-defense-bonus" />
-          <StatRow icon={Pickaxe} label="Yield Bonus" value={`+${Math.round((biomeBonus.yieldMod - 1) * 100)}%`} testId="stat-yield-bonus" />
+          <StatRow icon={Pickaxe} label="Yield Bonus" value={`${avgYieldPct >= 0 ? "+" : ""}${avgYieldPct}%`} testId="stat-yield-bonus" />
         </div>
 
         {isOwned && (

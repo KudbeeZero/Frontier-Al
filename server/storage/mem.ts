@@ -340,31 +340,35 @@ export class MemStorage implements IStorage {
 
     const biomeBonus = biomeBonuses[parcel.biome];
     const richnessMultiplier = parcel.richness / 100;
-    const ironYield = Math.floor(BASE_YIELD.iron * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
-    const fuelYield = Math.floor(BASE_YIELD.fuel * biomeBonus.yieldMod * richnessMultiplier * parcel.yieldMultiplier * satelliteMult);
-    const crystalYield = Math.floor(BASE_YIELD.crystal * richnessMultiplier * satelliteMult);
+    const influenceMult = (parcel.influence ?? 100) / 100;
+    const ironYield    = Math.floor(BASE_YIELD.iron    * biomeBonus.ironMod    * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
+    const fuelYield    = Math.floor(BASE_YIELD.fuel    * biomeBonus.fuelMod    * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
+    const crystalYield = Math.floor(BASE_YIELD.crystal * biomeBonus.crystalMod * richnessMultiplier * influenceMult * parcel.yieldMultiplier * satelliteMult);
 
     const totalStored = parcel.ironStored + parcel.fuelStored + parcel.crystalStored;
     const remaining = parcel.storageCapacity - totalStored;
     const totalYield = ironYield + fuelYield + crystalYield;
 
     const ratio = remaining < totalYield ? remaining / totalYield : 1;
-    const finalIron = Math.floor(ironYield * ratio);
-    const finalFuel = Math.floor(fuelYield * ratio);
+    const finalIron    = Math.floor(ironYield    * ratio);
+    const finalFuel    = Math.floor(fuelYield    * ratio);
     const finalCrystal = Math.floor(crystalYield * ratio);
 
-    parcel.ironStored += finalIron;
-    parcel.fuelStored += finalFuel;
+    parcel.ironStored    += finalIron;
+    parcel.fuelStored    += finalFuel;
     parcel.crystalStored += finalCrystal;
-    parcel.lastMineTs = now;
+    parcel.lastMineTs     = now;
 
-    player.totalIronMined += finalIron;
-    player.totalFuelMined += finalFuel;
+    player.totalIronMined    += finalIron;
+    player.totalFuelMined    += finalFuel;
     player.totalCrystalMined += finalCrystal;
 
-    if (parcel.richness > 20) {
-      parcel.richness = Math.max(20, parcel.richness - 1);
+    // Richness depletes by 0.5 per mine, floor raised to 40.
+    if (parcel.richness > 40) {
+      parcel.richness = Math.max(40, parcel.richness - 0.5);
     }
+    // Active influence repair: +2 per mine, capped at 100.
+    parcel.influence = Math.min(100, (parcel.influence ?? 100) + 2);
 
     this.events.push({
       id: randomUUID(),
@@ -606,7 +610,7 @@ export class MemStorage implements IStorage {
       parcel.defenseLevel += 8;
       parcel.storageCapacity += 50;
     } else if (action.improvementType === "storage_depot") {
-      parcel.storageCapacity += 100;
+      parcel.storageCapacity += 200;
     }
 
     parcel.frontierPerDay = calculateFrontierPerDay(parcel.improvements);
