@@ -155,14 +155,16 @@ export function LandSheet({
           </div>
 
           {/* Biome yield profile */}
-          <div className="mb-2 px-1 flex items-center gap-2 text-[10px] text-muted-foreground font-display uppercase tracking-wide">
-            <span style={{ color: biomeColors[parcel.biome] }}>■</span>
-            <span>{parcel.biome} zone</span>
-            <span className="ml-auto font-mono text-[9px]">
-              ⛏ ×{biomeBonus.ironMod.toFixed(1)} iron &nbsp;
-              ⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel &nbsp;
-              💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal
-            </span>
+          <div className="mb-2 px-1">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-display uppercase tracking-wide mb-1">
+              <span style={{ color: biomeColors[parcel.biome] }}>■</span>
+              <span>{parcel.biome} zone</span>
+            </div>
+            <div className="flex gap-3 font-mono text-[9px] text-muted-foreground">
+              <span className="text-iron">⛏ ×{biomeBonus.ironMod.toFixed(1)} iron</span>
+              <span className="text-fuel">⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel</span>
+              <span className="text-purple-400">💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal</span>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2 mb-2">
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
@@ -332,7 +334,8 @@ export function LandSheet({
                     const cost = atMax ? 0 : info.costFrontier[level - 1];
                     const canAfford = player && player.frontier >= cost;
                     const hasPrereq = !info.prerequisite || parcel.improvements.find(i => i.type === info.prerequisite);
-                    const perDay = atMax ? info.frontierPerDay[info.maxLevel - 1] : info.frontierPerDay[level - 1];
+                    const perDay = info.frontierPerDay[Math.min(level - 1, info.frontierPerDay.length - 1)];
+                    const showsIncome = perDay > 0;
 
                     return (
                       <Button
@@ -345,12 +348,23 @@ export function LandSheet({
                         data-testid={`button-build-${type}`}
                       >
                         <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
-                        {existing && <span className="text-[9px] text-primary font-mono">Lv{existing.level}</span>}
+                        {existing && (
+                          <span className="text-[9px] text-primary font-mono">
+                            Lv{existing.level}{existing.level < info.maxLevel ? ` → Lv${existing.level + 1}` : " MAX"}
+                          </span>
+                        )}
                         <span className="text-[9px] text-muted-foreground font-mono">
-                          {atMax ? "MAX" : `${cost} FRNTR`}
+                          {atMax ? "✓ MAX" : `${cost} FRNTR`}
                         </span>
-                        <span className="text-[9px] text-primary/70 font-mono">+{perDay}/day</span>
-                        {!hasPrereq && <span className="text-[8px] text-destructive">Needs Electricity</span>}
+                        {showsIncome
+                          ? <span className="text-[9px] text-primary/70 font-mono">+{perDay} FRNTR/day</span>
+                          : <span className="text-[9px] text-primary/70 font-mono">{info.effect}</span>
+                        }
+                        {!hasPrereq && (
+                          <span className="text-[8px] text-destructive flex items-center gap-0.5">
+                            🔒 Needs Electricity
+                          </span>
+                        )}
                       </Button>
                     );
                   })}

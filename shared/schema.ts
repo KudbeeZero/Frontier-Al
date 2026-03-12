@@ -42,11 +42,11 @@ export const DEFENSE_IMPROVEMENT_INFO: Record<DefenseImprovementType, {
   maxLevel: number;
   effect: string;
 }> = {
-  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense + bonus battle power per level" },
-  shield_gen: { name: "Shield Generator", description: "Energy shield that absorbs attack damage and reduces influence loss.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense + reduces influence damage per level" },
-  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity per level" },
-  radar: { name: "Radar Array", description: "Detects incoming attacks early. Attacker power is reduced by 10% against radar-equipped plots.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attacker power" },
-  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 storage capacity" },
+  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 def · battle power/lvl" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield that reduces influence loss on attack.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 def · less influence dmg" },
+  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity/lvl" },
+  radar: { name: "Radar Array", description: "Detects incoming attacks. Reduces incoming attacker power by 10%.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attack power" },
+  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 def · +50 storage" },
 };
 
 export const FACILITY_INFO: Record<FacilityType, {
