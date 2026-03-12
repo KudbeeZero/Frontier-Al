@@ -1,0 +1,512 @@
+PASS: Upgrade & Facility System — Mechanical Differentiation + UI Overhaul
+SCOPE: shared/schema.ts, server/storage/db.ts, server/storage/mem.ts,
+       client/src/components/game/LandSheet.tsx
+DO NOT TOUCH: battle engine resolution, WebSocket server, routes.ts (except
+the single deployAttack radar check), orbital system, chain services,
+db-schema.ts, or any migration files. No new DB columns.
+
+════════════════════════════════════════
+CONTEXT
+════════════════════════════════════════
+Four systems need fixing:
+
+1. RADAR does nothing — costs 45I 35F and has zero mechanical effect.
+2. FACILITIES are identical — Blockchain Node, Data Centre, AI Lab all give
+   the same output at the same cost. No strategic choice exists.
+3. "MINE" upgrade modifies yieldMultiplier (same as Yield upgrade) — two
+   upgrades that do the same thing with different price tags.
+4. "FORTRESS" in UPGRADE_COSTS overlaps with the Fortress building, is
+   strictly worse, and confuses players.
+5. The UI does not show what upgrades do, crystal is missing from the stat
+   bar, biome yield profile is invisible, and the collapsed Upgrade button
+   silently triggers a defense upgrade with no player choice.
+
+════════════════════════════════════════
+EDIT 1 — shared/schema.ts
+Give each upgrade and facility a unique mechanical identity
+════════════════════════════════════════
+
+FIND:
+  turret: { name: "Turret", description: "Automated defense turret", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense per level" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield for base", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense per level" },
+  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 capacity per level" },
+  radar: { name: "Radar Array", description: "Early warning system", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "See incoming attacks" },
+  fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
+
+REPLACE WITH:
+  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense + bonus battle power per level" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield that absorbs attack damage and reduces influence loss.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense + reduces influence damage per level" },
+  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity per level" },
+  radar: { name: "Radar Array", description: "Detects incoming attacks early. Attacker power is reduced by 10% against radar-equipped plots.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attacker power" },
+  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 storage capacity" },
+
+FIND the FACILITY_INFO block and REPLACE WITH (differentiated effects):
+  electricity: {
+    name: "Electricity",
+    description: "Power grid required by all advanced facilities. Provides baseline token income.",
+    costFrontier: [30],
+    maxLevel: 1,
+    frontierPerDay: [1],
+    effect: "+1 FRNTR/day. Unlocks advanced facilities.",
+  },
+  blockchain_node: {
+    name: "Blockchain Node",
+    description: "Decentralized computing node. Pure passive FRONTIER token income.",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [2, 3, 4],
+    effect: "+2/3/4 FRNTR/day per level",
+    prerequisite: "electricity",
+  },
+  data_centre: {
+    name: "Data Centre",
+    description: "High-performance processing that boosts all resource yields from this plot.",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [0, 0, 0],
+    effect: "+5/10/15% resource yield per level",
+    prerequisite: "electricity",
+  },
+  ai_lab: {
+    name: "AI Lab",
+    description: "AI-optimised mining routines that reduce the mine cooldown on this plot.",
+    costFrontier: [120, 270, 480],
+    maxLevel: 3,
+    frontierPerDay: [0, 0, 0],
+    effect: "-30s/-60s/-90s mine cooldown per level",
+    prerequisite: "electricity",
+  },
+
+FIND the UPGRADE_COSTS block:
+  export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
+    defense: { iron: 50, fuel: 25 },
+    yield: { iron: 75, fuel: 50 },
+    mine: { iron: 100, fuel: 75 },
+    fortress: { iron: 200, fuel: 150 },
+  };
+
+REPLACE WITH:
+  export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number; description: string; effect: string }> = {
+    defense: { iron: 50, fuel: 25, description: "Reinforces base defenses", effect: "+1 defense level → +15 battle power" },
+    yield:   { iron: 75, fuel: 50, description: "Improves extraction efficiency", effect: "+20% all resource yields permanently" },
+    mine:    { iron: 100, fuel: 75, description: "Restores depleted resource veins", effect: "+10 richness (recovers depletion)" },
+    bunker:  { iron: 150, fuel: 100, description: "Hardened shelter that accelerates influence repair", effect: "+5 influence repair rate/day" },
+  };
+
+════════════════════════════════════════
+EDIT 2 — server/storage/db.ts
+Wire Radar into deployAttack power reduction
+════════════════════════════════════════
+
+FIND this line in deployAttack (inside db.ts, not routes.ts):
+      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus;
+
+REPLACE WITH:
+      // Radar Array: reduces incoming attacker power by 10% if defender has one built
+      const hasRadar = target.improvements.some(i => i.type === "radar");
+      const radarMod = hasRadar ? 0.9 : 1.0;
+      const rawAttackerPower = (action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus) * radarMod;
+
+════════════════════════════════════════
+EDIT 3 — server/storage/db.ts
+Wire Data Centre to yieldMultiplier, AI Lab to cooldown reduction,
+fix "mine" upgrade to restore richness, replace "fortress" with "bunker"
+════════════════════════════════════════
+
+FIND the switch block in upgradeBase:
+        case "defense":   updates.defenseLevel    = Math.min(10, parcel.defenseLevel + 1); break;
+        case "yield":     updates.yieldMultiplier = parcel.yieldMultiplier + 0.2; break;
+        case "mine":      updates.yieldMultiplier = parcel.yieldMultiplier + 0.3; break;
+        case "fortress":  updates.defenseLevel    = Math.min(10, parcel.defenseLevel + 3); break;
+
+REPLACE WITH:
+        case "defense": updates.defenseLevel    = Math.min(10, parcel.defenseLevel + 1); break;
+        case "yield":   updates.yieldMultiplier = parcel.yieldMultiplier + 0.2; break;
+        case "mine":    updates.richness        = Math.min(100, parcel.richness + 10); break;
+        case "bunker":  updates.influenceRepairRate = (parcel.influenceRepairRate ?? 24) + 5; break;
+
+FIND the buildImprovement side-effects block:
+      let newDefense  = parcel.defenseLevel;
+      let newCapacity = parcel.storageCapacity;
+      if      (action.improvementType === "turret")       newDefense  += 3;
+      else if (action.improvementType === "shield_gen")   newDefense  += 5;
+      else if (action.improvementType === "fortress")   { newDefense  += 8; newCapacity += 50; }
+      else if (action.improvementType === "storage_depot") newCapacity += 200;
+
+REPLACE WITH:
+      let newDefense   = parcel.defenseLevel;
+      let newCapacity  = parcel.storageCapacity;
+      let newYieldMult = parcel.yieldMultiplier;
+      if      (action.improvementType === "turret")        newDefense   += 3;
+      else if (action.improvementType === "shield_gen")    newDefense   += 5;
+      else if (action.improvementType === "fortress")    { newDefense   += 8; newCapacity += 50; }
+      else if (action.improvementType === "storage_depot") newCapacity  += 200;
+      else if (action.improvementType === "data_centre")   newYieldMult += 0.05 * level;
+
+FIND the parcelsTable.set call in buildImprovement that saves side effects:
+          .set({ improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, frontierPerDay: newFpd })
+
+REPLACE WITH:
+          .set({ improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, yieldMultiplier: newYieldMult, frontierPerDay: newFpd })
+
+FIND the return statement at the end of buildImprovement:
+      return rowToParcel({ ...parcelRow, improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, frontierPerDay: newFpd });
+
+REPLACE WITH:
+      return rowToParcel({ ...parcelRow, improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, yieldMultiplier: newYieldMult, frontierPerDay: newFpd });
+
+FIND the mineResources cooldown check:
+      if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
+
+REPLACE WITH:
+      // AI Lab reduces mine cooldown by 30s per level (max 90s reduction at level 3)
+      const aiLab = parcel.improvements.find(i => i.type === "ai_lab");
+      const cooldownReductionMs = aiLab ? aiLab.level * 30_000 : 0;
+      const effectiveCooldownMs = Math.max(60_000, MINE_COOLDOWN_MS - cooldownReductionMs);
+      if (now - parcel.lastMineTs < effectiveCooldownMs) throw new Error("Mining cooldown not complete");
+
+════════════════════════════════════════
+EDIT 4 — server/storage/mem.ts
+Mirror all backend changes in MemStorage
+════════════════════════════════════════
+
+FIND the switch block in upgradeBase in mem.ts:
+      case "defense":
+        parcel.defenseLevel = Math.min(10, parcel.defenseLevel + 1);
+        break;
+      case "yield":
+        parcel.yieldMultiplier += 0.2;
+        break;
+      case "mine":
+        parcel.yieldMultiplier += 0.3;
+        break;
+      case "fortress":
+        parcel.defenseLevel = Math.min(10, parcel.defenseLevel + 3);
+        break;
+
+REPLACE WITH:
+      case "defense":
+        parcel.defenseLevel = Math.min(10, parcel.defenseLevel + 1);
+        break;
+      case "yield":
+        parcel.yieldMultiplier += 0.2;
+        break;
+      case "mine":
+        parcel.richness = Math.min(100, parcel.richness + 10);
+        break;
+      case "bunker":
+        parcel.influenceRepairRate = (parcel.influenceRepairRate ?? 24) + 5;
+        break;
+
+FIND the buildImprovement side-effects block in mem.ts:
+    if (action.improvementType === "turret") {
+      parcel.defenseLevel += 3;
+    } else if (action.improvementType === "shield_gen") {
+      parcel.defenseLevel += 5;
+    } else if (action.improvementType === "fortress") {
+      parcel.defenseLevel += 8;
+      parcel.storageCapacity += 50;
+    } else if (action.improvementType === "storage_depot") {
+      parcel.storageCapacity += 200;
+    }
+
+REPLACE WITH:
+    if (action.improvementType === "turret") {
+      parcel.defenseLevel += 3;
+    } else if (action.improvementType === "shield_gen") {
+      parcel.defenseLevel += 5;
+    } else if (action.improvementType === "fortress") {
+      parcel.defenseLevel += 8;
+      parcel.storageCapacity += 50;
+    } else if (action.improvementType === "storage_depot") {
+      parcel.storageCapacity += 200;
+    } else if (action.improvementType === "data_centre") {
+      parcel.yieldMultiplier += 0.05 * level;
+    }
+
+FIND the cooldown check in mem.ts mineResources:
+    if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
+
+REPLACE WITH:
+    const aiLab = parcel.improvements.find(i => i.type === "ai_lab");
+    const cooldownReductionMs = aiLab ? aiLab.level * 30_000 : 0;
+    const effectiveCooldownMs = Math.max(60_000, MINE_COOLDOWN_MS - cooldownReductionMs);
+    if (now - parcel.lastMineTs < effectiveCooldownMs) throw new Error("Mining cooldown not complete");
+
+════════════════════════════════════════
+EDIT 5 — client/src/components/game/LandSheet.tsx
+Full UI overhaul: crystal stat, biome yield preview, upgrade descriptions,
+fix collapsed Upgrade button, show effects on all cards
+════════════════════════════════════════
+
+FIND the 5-card stat grid (starts with grid grid-cols-5):
+          <div className="grid grid-cols-5 gap-2 mb-3">
+
+REPLACE the entire grid block (ending before the {isOwned && storage bar}) WITH:
+          {/* Biome yield profile */}
+          <div className="mb-2 px-1 flex items-center gap-2 text-[10px] text-muted-foreground font-display uppercase tracking-wide">
+            <span style={{ color: biomeColors[parcel.biome] }}>■</span>
+            <span>{parcel.biome} zone</span>
+            <span className="ml-auto font-mono text-[9px]">
+              ⛏ ×{biomeBonus.ironMod.toFixed(1)} iron &nbsp;
+              ⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel &nbsp;
+              💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
+              <Shield className={cn("w-4 h-4 mx-auto mb-1", parcel.defenseLevel > 5 ? "text-green-500" : parcel.defenseLevel > 2 ? "text-yellow-500" : "text-red-500")} />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Defense</span>
+              <span className="font-mono text-sm font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
+              <span className="text-[8px] text-muted-foreground block">{(parcel.defenseLevel * 15).toFixed(0)} power</span>
+            </div>
+            <div className={cn(
+              "p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center transition-colors",
+              (parcel.influence ?? 100) > 66 ? "hover:border-green-500/40"
+                : (parcel.influence ?? 100) > 33 ? "hover:border-yellow-500/40"
+                : "border-red-500/30 hover:border-red-500/40"
+            )}>
+              <div className={cn("w-4 h-4 mx-auto mb-1", (parcel.influence ?? 100) > 66 ? "text-green-400" : (parcel.influence ?? 100) > 33 ? "text-yellow-400" : "text-red-400")}>
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4"><path d="M8 1L10 6H15L11 9.5L12.5 14.5L8 11.5L3.5 14.5L5 9.5L1 6H6L8 1Z"/></svg>
+              </div>
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Influence</span>
+              <span className={cn("font-mono text-sm font-bold", (parcel.influence ?? 100) > 66 ? "text-green-400" : (parcel.influence ?? 100) > 33 ? "text-yellow-400" : "text-red-400")}>
+                {parcel.influence ?? 100}%
+              </span>
+              {(parcel.influence ?? 100) < 20 && <p className="text-[8px] text-red-400 uppercase font-bold mt-0.5">⚠ Blocked</p>}
+            </div>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
+              <MapPin className="w-4 h-4 mx-auto mb-1 text-amber-500" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Richness</span>
+              <span className="font-mono text-sm font-bold">{Math.round(parcel.richness)}%</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-iron/40 transition-colors">
+              <Pickaxe className="w-4 h-4 mx-auto mb-1 text-iron" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Iron</span>
+              <span className="font-mono text-sm font-bold text-iron">{parcel.ironStored}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-fuel/40 transition-colors">
+              <Fuel className="w-4 h-4 mx-auto mb-1 text-fuel" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Fuel</span>
+              <span className="font-mono text-sm font-bold text-fuel">{parcel.fuelStored}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-purple-400/40 transition-colors">
+              <Gem className="w-4 h-4 mx-auto mb-1 text-purple-400" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Crystal</span>
+              <span className="font-mono text-sm font-bold text-purple-400">{parcel.crystalStored}</span>
+            </div>
+          </div>
+
+FIND the collapsed Upgrade button:
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onUpgrade("defense")}
+                  disabled={isUpgrading}
+                  className="font-display uppercase tracking-wide text-xs font-semibold"
+                  data-testid="button-upgrade"
+                >
+                  <Shield className="w-3.5 h-3.5 mr-1" />
+                  Upgrade
+                </Button>
+
+REPLACE WITH:
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setExpanded(true)}
+                  className="font-display uppercase tracking-wide text-xs font-semibold"
+                  data-testid="button-upgrade"
+                >
+                  <Hammer className="w-3.5 h-3.5 mr-1" />
+                  Upgrade ↑
+                </Button>
+
+FIND the defense improvements grid section header and cards:
+                <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" /> Defense (Iron/Fuel)
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(DEFENSE_IMPROVEMENT_INFO) as [DefenseImprovementType, typeof DEFENSE_IMPROVEMENT_INFO[DefenseImprovementType]][]).map(([type, info]) => {
+                    const existing = parcel.improvements.find(i => i.type === type);
+                    const atMax = existing && existing.level >= info.maxLevel;
+                    const level = existing ? existing.level + 1 : 1;
+                    const cost = { iron: info.cost.iron * level, fuel: info.cost.fuel * level };
+                    const canAfford = player && player.iron >= cost.iron && player.fuel >= cost.fuel;
+
+                    return (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBuild(type)}
+                        disabled={isBuilding || !!atMax || !canAfford}
+                        className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                        data-testid={`button-build-${type}`}
+                      >
+                        <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
+                        {existing && <span className="text-[9px] text-muted-foreground font-mono">Lv{existing.level}</span>}
+                        <span className="text-[9px] text-muted-foreground font-mono">
+                          {atMax ? "MAX" : `${cost.iron}I ${cost.fuel}F`}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                </div>
+
+REPLACE WITH:
+                <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" /> Defense (Iron/Fuel)
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(DEFENSE_IMPROVEMENT_INFO) as [DefenseImprovementType, typeof DEFENSE_IMPROVEMENT_INFO[DefenseImprovementType]][]).map(([type, info]) => {
+                    const existing = parcel.improvements.find(i => i.type === type);
+                    const atMax = existing && existing.level >= info.maxLevel;
+                    const nextLevel = existing ? existing.level + 1 : 1;
+                    const cost = { iron: info.cost.iron * nextLevel, fuel: info.cost.fuel * nextLevel };
+                    const canAfford = player && player.iron >= cost.iron && player.fuel >= cost.fuel;
+                    const needIron = !canAfford && player ? Math.max(0, cost.iron - player.iron) : 0;
+                    const needFuel = !canAfford && player ? Math.max(0, cost.fuel - player.fuel) : 0;
+
+                    return (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBuild(type)}
+                        disabled={isBuilding || !!atMax || !canAfford}
+                        className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                        data-testid={`button-build-${type}`}
+                      >
+                        <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
+                        <span className="text-[9px] text-primary/70 font-mono">{info.effect}</span>
+                        {existing && <span className="text-[9px] text-muted-foreground font-mono">Currently Lv{existing.level} → Lv{nextLevel}</span>}
+                        <span className="text-[9px] text-muted-foreground font-mono mt-0.5">
+                          {atMax ? "✓ MAX" : `${cost.iron}I ${cost.fuel}F`}
+                        </span>
+                        {!atMax && !canAfford && player && (
+                          <span className="text-[8px] text-destructive font-mono">
+                            Need {needIron > 0 ? `+${needIron} iron` : ""}{needIron > 0 && needFuel > 0 ? ", " : ""}{needFuel > 0 ? `+${needFuel} fuel` : ""}
+                          </span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+FIND the UPGRADE_COSTS grid section:
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(UPGRADE_COSTS).map(([type, cost]) => (
+                  <Button
+                    key={type}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onUpgrade(type)}
+                    disabled={isUpgrading || !player || player.iron < cost.iron || player.fuel < cost.fuel}
+                    className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                    data-testid={`button-upgrade-${type}`}
+                  >
+                    <span className="text-[10px] font-display uppercase tracking-wide capitalize">{type}</span>
+                    <span className="text-[9px] text-muted-foreground font-mono">{cost.iron}I {cost.fuel}F</span>
+                  </Button>
+                ))}
+              </div>
+
+REPLACE WITH:
+              <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Hammer className="w-3.5 h-3.5" /> Plot Upgrades (Iron/Fuel)
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(UPGRADE_COSTS).map(([type, cost]) => {
+                  const canAfford = player && player.iron >= cost.iron && player.fuel >= cost.fuel;
+                  const needIron = !canAfford && player ? Math.max(0, cost.iron - player.iron) : 0;
+                  const needFuel = !canAfford && player ? Math.max(0, cost.fuel - player.fuel) : 0;
+                  return (
+                    <Button
+                      key={type}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onUpgrade(type)}
+                      disabled={isUpgrading || !canAfford}
+                      className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                      data-testid={`button-upgrade-${type}`}
+                    >
+                      <span className="text-[10px] font-display uppercase tracking-wide capitalize">{type}</span>
+                      <span className="text-[9px] text-primary/70 font-mono">{cost.effect}</span>
+                      <span className="text-[9px] text-muted-foreground font-mono mt-0.5">{cost.iron}I {cost.fuel}F</span>
+                      {!canAfford && player && (
+                        <span className="text-[8px] text-destructive font-mono">
+                          Need {needIron > 0 ? `+${needIron} iron` : ""}{needIron > 0 && needFuel > 0 ? ", " : ""}{needFuel > 0 ? `+${needFuel} fuel` : ""}
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
+              </div>
+
+FIND the Active Improvements badges section:
+              {parcel.improvements.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-1.5">Active Improvements</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parcel.improvements.map((imp, i) => (
+                      <Badge key={i} variant="secondary" className="text-[10px]">
+                        {IMPROVEMENT_INFO[imp.type]?.name || imp.type} Lv{imp.level}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+REPLACE WITH:
+              {parcel.improvements.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-1.5">Active Improvements</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parcel.improvements.map((imp, i) => {
+                      const info = IMPROVEMENT_INFO[imp.type];
+                      return (
+                        <Badge key={i} variant="secondary" className="text-[10px] flex items-center gap-1">
+                          {info?.name || imp.type} Lv{imp.level}
+                          {info?.effect && <span className="text-primary/60">· {info.effect.split(" per")[0]}</span>}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+════════════════════════════════════════
+VERIFICATION CHECKLIST
+════════════════════════════════════════
+1. Run: npx tsc --noEmit — expect zero errors
+
+2. UPGRADE_COSTS entries: defense, yield, mine, bunker (no "fortress" entry)
+
+3. In db.ts upgradeBase: case "mine" sets richness += 10, case "bunker" sets influenceRepairRate += 5
+
+4. In mem.ts upgradeBase: same as above
+
+5. In db.ts mineResources: ai_lab cooldown reduction computed before the cooldown check
+
+6. In mem.ts mineResources: same ai_lab cooldown check
+
+7. In db.ts deployAttack: hasRadar check reduces rawAttackerPower by 10%
+
+8. In db.ts buildImprovement: data_centre adds to newYieldMult, and newYieldMult is saved to DB
+
+9. LandSheet: stat grid is now 2 rows (3+3), crystal card is present
+
+10. LandSheet: biome yield profile line shows ironMod/fuelMod/crystalMod
+
+11. LandSheet: collapsed Upgrade button calls setExpanded(true), not onUpgrade("defense")
+
+12. LandSheet: each defense improvement card shows info.effect and "Need +X" when unaffordable
+
+13. LandSheet: UPGRADE_COSTS grid has "Plot Upgrades" header and shows cost.effect
+
+DO NOT touch: battle resolution engine, WebSocket server, db-schema.ts,
+migration files, routes.ts (except the deployAttack radar check already
+handled in db.ts storage layer), or any other component.
