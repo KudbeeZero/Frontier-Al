@@ -595,7 +595,7 @@ export class DbStorage implements IStorage {
       // Richness depletes by 0.5 per mine (applied every other mine via floor).
       // Floor raised to 40 so depleted plots still feel worth mining.
       const newRichness = parcel.richness > 40
-        ? Math.max(40, parcel.richness - 0.5)
+        ? Math.max(40, Math.floor(parcel.richness - 0.5))
         : parcel.richness;
 
       // Active influence repair: each mine restores +2 influence (capped at 100).

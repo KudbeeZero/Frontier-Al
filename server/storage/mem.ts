@@ -365,7 +365,7 @@ export class MemStorage implements IStorage {
 
     // Richness depletes by 0.5 per mine, floor raised to 40.
     if (parcel.richness > 40) {
-      parcel.richness = Math.max(40, parcel.richness - 0.5);
+      parcel.richness = Math.max(40, Math.floor(parcel.richness - 0.5));
     }
     // Active influence repair: +2 per mine, capped at 100.
     parcel.influence = Math.min(100, (parcel.influence ?? 100) + 2);
