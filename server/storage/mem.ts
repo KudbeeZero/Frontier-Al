@@ -333,7 +333,10 @@ export class MemStorage implements IStorage {
     if (parcel.ownerId !== player.id) throw new Error("You don't own this territory");
 
     const now = Date.now();
-    if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
+    const aiLab = parcel.improvements.find(i => i.type === "ai_lab");
+    const cooldownReductionMs = aiLab ? aiLab.level * 30_000 : 0;
+    const effectiveCooldownMs = Math.max(60_000, MINE_COOLDOWN_MS - cooldownReductionMs);
+    if (now - parcel.lastMineTs < effectiveCooldownMs) throw new Error("Mining cooldown not complete");
 
     const activeSatellites = player.satellites.filter(s => s.status === "active" && s.expiresAt > now);
     const satelliteMult = activeSatellites.length > 0 ? 1 + SATELLITE_YIELD_BONUS : 1;
@@ -611,6 +614,8 @@ export class MemStorage implements IStorage {
       parcel.storageCapacity += 50;
     } else if (action.improvementType === "storage_depot") {
       parcel.storageCapacity += 200;
+    } else if (action.improvementType === "data_centre") {
+      parcel.yieldMultiplier += 0.05 * level;
     }
 
     parcel.frontierPerDay = calculateFrontierPerDay(parcel.improvements);
@@ -684,10 +689,10 @@ export class MemStorage implements IStorage {
         parcel.yieldMultiplier += 0.2;
         break;
       case "mine":
-        parcel.yieldMultiplier += 0.3;
+        parcel.richness = Math.min(100, parcel.richness + 10);
         break;
-      case "fortress":
-        parcel.defenseLevel = Math.min(10, parcel.defenseLevel + 3);
+      case "bunker":
+        parcel.influenceRepairRate = (parcel.influenceRepairRate ?? 24) + 5;
         break;
     }
 

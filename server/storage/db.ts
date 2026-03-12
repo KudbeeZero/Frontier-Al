@@ -570,7 +570,11 @@ export class DbStorage implements IStorage {
       if (parcel.ownerId !== player.id) throw new Error("You don't own this territory");
 
       const now = Date.now();
-      if (now - parcel.lastMineTs < MINE_COOLDOWN_MS) throw new Error("Mining cooldown not complete");
+      // AI Lab reduces mine cooldown by 30s per level (max 90s reduction at level 3)
+      const aiLab = parcel.improvements.find(i => i.type === "ai_lab");
+      const cooldownReductionMs = aiLab ? aiLab.level * 30_000 : 0;
+      const effectiveCooldownMs = Math.max(60_000, MINE_COOLDOWN_MS - cooldownReductionMs);
+      if (now - parcel.lastMineTs < effectiveCooldownMs) throw new Error("Mining cooldown not complete");
 
       const playerSatellites = (playerRow.satellites ?? []) as OrbitalSatellite[];
       const activeSatellites = playerSatellites.filter(s => s.status === "active" && s.expiresAt > now);
@@ -821,10 +825,10 @@ export class DbStorage implements IStorage {
 
       const updates: Partial<typeof parcelRow> = {};
       switch (action.upgradeType) {
-        case "defense":   updates.defenseLevel    = Math.min(10, parcel.defenseLevel + 1); break;
-        case "yield":     updates.yieldMultiplier = parcel.yieldMultiplier + 0.2; break;
-        case "mine":      updates.yieldMultiplier = parcel.yieldMultiplier + 0.3; break;
-        case "fortress":  updates.defenseLevel    = Math.min(10, parcel.defenseLevel + 3); break;
+        case "defense": updates.defenseLevel       = Math.min(10, parcel.defenseLevel + 1); break;
+        case "yield":   updates.yieldMultiplier   = parcel.yieldMultiplier + 0.2; break;
+        case "mine":    updates.richness           = Math.min(100, parcel.richness + 10); break;
+        case "bunker":  updates.influenceRepairRate = (parcel.influenceRepairRate ?? 24) + 5; break;
       }
 
       const now = Date.now();
@@ -902,19 +906,21 @@ export class DbStorage implements IStorage {
         : [...parcel.improvements, { type: action.improvementType, level: 1 }];
 
       // Apply side-effects on the parcel
-      let newDefense  = parcel.defenseLevel;
-      let newCapacity = parcel.storageCapacity;
-      if      (action.improvementType === "turret")       newDefense  += 3;
-      else if (action.improvementType === "shield_gen")   newDefense  += 5;
-      else if (action.improvementType === "fortress")   { newDefense  += 8; newCapacity += 50; }
-      else if (action.improvementType === "storage_depot") newCapacity += 200;
+      let newDefense   = parcel.defenseLevel;
+      let newCapacity  = parcel.storageCapacity;
+      let newYieldMult = parcel.yieldMultiplier;
+      if      (action.improvementType === "turret")        newDefense   += 3;
+      else if (action.improvementType === "shield_gen")    newDefense   += 5;
+      else if (action.improvementType === "fortress")    { newDefense   += 8; newCapacity += 50; }
+      else if (action.improvementType === "storage_depot") newCapacity  += 200;
+      else if (action.improvementType === "data_centre")   newYieldMult += 0.05 * level;
 
       const newFpd = calculateFrontierPerDay(newImprovements);
 
       const now = Date.now();
       await Promise.all([
         tx.update(parcelsTable)
-          .set({ improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, frontierPerDay: newFpd })
+          .set({ improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, yieldMultiplier: newYieldMult, frontierPerDay: newFpd })
           .where(eq(parcelsTable.id, parcel.id)),
         tx.update(playersTable).set(playerUpdates).where(eq(playersTable.id, player.id)),
       ]);
@@ -932,7 +938,7 @@ export class DbStorage implements IStorage {
       }, tx);
       await this.bumpLastTs(now, tx);
 
-      return rowToParcel({ ...parcelRow, improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, frontierPerDay: newFpd });
+      return rowToParcel({ ...parcelRow, improvements: newImprovements, defenseLevel: newDefense, storageCapacity: newCapacity, yieldMultiplier: newYieldMult, frontierPerDay: newFpd });
     });
   }
 
@@ -1037,7 +1043,10 @@ export class DbStorage implements IStorage {
         commanders[cmdIdx] = { ...cmd, lockedUntil: now + COMMANDER_LOCK_MS };
       }
 
-      const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus;
+      // Radar Array: reduces incoming attacker power by 10% if defender has one built
+      const hasRadar = target.improvements.some(i => i.type === "radar");
+      const radarMod = hasRadar ? 0.9 : 1.0;
+      const rawAttackerPower = (action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus) * radarMod;
       // Apply morale debuff: attacker power is reduced when they recently lost territory
       const moraleActive   = attacker.moraleDebuffUntil && now < attacker.moraleDebuffUntil;
       const attackerPower  = moraleActive

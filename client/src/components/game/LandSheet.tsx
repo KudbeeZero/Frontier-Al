@@ -154,46 +154,45 @@ export function LandSheet({
             </div>
           </div>
 
-          <div className="grid grid-cols-5 gap-2 mb-3">
+          {/* Biome yield profile */}
+          <div className="mb-2 px-1 flex items-center gap-2 text-[10px] text-muted-foreground font-display uppercase tracking-wide">
+            <span style={{ color: biomeColors[parcel.biome] }}>■</span>
+            <span>{parcel.biome} zone</span>
+            <span className="ml-auto font-mono text-[9px]">
+              ⛏ ×{biomeBonus.ironMod.toFixed(1)} iron &nbsp;
+              ⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel &nbsp;
+              💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-2">
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
               <Shield className={cn("w-4 h-4 mx-auto mb-1", parcel.defenseLevel > 5 ? "text-green-500" : parcel.defenseLevel > 2 ? "text-yellow-500" : "text-red-500")} />
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Defense</span>
               <span className="font-mono text-sm font-bold" data-testid="text-defense-level">{parcel.defenseLevel}</span>
+              <span className="text-[8px] text-muted-foreground block">{(parcel.defenseLevel * 15).toFixed(0)} power</span>
             </div>
             <div className={cn(
               "p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center transition-colors",
               (parcel.influence ?? 100) > 66 ? "hover:border-green-500/40"
                 : (parcel.influence ?? 100) > 33 ? "hover:border-yellow-500/40"
-                : "hover:border-red-500/40 border-red-500/30"
+                : "border-red-500/30 hover:border-red-500/40"
             )}>
-              <div className={cn(
-                "w-4 h-4 mx-auto mb-1 rounded-sm",
-                (parcel.influence ?? 100) > 66 ? "text-green-400"
-                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
-                  : "text-red-400"
-              )}>
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-                  <path d="M8 1L10 6H15L11 9.5L12.5 14.5L8 11.5L3.5 14.5L5 9.5L1 6H6L8 1Z"/>
-                </svg>
+              <div className={cn("w-4 h-4 mx-auto mb-1", (parcel.influence ?? 100) > 66 ? "text-green-400" : (parcel.influence ?? 100) > 33 ? "text-yellow-400" : "text-red-400")}>
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4"><path d="M8 1L10 6H15L11 9.5L12.5 14.5L8 11.5L3.5 14.5L5 9.5L1 6H6L8 1Z"/></svg>
               </div>
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Influence</span>
-              <span className={cn(
-                "font-mono text-sm font-bold",
-                (parcel.influence ?? 100) > 66 ? "text-green-400"
-                  : (parcel.influence ?? 100) > 33 ? "text-yellow-400"
-                  : "text-red-400"
-              )}>
+              <span className={cn("font-mono text-sm font-bold", (parcel.influence ?? 100) > 66 ? "text-green-400" : (parcel.influence ?? 100) > 33 ? "text-yellow-400" : "text-red-400")}>
                 {parcel.influence ?? 100}%
               </span>
-              {(parcel.influence ?? 100) < 20 && (
-                <p className="text-[8px] text-red-400 uppercase font-bold mt-0.5">⚠ Blocked</p>
-              )}
+              {(parcel.influence ?? 100) < 20 && <p className="text-[8px] text-red-400 uppercase font-bold mt-0.5">⚠ Blocked</p>}
             </div>
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
               <MapPin className="w-4 h-4 mx-auto mb-1 text-amber-500" />
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Richness</span>
-              <span className="font-mono text-sm font-bold">{parcel.richness}%</span>
+              <span className="font-mono text-sm font-bold">{Math.round(parcel.richness)}%</span>
             </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-iron/40 transition-colors">
               <Pickaxe className="w-4 h-4 mx-auto mb-1 text-iron" />
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Iron</span>
@@ -203,6 +202,11 @@ export function LandSheet({
               <Fuel className="w-4 h-4 mx-auto mb-1 text-fuel" />
               <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Fuel</span>
               <span className="font-mono text-sm font-bold text-fuel">{parcel.fuelStored}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-purple-400/40 transition-colors">
+              <Gem className="w-4 h-4 mx-auto mb-1 text-purple-400" />
+              <span className="text-[9px] text-muted-foreground block font-display uppercase tracking-wide">Crystal</span>
+              <span className="font-mono text-sm font-bold text-purple-400">{parcel.crystalStored}</span>
             </div>
           </div>
 
@@ -236,13 +240,12 @@ export function LandSheet({
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => onUpgrade("defense")}
-                  disabled={isUpgrading}
+                  onClick={() => setExpanded(true)}
                   className="font-display uppercase tracking-wide text-xs font-semibold"
                   data-testid="button-upgrade"
                 >
-                  <Shield className="w-3.5 h-3.5 mr-1" />
-                  Upgrade
+                  <Hammer className="w-3.5 h-3.5 mr-1" />
+                  Upgrade ↑
                 </Button>
               </>
             )}
@@ -284,9 +287,11 @@ export function LandSheet({
                   {(Object.entries(DEFENSE_IMPROVEMENT_INFO) as [DefenseImprovementType, typeof DEFENSE_IMPROVEMENT_INFO[DefenseImprovementType]][]).map(([type, info]) => {
                     const existing = parcel.improvements.find(i => i.type === type);
                     const atMax = existing && existing.level >= info.maxLevel;
-                    const level = existing ? existing.level + 1 : 1;
-                    const cost = { iron: info.cost.iron * level, fuel: info.cost.fuel * level };
+                    const nextLevel = existing ? existing.level + 1 : 1;
+                    const cost = { iron: info.cost.iron * nextLevel, fuel: info.cost.fuel * nextLevel };
                     const canAfford = player && player.iron >= cost.iron && player.fuel >= cost.fuel;
+                    const needIron = !canAfford && player ? Math.max(0, cost.iron - player.iron) : 0;
+                    const needFuel = !canAfford && player ? Math.max(0, cost.fuel - player.fuel) : 0;
 
                     return (
                       <Button
@@ -299,10 +304,16 @@ export function LandSheet({
                         data-testid={`button-build-${type}`}
                       >
                         <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
-                        {existing && <span className="text-[9px] text-muted-foreground font-mono">Lv{existing.level}</span>}
-                        <span className="text-[9px] text-muted-foreground font-mono">
-                          {atMax ? "MAX" : `${cost.iron}I ${cost.fuel}F`}
+                        <span className="text-[9px] text-primary/70 font-mono">{info.effect}</span>
+                        {existing && <span className="text-[9px] text-muted-foreground font-mono">Currently Lv{existing.level} → Lv{nextLevel}</span>}
+                        <span className="text-[9px] text-muted-foreground font-mono mt-0.5">
+                          {atMax ? "✓ MAX" : `${cost.iron}I ${cost.fuel}F`}
                         </span>
+                        {!atMax && !canAfford && player && (
+                          <span className="text-[8px] text-destructive font-mono">
+                            Need {needIron > 0 ? `+${needIron} iron` : ""}{needIron > 0 && needFuel > 0 ? ", " : ""}{needFuel > 0 ? `+${needFuel} fuel` : ""}
+                          </span>
+                        )}
                       </Button>
                     );
                   })}
@@ -350,30 +361,48 @@ export function LandSheet({
                 <div>
                   <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-1.5">Active Improvements</h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {parcel.improvements.map((imp, i) => (
-                      <Badge key={i} variant="secondary" className="text-[10px]">
-                        {IMPROVEMENT_INFO[imp.type]?.name || imp.type} Lv{imp.level}
-                      </Badge>
-                    ))}
+                    {parcel.improvements.map((imp, i) => {
+                      const info = IMPROVEMENT_INFO[imp.type];
+                      return (
+                        <Badge key={i} variant="secondary" className="text-[10px] flex items-center gap-1">
+                          {info?.name || imp.type} Lv{imp.level}
+                          {info?.effect && <span className="text-primary/60">· {info.effect.split(" per")[0]}</span>}
+                        </Badge>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
+              <h4 className="text-xs font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Hammer className="w-3.5 h-3.5" /> Plot Upgrades (Iron/Fuel)
+              </h4>
               <div className="grid grid-cols-2 gap-2">
-                {Object.entries(UPGRADE_COSTS).map(([type, cost]) => (
-                  <Button
-                    key={type}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onUpgrade(type)}
-                    disabled={isUpgrading || !player || player.iron < cost.iron || player.fuel < cost.fuel}
-                    className="flex-col items-start h-auto py-2 px-2.5 text-left"
-                    data-testid={`button-upgrade-${type}`}
-                  >
-                    <span className="text-[10px] font-display uppercase tracking-wide capitalize">{type}</span>
-                    <span className="text-[9px] text-muted-foreground font-mono">{cost.iron}I {cost.fuel}F</span>
-                  </Button>
-                ))}
+                {Object.entries(UPGRADE_COSTS).map(([type, cost]) => {
+                  const canAfford = player && player.iron >= cost.iron && player.fuel >= cost.fuel;
+                  const needIron = !canAfford && player ? Math.max(0, cost.iron - player.iron) : 0;
+                  const needFuel = !canAfford && player ? Math.max(0, cost.fuel - player.fuel) : 0;
+                  return (
+                    <Button
+                      key={type}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onUpgrade(type)}
+                      disabled={isUpgrading || !canAfford}
+                      className="flex-col items-start h-auto py-2 px-2.5 text-left"
+                      data-testid={`button-upgrade-${type}`}
+                    >
+                      <span className="text-[10px] font-display uppercase tracking-wide capitalize">{type}</span>
+                      <span className="text-[9px] text-primary/70 font-mono">{cost.effect}</span>
+                      <span className="text-[9px] text-muted-foreground font-mono mt-0.5">{cost.iron}I {cost.fuel}F</span>
+                      {!canAfford && player && (
+                        <span className="text-[8px] text-destructive font-mono">
+                          Need {needIron > 0 ? `+${needIron} iron` : ""}{needIron > 0 && needFuel > 0 ? ", " : ""}{needFuel > 0 ? `+${needFuel} fuel` : ""}
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}
