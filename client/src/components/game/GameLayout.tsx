@@ -254,14 +254,14 @@ export function GameLayout() {
 
   const handleAttackClick = () => setAttackModalOpen(true);
 
-  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string) => {
+  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string, sourceParcelId?: string) => {
     if (!isConnected) {
       toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
       return;
     }
     if (!player || !selectedParcelId || !selectedParcel) return;
     attackMutation.mutate(
-      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, crystalBurned: crystal, commanderId },
+      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, crystalBurned: crystal, commanderId, sourceParcelId },
       {
         onSuccess: (data: any) => {
           queueAttackAction(selectedParcel.plotId, troops, iron, fuel, crystal);
@@ -873,6 +873,11 @@ export function GameLayout() {
         onOpenChange={setAttackModalOpen}
         targetParcel={selectedParcel}
         attacker={player}
+        ownedParcels={
+          gameState
+            ? gameState.parcels.filter((p) => player && p.ownerId === player.id)
+            : []
+        }
         onAttack={handleAttackConfirm}
         isAttacking={attackMutation.isPending}
       />

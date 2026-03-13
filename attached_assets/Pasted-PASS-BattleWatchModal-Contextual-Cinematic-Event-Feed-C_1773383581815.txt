@@ -1,0 +1,240 @@
+PASS: BattleWatchModal — Contextual Cinematic Event Feed
+Context: generateEvents() uses a static text pool. This pass makes event text
+reference the actual improvements and biome of the target parcel. No backend
+changes. UI-only, additive pass on BattleWatchModal.tsx only.
+
+Verified:
+  - client/src/components/game/BattleWatchModal.tsx — generateEvents takes
+    (battle, attackerName, defenderName, commanderTier?); no parcel data passed
+  - shared/schema.ts — LandParcel has improvements: Improvement[], biome: BiomeType
+  - BattleWatchModal receives players: Player[] but not parcels — needs parcels
+    or targetParcel threaded in from the call site
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 1 — Add targetParcel prop to BattleWatchModal
+────────────────────────────────────────────────────────────────────────────────
+
+FIND:
+interface BattleWatchModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  battle: Battle | null;
+  players: Player[];
+}
+
+REPLACE WITH:
+interface BattleWatchModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  battle: Battle | null;
+  players: Player[];
+  targetParcel?: LandParcel | null;
+}
+
+Add LandParcel to the import at the top of the file:
+
+FIND:
+import type { Battle, Player, CommanderAvatar } from "@shared/schema";
+
+REPLACE WITH:
+import type { Battle, Player, CommanderAvatar, LandParcel } from "@shared/schema";
+
+Destructure in the component function:
+
+FIND:
+export function BattleWatchModal({ open, onOpenChange, battle, players }: BattleWatchModalProps) {
+
+REPLACE WITH:
+export function BattleWatchModal({ open, onOpenChange, battle, players, targetParcel }: BattleWatchModalProps) {
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 2 — Extend generateEvents to accept and use parcel context
+────────────────────────────────────────────────────────────────────────────────
+
+FIND the generateEvents function signature:
+
+function generateEvents(
+  battle: Battle,
+  attackerName: string,
+  defenderName: string,
+  commanderTier?: string,
+): BattleEvent[] {
+
+REPLACE WITH:
+
+function generateEvents(
+  battle: Battle,
+  attackerName: string,
+  defenderName: string,
+  commanderTier?: string,
+  parcel?: LandParcel | null,
+): BattleEvent[] {
+
+Then, inside the function body, add parcel-aware event pools immediately after
+the commanderLine declaration. Replace the static attackerPool, defenderPool,
+and neutralPool declarations with the following:
+
+FIND:
+  const attackerPool = [
+    commanderTier ? commanderLine[commanderTier] : null,
+    `${attackerName} launches a missile barrage at the eastern wall`,
+    `Armored column breaches the outer perimeter`,
+    `Strike team advances under suppressive fire`,
+    `${attackerName} hits the fuel depot — enemy supply lines cut`,
+    `Forward operating base secured inside the defensive line`,
+    `Iron stockpile targeted by precision artillery`,
+    `Assault drones deployed over the contested zone`,
+    `Alpha squad secures the north gate`,
+    `${attackerName} calls in orbital targeting coordinates`,
+  ].filter(Boolean) as string[];
+
+  const defenderPool = [
+    `Emergency bunkers reinforced along the perimeter`,
+    `${defenderName}'s turret grid engages — incoming troops taking losses`,
+    `Counter-strike repels the assault — attackers pushed back`,
+    `Shield generator absorbs a direct hit`,
+    `Reinforcements arrive — defensive line holds firm`,
+    `Radar detects flanking maneuver — ambush prepared`,
+    `${defenderName} seals the breach under fire`,
+    `Anti-air battery lights up the drone swarm`,
+    `${defenderName} activates fortress lockdown`,
+  ];
+
+  const neutralPool = [
+    `Artillery exchange — heavy losses on both sides`,
+    `Communication blackout — both commanders go dark`,
+    `Smoke screen deployed — ground forces repositioning`,
+    `Supply convoy ambushed — both sides short on fuel`,
+    `Recon drone spotted — electronic warfare begins`,
+    `Satellite feed disrupted — commanders flying blind`,
+  ];
+
+REPLACE WITH:
+
+  // ── Parcel-aware improvement lines ───────────────────────────────────────
+  const improvements = parcel?.improvements ?? [];
+  const turret     = improvements.find(i => i.type === "turret");
+  const shield     = improvements.find(i => i.type === "shield_gen");
+  const fortress   = improvements.find(i => i.type === "fortress");
+  const radar      = improvements.find(i => i.type === "radar");
+  const biome      = parcel?.biome ?? "plains";
+
+  const BIOME_TERRAIN: Record<string, string[]> = {
+    mountain:  ["High-altitude winds disrupt drone guidance systems", "Rocky terrain slows the armored advance", "Elevation advantage held by the defender — suppression fire rains down"],
+    volcanic:  ["Thermal vents destabilize sensor arrays on both sides", "Lava field forces attackers to reroute through the north pass", "Ash cloud reduces visibility — forces engage at close range"],
+    forest:    ["Dense canopy neutralizes orbital targeting", "Ambush squads emerge from the tree line", "Fallen timber creates natural barricades along the perimeter"],
+    desert:    ["Heat shimmer causes missile guidance errors", "Sandstorm reduces visibility to zero — both sides go dark", "Mirage decoys draw the first salvo wide"],
+    tundra:    ["Sub-zero temperatures freeze hydraulic systems on both sides", "Blizzard grounds air support — infantry only", "Ice sheet collapses under the armored column"],
+    water:     ["Amphibious assault divides the defensive line", "Coastal artillery opens up from the eastern headland", "Tidal surge disrupts the beachhead landing"],
+    swamp:     ["Bog slows the armored column to a crawl", "Methane pockets ignite under artillery fire", "Aerial recon lost — swamp fog blocks all sensors"],
+    plains:    ["Open ground gives attacker full line of sight", "Flanking maneuver executed across the flat terrain", "Speed advantage used — mobile column punches through"],
+  };
+
+  const terrainLines = BIOME_TERRAIN[biome] ?? BIOME_TERRAIN.plains;
+
+  const defenderImprovementLines: string[] = [];
+  if (turret) {
+    const lvl = turret.level;
+    defenderImprovementLines.push(
+      lvl >= 3
+        ? `${defenderName}'s Lv3 turret grid opens up — sustained fire pins the assault`
+        : lvl === 2
+        ? `${defenderName}'s Lv2 turrets track and engage — armor taking hits`
+        : `${defenderName}'s turret activates — incoming forces take casualties`
+    );
+  }
+  if (shield) {
+    const lvl = shield.level;
+    defenderImprovementLines.push(
+      lvl >= 2
+        ? `${defenderName}'s Lv2 shield generator absorbs the opening barrage — zero penetration`
+        : `${defenderName}'s shield generator flares — energy barrier holds`
+    );
+  }
+  if (fortress) {
+    defenderImprovementLines.push(`${defenderName}'s Fortress goes to full lockdown — all gates sealed`);
+    defenderImprovementLines.push(`Fortress walls deflect the first artillery volley — structure holds`);
+  }
+  if (radar) {
+    defenderImprovementLines.push(`Radar Array detects the flanking column — ambush positioned and waiting`);
+    defenderImprovementLines.push(`${defenderName}'s radar cuts incoming attacker power — targeting solution degraded`);
+  }
+
+  const attackerPool = [
+    commanderTier ? commanderLine[commanderTier] : null,
+    `${attackerName} launches a strike at the outer perimeter`,
+    `Armored column punches through the defensive line`,
+    `Strike team advances under cover of suppression fire`,
+    `${attackerName} cuts the supply corridor — defender resupply blocked`,
+    `Forward base established inside the exclusion zone`,
+    `Iron stockpile targeted by precision strike`,
+    `Assault drones breach the sensor net`,
+    `${attackerName} calls in orbital targeting coordinates`,
+    ...(radar ? [`${attackerName} deploys electronic countermeasures — radar feed corrupted`] : []),
+    ...(fortress ? [`${attackerName} brings up siege breakers — fortress walls under sustained fire`] : []),
+  ].filter(Boolean) as string[];
+
+  const defenderPool = [
+    `Emergency protocols activated — perimeter reinforced`,
+    `Counter-strike repels the advance — attackers pushed back`,
+    `Reinforcements lock down the breach — defensive line holds`,
+    `${defenderName} seals the gap under fire`,
+    `Anti-air battery engages the drone swarm`,
+    ...defenderImprovementLines,
+    ...terrainLines.slice(0, 2),
+  ];
+
+  const neutralPool = [
+    `Artillery exchange — heavy losses reported on both sides`,
+    `Communication blackout — both commanders go dark`,
+    `Smoke screen deployed — ground forces repositioning`,
+    `Supply convoy ambushed — both sides short on fuel`,
+    `Recon drone spotted — electronic warfare engaged`,
+    terrainLines[terrainLines.length - 1] ?? `Satellite feed disrupted — commanders flying blind`,
+  ];
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 3 — Pass parcel into the generateEvents call inside the component
+────────────────────────────────────────────────────────────────────────────────
+
+FIND:
+  const events = generateEvents(battle, attackerName, defenderName, commanderTier);
+
+REPLACE WITH:
+  const events = generateEvents(battle, attackerName, defenderName, commanderTier, targetParcel);
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 4 — Thread targetParcel from the call site in GameLayout / BattlesPanel
+────────────────────────────────────────────────────────────────────────────────
+
+Find every place BattleWatchModal is rendered in the codebase. Likely in
+GameLayout.tsx and/or BattlesPanel.tsx. Add the targetParcel prop:
+
+  targetParcel={
+    watchingBattleId && gameState
+      ? (gameState.parcels as LandParcel[]).find(
+          p => p.id === gameState.battles.find(b => b.id === watchingBattleId)?.targetParcelId
+        ) ?? null
+      : null
+  }
+
+(Adapt variable names to match the actual call site — watchingBattleId and
+gameState are the names used throughout GameLayout.tsx.)
+
+────────────────────────────────────────────────────────────────────────────────
+DO NOT TOUCH
+────────────────────────────────────────────────────────────────────────────────
+- The Redis replay / Battle Analysis section at the bottom of BattleWatchModal
+- The outcome banner, timer, VS panel, or progress bar
+- Any backend file
+
+────────────────────────────────────────────────────────────────────────────────
+Verification checklist
+────────────────────────────────────────────────────────────────────────────────
+□ npx tsc --noEmit passes with zero new errors
+□ A battle on a mountain parcel shows terrain lines like "Rocky terrain slows..."
+□ A battle on a parcel with a Lv3 turret shows "Lv3 turret grid opens up"
+□ A battle on a parcel with fortress shows fortress lockdown lines
+□ A battle on a parcel with radar shows the radar detection line
+□ A battle with no improvements still renders generic event text cleanly
+□ Commander-flavored opener still appears when commanderTier is present

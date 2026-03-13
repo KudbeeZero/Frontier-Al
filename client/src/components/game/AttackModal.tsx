@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Swords, Pickaxe, Fuel, AlertTriangle, ChevronUp, ChevronDown, Clock, Shield, Zap, Skull, Lock } from "lucide-react";
+import { Swords, Pickaxe, Fuel, AlertTriangle, ChevronUp, ChevronDown, Clock, Shield, Zap, Skull, Lock, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
@@ -14,7 +14,8 @@ interface AttackModalProps {
   onOpenChange: (open: boolean) => void;
   targetParcel: LandParcel | null;
   attacker: Player | null;
-  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string) => void;
+  ownedParcels: LandParcel[];
+  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string, sourceParcelId?: string) => void;
   isAttacking: boolean;
 }
 
@@ -54,6 +55,7 @@ export function AttackModal({
   onOpenChange,
   targetParcel,
   attacker,
+  ownedParcels,
   onAttack,
   isAttacking,
 }: AttackModalProps) {
@@ -71,6 +73,9 @@ export function AttackModal({
     return unlocked?.id ?? null;
   };
   const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(getDefaultCommanderId);
+  const [sourceParcelId, setSourceParcelId] = useState<string | null>(
+    () => ownedParcels.length > 0 ? ownedParcels[0].id : null
+  );
 
   if (!targetParcel || !attacker) return null;
 
@@ -114,7 +119,7 @@ export function AttackModal({
   const noCommanderSelected = !hasNoCommander && !allCommandersLocked && !selectedCommanderId;
 
   const handleSubmit = () => {
-    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined);
+    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined, sourceParcelId ?? undefined);
   };
 
   return (
@@ -142,6 +147,33 @@ export function AttackModal({
               Battle resolves in {battleDurationMin} minutes. Resources consumed immediately.
             </p>
           </div>
+
+          {/* Launch Origin */}
+          {ownedParcels.length > 1 && (
+            <div className="space-y-2">
+              <span className="text-sm font-display uppercase tracking-wide">Launch From</span>
+              <div className="overflow-x-auto pb-1">
+                <div className="flex gap-2 w-max">
+                  {ownedParcels.slice(0, 8).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSourceParcelId(p.id)}
+                      className={cn(
+                        "flex-shrink-0 w-16 h-16 rounded-md border-2 flex flex-col items-center justify-center gap-0.5 transition-colors px-1",
+                        sourceParcelId === p.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-muted/20 hover:border-muted-foreground"
+                      )}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-[9px] font-mono leading-tight text-center">#{p.plotId}</span>
+                      <span className="text-[8px] text-muted-foreground capitalize leading-tight">{p.biome}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Commander Selection */}
           {commanders.length > 0 && (

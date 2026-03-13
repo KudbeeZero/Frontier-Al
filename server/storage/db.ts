@@ -1076,6 +1076,7 @@ export class DbStorage implements IStorage {
         resolveTs:        now + BATTLE_DURATION_MS,
         status:           "pending" as const,
         commanderId:      commanderId ?? null,
+        sourceParcelId:   action.sourceParcelId ?? null,
       };
 
       const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel, crystal: attackerRow.crystal - crystal };

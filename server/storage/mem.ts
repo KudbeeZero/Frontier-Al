@@ -794,6 +794,7 @@ export class MemStorage implements IStorage {
       resolveTs: now + BATTLE_DURATION_MS,
       status: "pending",
       commanderId,
+      sourceParcelId: action.sourceParcelId,
     };
 
     this.battles.set(battleId, battle);

@@ -194,6 +194,8 @@ export interface Battle {
   influenceDamage?: number;
   /** ID of the commander deployed in this attack */
   commanderId?: string;
+  /** ID of the parcel the player chose to launch from (drives globe arc origin) */
+  sourceParcelId?: string;
 }
 
 export interface GameEvent {
@@ -348,6 +350,7 @@ export const attackActionSchema = z.object({
   }),
   crystalBurned: z.number().min(0).optional(),
   commanderId: z.string().optional(),
+  sourceParcelId: z.string().optional(),
 });
 
 export const buildActionSchema = z.object({

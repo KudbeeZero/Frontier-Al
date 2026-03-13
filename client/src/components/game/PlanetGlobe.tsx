@@ -286,7 +286,9 @@ function BattleArcs({ battles, parcels, players, currentPlayerId }: BattleArcsPr
       const defCoord = parcelLatLng.get(battle.targetParcelId);
       if (!defCoord) continue;
 
-      const attackerParcelId = playerFirstParcel.get(battle.attackerId);
+      const attackerParcelId =
+        battle.sourceParcelId ??
+        playerFirstParcel.get(battle.attackerId);
       if (!attackerParcelId) continue;
       const atkCoord = parcelLatLng.get(attackerParcelId);
       if (!atkCoord) continue;

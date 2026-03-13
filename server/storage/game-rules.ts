@@ -145,6 +145,7 @@ export function rowToBattle(row: BattleRow): Battle {
     crystalBurned:    row.crystalBurned,
     influenceDamage:  row.influenceDamage,
     commanderId:      (row as any).commanderId ?? undefined,
+    sourceParcelId:   (row as any).sourceParcelId ?? undefined,
   };
 }
 

@@ -185,6 +185,7 @@ export const battles = pgTable(
     outcome:          varchar("outcome", { length: 20 }),
     randFactor:       real("rand_factor"),
     commanderId:      varchar("commander_id", { length: 36 }),
+    sourceParcelId:   varchar("source_parcel_id", { length: 36 }),
   },
   (t) => ({
     /** Used by resolveBattles() to efficiently find pending battles past their resolveTs. */
