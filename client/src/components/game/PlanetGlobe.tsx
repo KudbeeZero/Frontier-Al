@@ -1009,7 +1009,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
     // Only set ready once we have real parcel data.
     if (parcels.length > 0) readyRef.current = true;
-  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
+  }, [parcels, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
       fillPositions3D, borderPositions3D, fillSize, borderSize]);
 
   // Sphere-based hover — fires on the invisible coverage sphere, always hits the globe surface
