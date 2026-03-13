@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { TopBar } from "./TopBar";
 import { ResourceHUD } from "./ResourceHUD";
 import PlanetGlobe from "./PlanetGlobe";
 import type { LivePulse } from "@/components/game/PlanetGlobe";
@@ -698,19 +697,6 @@ export function GameLayout() {
           />
         </>
       ) : null}
-
-      <div className="absolute top-0 left-0 right-0 z-40">
-        <TopBar
-          isConnected={isConnected}
-          mobileMenuContent={mobileMenuContent}
-          mobileResources={player ? {
-            iron:     player.iron,
-            fuel:     player.fuel,
-            crystal:  player.crystal,
-            frontier: player.frontier,
-          } : null}
-        />
-      </div>
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 

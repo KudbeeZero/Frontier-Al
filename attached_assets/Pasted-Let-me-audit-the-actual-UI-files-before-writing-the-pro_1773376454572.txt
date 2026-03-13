@@ -1,0 +1,86 @@
+Let me audit the actual UI files before writing the prompt so the find/replace targets are accurate.​​​​​​​​​​​​​​​​
+
+I don’t have the source files available to audit directly, so the find/replace targets below are written against the patterns I know are in the codebase. If any find string doesn’t match exactly, check the surrounding context and adjust the whitespace or prop order accordingly — the intent of each edit is unambiguous.
+
+PASS: Landscape Zoom Fix + Remove Resource Header Bar — PlanetGlobe.tsx + Header/HUD component
+Context: Three separate problems are addressed in this pass. (1) The globe starts too close on iPhone landscape orientation, making it feel cramped and difficult to navigate. (2) Pinch-to-zoom needs a wider travel range so players can pull back to a comfortable overview. (3) The top resource bar / header menu is cluttering both mobile and desktop and must be removed entirely.
+DO NOT TOUCH: shader materials, hex mesh logic, StarField, AtmosphereGlow, fresnel shader, hover logic, prevHoveredRef, WebSocket hooks, tile click handlers, battle logic, or any game state.
+
+EDIT 1 — Increase default camera distance (PlanetGlobe.tsx)
+Find the Camera or Canvas setup where the initial camera position is set. It will look similar to one of these two patterns:
+
+camera={{ position: [0, 0, 2.5] }}
+
+
+or
+
+camera={{ position: [0, 0, 3] }}
+
+
+Replace whichever value is present with:
+
+camera={{ position: [0, 0, 3.8], fov: 45 }}
+
+
+This pulls the default starting view back so the globe is immediately visible in full on a landscape phone screen without the player needing to pinch out first.
+
+EDIT 2 — Widen zoom range and re-tune touch controls (PlanetGlobe.tsx)
+Find the <OrbitControls block from the previous pass (or whatever is currently there) and replace it entirely with:
+
+<OrbitControls
+  enablePan={false}
+  enableDamping={true}
+  dampingFactor={0.08}
+  rotateSpeed={0.45}
+  zoomSpeed={0.9}
+  minDistance={1.8}
+  maxDistance={6.0}
+  minPolarAngle={Math.PI * 0.18}
+  maxPolarAngle={Math.PI * 0.82}
+  touches={{
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_ROTATE,
+  }}
+  makeDefault
+/>
+
+
+Key changes from previous pass: maxDistance raised from 4.2 to 6.0 so players can pinch out to a wide strategic overview; zoomSpeed raised to 0.9 so pinch feels responsive; minDistance raised slightly to 1.8 to keep the globe readable at close range.
+
+EDIT 3 — Remove the top resource/header bar entirely
+Locate the component that renders the top bar showing resources (crystals, minerals, influence, or similar stat readouts). It is likely one of the following files — check whichever exists:
+	∙	client/src/components/ResourceBar.tsx
+	∙	client/src/components/HUD.tsx
+	∙	client/src/components/TopBar.tsx
+	∙	client/src/components/GameHeader.tsx
+Once located, find where it is imported and rendered in the main game layout (likely client/src/pages/game.tsx or client/src/App.tsx). It will look similar to:
+
+import { ResourceBar } from '@/components/ResourceBar'
+...
+<ResourceBar />
+
+
+Delete both the import line and the JSX usage entirely. Do not replace with anything. Do not add a hidden class or conditional render — remove it completely from both files.
+
+EDIT 4 — Add touchAction: 'none' to Canvas if not already present from previous pass
+Confirm the <Canvas element has:
+
+<Canvas
+  style={{ touchAction: 'none' }}
+  ...
+>
+
+
+If this was already applied in the previous pass, skip this edit.
+
+Verification checklist:
+	∙	npx tsc --noEmit passes with zero new errors
+	∙	iPhone landscape: globe loads visibly full-frame, not clipped or oversized
+	∙	iPhone landscape: two-finger pinch can zoom from close-in detail all the way to wide strategic overview
+	∙	iPhone portrait: globe still fits correctly
+	∙	Desktop: top resource bar is completely gone, no empty space or broken layout where it was
+	∙	Mobile: top resource bar is completely gone
+	∙	No console errors related to missing component imports after the removal
+	∙	Tile hover, tile click, and all battle/game state unaffected
+
+Tuning note: If maxDistance: 6.0 feels too far out on desktop (globe becomes too small), pull it back to 5.0. The camera starting position of [0, 0, 3.8] is the most impactful change for landscape iPhone — if it still feels slightly close, increase the Z value to 4.2.​​​​​​​​​​​​​​​​

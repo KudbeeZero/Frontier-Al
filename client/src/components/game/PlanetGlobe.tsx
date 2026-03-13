@@ -1380,9 +1380,9 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
         enableDamping={true}
         dampingFactor={0.08}
         rotateSpeed={0.45}
-        zoomSpeed={0.7}
-        minDistance={GLOBE_RADIUS * 1.6}
-        maxDistance={GLOBE_RADIUS * 4.2}
+        zoomSpeed={0.9}
+        minDistance={GLOBE_RADIUS * 1.8}
+        maxDistance={GLOBE_RADIUS * 6.0}
         minPolarAngle={Math.PI * 0.18}
         maxPolarAngle={Math.PI * 0.82}
         touches={{
@@ -1510,7 +1510,7 @@ export default function PlanetGlobe({
   return (
     <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#010306" }}>
       <Canvas
-        camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 38 }}
+        camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 45 }}
         gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         style={{ background: "#010306", touchAction: "none" }}
       >
