@@ -18,6 +18,7 @@ import type {
   DeployDroneAction,
   DeploySatelliteAction,
   CommanderAvatar,
+  CommanderTier,
   ReconDrone,
   OrbitalSatellite,
   OrbitalEvent,
@@ -717,6 +718,30 @@ export class MemStorage implements IStorage {
     if (!attacker || !targetParcel) throw new Error("Invalid attacker or target");
     if (targetParcel.ownerId === attacker.id) throw new Error("Cannot attack your own territory");
     if (targetParcel.activeBattleId) throw new Error("Territory is already under attack");
+
+    // ── Commander gate ────────────────────────────────────────────────────
+    if (!attacker.isAI && attacker.commanders.length === 0) {
+      throw new Error("A Commander is required to launch an attack. Mint one from the Commander panel.");
+    }
+
+    // ── Concurrent attack cap ─────────────────────────────────────────────
+    if (!attacker.isAI) {
+      const TIER_RANK: Record<string, number> = { sentinel: 1, phantom: 2, reaper: 3 };
+      const highestTier = attacker.commanders.reduce((best, c) => {
+        return (TIER_RANK[c.tier] ?? 0) > (TIER_RANK[best] ?? 0) ? c.tier : best;
+      }, "sentinel" as string);
+      const maxConcurrent = COMMANDER_INFO[highestTier as CommanderTier]?.maxConcurrentAttacks ?? 1;
+
+      const activeAttacks = Array.from(this.battles.values()).filter(
+        (b) => b.attackerId === attacker.id && b.status === "pending"
+      ).length;
+
+      if (activeAttacks >= maxConcurrent) {
+        throw new Error(
+          `Attack limit reached. Your ${highestTier} Commander allows ${maxConcurrent} simultaneous attack${maxConcurrent > 1 ? "s" : ""}. Wait for a battle to resolve.`
+        );
+      }
+    }
 
     const totalIron = action.resourcesBurned.iron;
     const totalFuel = action.resourcesBurned.fuel;

@@ -61,7 +61,16 @@ export function AttackModal({
   const [extraIron, setExtraIron] = useState(0);
   const [extraFuel, setExtraFuel] = useState(0);
   const [extraCrystal, setExtraCrystal] = useState(0);
-  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(null);
+  const getDefaultCommanderId = (): string | null => {
+    if (!attacker) return null;
+    const cmds = attacker.commanders ?? [];
+    if (cmds.length === 0) return null;
+    const active = cmds[attacker.activeCommanderIndex ?? 0];
+    if (active && !(active.lockedUntil && Date.now() < active.lockedUntil)) return active.id;
+    const unlocked = cmds.find(c => !(c.lockedUntil && Date.now() < c.lockedUntil));
+    return unlocked?.id ?? null;
+  };
+  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(getDefaultCommanderId);
 
   if (!targetParcel || !attacker) return null;
 
@@ -102,6 +111,7 @@ export function AttackModal({
 
   const hasNoCommander = (attacker.commanders ?? []).length === 0;
   const allCommandersLocked = (attacker.commanders ?? []).every(c => c.lockedUntil && Date.now() < c.lockedUntil);
+  const noCommanderSelected = !hasNoCommander && !allCommandersLocked && !selectedCommanderId;
 
   const handleSubmit = () => {
     onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined);
@@ -146,20 +156,6 @@ export function AttackModal({
               </div>
               <div className="overflow-x-auto pb-1">
                 <div className="flex gap-2 w-max">
-                  {/* No Commander */}
-                  <button
-                    onClick={() => setSelectedCommanderId(null)}
-                    className={cn(
-                      "flex-shrink-0 w-16 h-20 rounded-md border-2 flex flex-col items-center justify-center gap-1 transition-colors",
-                      !selectedCommanderId
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-muted/20 hover:border-muted-foreground"
-                    )}
-                  >
-                    <Swords className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[9px] font-display uppercase tracking-wide text-muted-foreground">No Cmd</span>
-                  </button>
-
                   {commanders.map((c) => {
                     const locked = isLocked(c);
                     const selected = selectedCommanderId === c.id;
@@ -350,7 +346,7 @@ export function AttackModal({
           </div>
         </div>
 
-        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked) && (
+        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked || noCommanderSelected) && (
           <div className="p-3 bg-yellow-400/10 border border-yellow-400/30 rounded-md space-y-1">
             {isOnCooldown && (
               <p className="text-xs text-yellow-400 flex items-start gap-1.5">
@@ -376,6 +372,12 @@ export function AttackModal({
                 All Commanders locked. Wait for cooldown to expire.
               </p>
             )}
+            {noCommanderSelected && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                Select a Commander to lead this attack.
+              </p>
+            )}
           </div>
         )}
 
@@ -391,7 +393,7 @@ export function AttackModal({
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked}
+            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked || noCommanderSelected}
             className="font-display uppercase tracking-wide w-full sm:w-auto"
             data-testid="button-attack-confirm"
           >
