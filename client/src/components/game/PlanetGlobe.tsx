@@ -662,9 +662,10 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
   swamp:    "#00ffcc",
 };
 
-// Unowned tiles are fully invisible (black + additive = transparent).
-// Geometry still exists for raycasting — click detection works even when invisible.
-const UNOWNED_DIM = new THREE.Color(0, 0, 0);
+// Unowned tiles render as a dim slate-blue so the planet grid is legible before
+// any territory is claimed.  Sum of RGB = 0.376 < 0.40 so the ownership threshold
+// check (sum > 0.40) still correctly classifies these tiles as unclaimed.
+const UNOWNED_DIM = new THREE.Color(0x102030);
 // Fixed highlight shown when hovering over any tile (owned or unowned)
 const HOVER_COLOR  = new THREE.Color("#1a6fff");
 
@@ -812,8 +813,9 @@ function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
 
-// Unowned borders: pure black = invisible with additive blending (no limb ring effect)
-const BORDER_COLOR = new THREE.Color(0, 0, 0);
+// Subtle blue ring drawn with AdditiveBlending on the dark background —
+// makes the hex grid outline softly visible on unclaimed tiles.
+const BORDER_COLOR = new THREE.Color(0x0d1a26);
 
 // Pre-compute sphere used for hit-testing (analytic intersection, no mesh needed)
 const HIT_SPHERE = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS);
@@ -979,7 +981,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
             ? fillColor.clone().multiplyScalar(2.2)
             : BORDER_COLOR;
 
-      applyInstance(fillMeshRef.current,   i, fillPos,   showFill ? fillSize * sizeVar * pulse : 0, fillColor);
+      applyInstance(fillMeshRef.current,   i, fillPos,   isHovered || isSelected ? fillSize * sizeVar * pulse : isOwned ? fillSize * sizeVar * pulse : fillSize * sizeVar * 0.7, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
       matrixDirty = true;
       colorDirty  = true;
@@ -1053,7 +1055,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         : isOwned
           ? fillColor.clone().multiplyScalar(2.2)
           : BORDER_COLOR;
-      applyInstance(fillMeshRef.current, i, fillPos, isOwned ? fillSize * sizeVar : 0, fillColor);
+      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * (isOwned ? 1.0 : 0.7), fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar, borderColor);
 
     }
@@ -1118,7 +1120,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         />
       </instancedMesh>
 
-      {/* Fill layer — normal blending: unowned tiles hidden via scale=0, faction colour shows clearly */}
+      {/* Fill layer — normal blending: unowned tiles shown at 0.7 scale with dim slate, owned tiles at full scale */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
