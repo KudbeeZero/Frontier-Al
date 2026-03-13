@@ -245,11 +245,8 @@ export async function registerRoutes(
       // /nft/metadata/:plotId returns a real public URL rather than localhost.
       // Without it, NFT image links in metadata JSON will be broken for anyone
       // not running the server locally.
-      const reqHost = req.get("host") || "";
-      const isLocal = reqHost.includes("localhost") || reqHost.includes("127.0.0.1");
-      const rawBaseUrl = process.env.PUBLIC_BASE_URL || (isLocal ? null : `${req.protocol}://${reqHost}`);
+      const rawBaseUrl = process.env.PUBLIC_BASE_URL || null;
       const baseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, "") : null;
-
       if (!baseUrl) {
         // Metadata would contain localhost URLs — log and return a 503 so the
         // caller knows the data is unreliable rather than silently serving bad URLs.
