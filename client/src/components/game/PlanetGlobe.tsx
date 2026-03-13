@@ -668,6 +668,23 @@ const UNOWNED_DIM = new THREE.Color(0, 0, 0);
 // Fixed highlight shown when hovering over any tile (owned or unowned)
 const HOVER_COLOR  = new THREE.Color("#1a6fff");
 
+// Biome-tinted base colours for human-owned tiles.
+// Used as fallback so owned tiles are always visible even before the players
+// array has fully resolved from the initial game state fetch.
+const BIOME_PLOT_COLORS: Record<string, THREE.Color> = {
+  volcanic: new THREE.Color("#ff5722"),
+  mountain: new THREE.Color("#90a4ae"),
+  desert:   new THREE.Color("#ffca28"),
+  forest:   new THREE.Color("#66bb6a"),
+  plains:   new THREE.Color("#aed581"),
+  tundra:   new THREE.Color("#80deea"),
+  swamp:    new THREE.Color("#26a69a"),
+  water:    new THREE.Color("#29b6f6"),
+};
+function getBiomeColor(parcel: LandParcel | undefined): THREE.Color {
+  if (!parcel?.biome) return new THREE.Color("#ff6e40");
+  return BIOME_PLOT_COLORS[parcel.biome]?.clone() ?? new THREE.Color("#ff6e40");
+}
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
@@ -682,7 +699,8 @@ function getPlotColor(
   if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
     return FACTION_COLORS[owner.name].three.clone();
   }
-  return new THREE.Color("#ff6e40");
+  // Biome colour guarantees visibility even if players hasn't loaded yet.
+  return getBiomeColor(parcel);
 }
 
 function StarField() {
