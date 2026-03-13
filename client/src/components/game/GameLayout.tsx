@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { TopBar } from "./TopBar";
 import PlanetGlobe from "./PlanetGlobe";
 import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
@@ -696,6 +697,13 @@ export function GameLayout() {
           />
         </>
       ) : null}
+
+      <div className="absolute top-0 left-0 right-0 z-40">
+        <TopBar
+          isConnected={isConnected}
+          mobileMenuContent={mobileMenuContent}
+        />
+      </div>
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 
