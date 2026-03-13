@@ -887,6 +887,13 @@ export function GameLayout() {
         onOpenChange={(o) => { if (!o) setWatchingBattleId(null); }}
         battle={watchingBattleId ? (gameState?.battles.find((b) => b.id === watchingBattleId) ?? null) : null}
         players={gameState?.players ?? []}
+        targetParcel={
+          watchingBattleId && gameState
+            ? (gameState.parcels.find(
+                (p) => p.id === gameState.battles.find((b) => b.id === watchingBattleId)?.targetParcelId
+              ) ?? null)
+            : null
+        }
       />
     </div>
   );
