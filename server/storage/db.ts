@@ -913,7 +913,7 @@ export class DbStorage implements IStorage {
       else if (action.improvementType === "shield_gen")    newDefense   += 5;
       else if (action.improvementType === "fortress")    { newDefense   += 8; newCapacity += 50; }
       else if (action.improvementType === "storage_depot") newCapacity  += 200;
-      else if (action.improvementType === "data_centre")   newYieldMult += 0.05 * level;
+      else if (action.improvementType === "data_centre")   newYieldMult += 0.05;
 
       const newFpd = calculateFrontierPerDay(newImprovements);
 
