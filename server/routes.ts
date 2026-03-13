@@ -1070,6 +1070,55 @@ export async function registerRoutes(
     }
   });
 
+  // ── GET /api/parcels/attackable ─────────────────────────────────────────────
+  // Returns up to 50 parcels owned by other players, not under active battle,
+  // sorted by total stored resources descending.
+  // Optional query param: ?biome=forest
+  app.get("/api/parcels/attackable", async (req, res) => {
+    try {
+      const { session } = req as any;
+      const playerId = (session?.playerId as string) ?? "";
+      const biomeFilter = req.query.biome as string | undefined;
+
+      const rows = await withDbRetry(
+        () =>
+          db
+            .select({
+              id:             parcelsTable.id,
+              plotId:         parcelsTable.plotId,
+              biome:          parcelsTable.biome,
+              ownerId:        parcelsTable.ownerId,
+              defenseLevel:   parcelsTable.defenseLevel,
+              lat:            parcelsTable.lat,
+              lng:            parcelsTable.lng,
+              ironStored:     parcelsTable.ironStored,
+              fuelStored:     parcelsTable.fuelStored,
+              crystalStored:  parcelsTable.crystalStored,
+              activeBattleId: parcelsTable.activeBattleId,
+            })
+            .from(parcelsTable)
+            .where(
+              sql`
+                ${parcelsTable.ownerId} IS NOT NULL
+                AND ${parcelsTable.ownerId} != ${playerId}
+                AND ${parcelsTable.activeBattleId} IS NULL
+                ${biomeFilter ? sql`AND ${parcelsTable.biome} = ${biomeFilter}` : sql``}
+              `
+            )
+            .orderBy(
+              sql`(${parcelsTable.ironStored} + ${parcelsTable.fuelStored} + ${parcelsTable.crystalStored}) DESC`
+            )
+            .limit(50),
+        "getAttackableParcels"
+      );
+
+      res.json({ parcels: rows });
+    } catch (err) {
+      console.error("[/api/parcels/attackable]", err);
+      res.status(500).json({ error: "Failed to fetch attackable parcels" });
+    }
+  });
+
   app.post("/api/game/resolve-battles", async (req, res) => {
     try {
       const resolved = await storage.resolveBattles();

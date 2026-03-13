@@ -773,6 +773,7 @@ export function GameLayout() {
               players={gameState.players}
               onWatchBattle={setWatchingBattleId}
               onViewOnGlobe={handleViewOnGlobe}
+              onPlotSelect={setSelectedParcelId}
               className="flex-1 border-0 rounded-none overflow-auto"
             />
           ) : (

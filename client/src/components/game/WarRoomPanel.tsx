@@ -1,12 +1,14 @@
-import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, XCircle, TrendingDown, ShieldOff, Eye, Globe } from "lucide-react";
+import { useState } from "react";
+import { Swords, Clock, User, Bot, ChevronRight, AlertTriangle, CheckCircle2, TrendingDown, ShieldOff, Eye, Globe } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import type { Battle, GameEvent, Player } from "@shared/schema";
-import { BATTLE_DURATION_MS } from "@shared/schema";
 
 interface WarRoomPanelProps {
   battles: Battle[];
@@ -14,6 +16,7 @@ interface WarRoomPanelProps {
   players: Player[];
   onWatchBattle?: (battleId: string) => void;
   onViewOnGlobe?: (parcelId: string) => void;
+  onPlotSelect?: (parcelId: string) => void;
   className?: string;
 }
 
@@ -214,10 +217,45 @@ function AIActivityFeed({ players, events }: { players: Player[]; events: GameEv
   );
 }
 
-export function WarRoomPanel({ battles, events, players, onWatchBattle, onViewOnGlobe, className }: WarRoomPanelProps) {
+const BIOMES = [
+  "all", "forest", "desert", "mountain", "plains",
+  "water", "tundra", "volcanic", "swamp",
+];
+
+export function WarRoomPanel({ battles, events, players, onWatchBattle, onViewOnGlobe, onPlotSelect, className }: WarRoomPanelProps) {
   const activeBattles = battles.filter((b) => b.status === "pending");
   const recentBattles = battles.filter((b) => b.status === "resolved").slice(0, 5);
   const recentEvents = events.slice(0, 15);
+
+  const [biomeFilter, setBiomeFilter] = useState<string>("all");
+
+  const { data: targetsData, isLoading: targetsLoading } = useQuery<{
+    parcels: Array<{
+      id: string;
+      plotId: number;
+      biome: string;
+      ownerId: string | null;
+      defenseLevel: number;
+      lat: number;
+      lng: number;
+      ironStored: number;
+      fuelStored: number;
+      crystalStored: number;
+    }>;
+  }>({
+    queryKey: ["attackable-parcels", biomeFilter],
+    queryFn: async () => {
+      const url =
+        biomeFilter === "all"
+          ? "/api/parcels/attackable"
+          : `/api/parcels/attackable?biome=${biomeFilter}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch targets");
+      return res.json();
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
 
   return (
     <div className={cn(
@@ -255,6 +293,12 @@ export function WarRoomPanel({ battles, events, players, onWatchBattle, onViewOn
             className="font-display uppercase tracking-wide text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3"
           >
             AI Factions
+          </TabsTrigger>
+          <TabsTrigger
+            value="targets"
+            className="font-display uppercase tracking-wide text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-3"
+          >
+            Targets
           </TabsTrigger>
         </TabsList>
 
@@ -307,6 +351,92 @@ export function WarRoomPanel({ battles, events, players, onWatchBattle, onViewOn
             <div className="p-4">
               <AIActivityFeed players={players} events={events} />
             </div>
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="targets" className="mt-0 flex flex-col flex-1">
+          <div className="p-2 border-b border-border">
+            <Select value={biomeFilter} onValueChange={setBiomeFilter}>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Filter by biome" />
+              </SelectTrigger>
+              <SelectContent>
+                {BIOMES.map((b) => (
+                  <SelectItem key={b} value={b} className="text-xs capitalize">
+                    {b === "all" ? "All Biomes" : b.charAt(0).toUpperCase() + b.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <ScrollArea className="h-[calc(100%-2.5rem)]">
+            {targetsLoading ? (
+              <div className="p-4 text-xs text-muted-foreground text-center">
+                Scanning for targets…
+              </div>
+            ) : !targetsData?.parcels?.length ? (
+              <div className="p-4 text-xs text-muted-foreground text-center">
+                No attackable parcels found.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {targetsData.parcels.map((parcel) => {
+                  const totalResources = Math.floor(
+                    parcel.ironStored + parcel.fuelStored + parcel.crystalStored
+                  );
+                  const owner = players.find((p) => p.id === parcel.ownerId);
+                  return (
+                    <div
+                      key={parcel.id}
+                      className="flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors"
+                    >
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            #{parcel.plotId}
+                          </span>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 capitalize">
+                            {parcel.biome}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">
+                            DEF {parcel.defenseLevel}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {owner?.name ?? owner?.id?.slice(0, 8) ?? "Unknown"}
+                          {" · "}
+                          <span className="text-amber-400/80">{totalResources} res</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 shrink-0 ml-2">
+                        {onViewOnGlobe && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() => onViewOnGlobe(parcel.id)}
+                          >
+                            <Globe className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {onPlotSelect && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() => onPlotSelect(parcel.id)}
+                          >
+                            <Swords className="h-3 w-3 mr-1" />
+                            Attack
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </ScrollArea>
         </TabsContent>
       </Tabs>
