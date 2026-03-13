@@ -1,0 +1,248 @@
+Good instinct. All 21,000 tiles rendering animation every frame would tank performance — but we can be smart about it. Let me look at exactly what the current animation loop costs and what’s safe to add.​​​​​​​​​​​​​​​​
+
+That’s the key problem. Right now instanceMatrix.needsUpdate = true and instanceColor.needsUpdate = true are set unconditionally every frame — even when only 2 tiles are animated. That means Three.js re-uploads all 21,000 instance matrices and colors to the GPU every single frame regardless of what changed. Animating all owned tiles is absolutely possible if we fix this at the same time.​​​​​​​​​​​​​​​​
+
+latLngToVec3 is called every frame per animated tile — that’s trig on every iteration. And positions never change. Now I have everything needed for a proper solution.
+Here’s the design:
+	∙	Pre-cache all 21,000 fill and border positions into Float32Arrays once (positions never change)
+	∙	Stagger the animation — tiles animate on a slow, low-amplitude breathe (not a fast pulse) using a time offset derived from plotId, so each tile is slightly out of phase with its neighbors — creates a living, shimmering field effect
+	∙	Only mark buffers dirty when something actually changed — track a dirty flag per frame
+	∙	Only color-animate owned tiles; matrix stays static for tiles whose size isn’t changing
+Here’s the prompt:
+
+FRONTIER — Owned Tile Ambient Breathe — Pass TileBreath
+Context: All owned tiles currently appear as static flat color. We want them to slowly “breathe” — a very gentle, slow opacity/brightness oscillation that makes the globe feel alive. The effect must be performant across all 21,000 tiles.
+Performance contract this prompt must satisfy:
+	∙	latLngToVec3 must NOT be called inside useFrame — positions are pre-cached
+	∙	instanceMatrix.needsUpdate must only be set when matrix actually changed
+	∙	instanceColor.needsUpdate is set each frame only for the color buffer (color is cheap to upload; matrix is not)
+	∙	The breathe is color-only (brightness oscillation) — no scale change, so matrix never needs updating for breathe tiles
+	∙	Owned tiles are split into animation buckets of ~200 — only one bucket updates per frame, spreading the CPU cost across ~100 frames
+DO NOT TOUCH: any server files, routes.ts, wsServer.ts, GameLayout.tsx, GlobeEventOverlays.tsx, hover logic, selected tile logic, battle tile logic, or the useEffect static initialiser.
+
+Edit 1 — Pre-cache all tile 3D positions after plotPositions3D
+Find:
+
+  const prevHoveredRef = useRef<number | null>(null);
+
+
+Add immediately before it:
+
+  // Pre-cached 3D positions for fill and border layers — never recomputed in useFrame.
+  const fillPositions3D  = useMemo(() => {
+    const arr: THREE.Vector3[] = [];
+    for (const coord of plotCoords) {
+      arr.push(latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006));
+    }
+    return arr;
+  }, [plotCoords]);
+
+  const borderPositions3D = useMemo(() => {
+    const arr: THREE.Vector3[] = [];
+    for (const coord of plotCoords) {
+      arr.push(latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004));
+    }
+    return arr;
+  }, [plotCoords]);
+
+  // Indices of all owned-but-not-player tiles eligible for ambient breathe.
+  // Recomputed only when parcels/players change — not per frame.
+  const breatheIndices = useMemo(() => {
+    const indices: number[] = [];
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      if (parcel?.ownerId && parcel.ownerId !== currentPlayerId && !parcel.activeBattleId) {
+        indices.push(i);
+      }
+    }
+    return indices;
+  }, [plotCoords, plotIdToParcel, currentPlayerId]);
+
+  // Which bucket of breatheIndices to update this frame.
+  const breatheBucketRef = useRef(0);
+  const BREATHE_BUCKET_SIZE = 200;
+
+
+Edit 2 — Replace the useFrame loop
+Find the entire useFrame block:
+
+  useFrame((_, delta) => {
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current) return;
+    pulseRef.current += delta * 2.5;
+
+    const currentHovered = hoveredIndexRef.current;
+    const prevHovered    = prevHoveredRef.current;
+
+    const toProcess = new Set<number>(animatedIndices);
+    if (currentHovered !== null) toProcess.add(currentHovered);
+    if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+    prevHoveredRef.current = currentHovered;
+
+    if (toProcess.size === 0) return;
+
+    for (const i of toProcess) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      const isSelected = parcel?.id === selectedPlotId;
+      const sizeVar = getPlotSizeVariant(coord.plotId);
+
+      const pulse = isSelected
+        ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
+        : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
+
+      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
+      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
+
+      let fillColor: THREE.Color;
+      const isHovered = hoveredIndexRef.current === i;
+      if (parcel?.activeBattleId) {
+        const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
+        fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
+      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
+      } else if (parcel?.ownerId) {
+        fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
+      } else {
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
+      }
+      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
+      if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
+      const showFill = isOwned || isHovered || isSelected;
+
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : isHovered
+          ? HOVER_COLOR.clone().multiplyScalar(2.0)
+          : isOwned
+            ? fillColor.clone().multiplyScalar(2.2)
+            : BORDER_COLOR;
+      applyInstance(fillMeshRef.current, i, fillPos, showFill ? fillSize * sizeVar * pulse : 0, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
+    }
+
+    fillMeshRef.current.instanceMatrix.needsUpdate = true;
+    borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
+    if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+  });
+
+
+Replace with:
+
+  useFrame((_, delta) => {
+    if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current) return;
+    pulseRef.current += delta * 2.5;
+
+    const currentHovered = hoveredIndexRef.current;
+    const prevHovered    = prevHoveredRef.current;
+    let matrixDirty = false;
+    let colorDirty  = false;
+
+    // ── High-priority animated tiles (selected, owned-by-me, battles, hover) ──
+    const toProcess = new Set<number>(animatedIndices);
+    if (currentHovered !== null) toProcess.add(currentHovered);
+    if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+    prevHoveredRef.current = currentHovered;
+
+    for (const i of toProcess) {
+      const coord  = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      const isSelected = parcel?.id === selectedPlotId;
+      const sizeVar = getPlotSizeVariant(coord.plotId);
+
+      const pulse = isSelected
+        ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
+        : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
+
+      // Use pre-cached positions — no trig here.
+      const fillPos   = fillPositions3D[i];
+      const borderPos = borderPositions3D[i];
+
+      let fillColor: THREE.Color;
+      const isHovered = hoveredIndexRef.current === i;
+      if (parcel?.activeBattleId) {
+        const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
+        fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
+      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
+      } else if (parcel?.ownerId) {
+        fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
+      } else {
+        fillColor = getPlotColor(parcel, currentPlayerId, players);
+      }
+      const isOwned = parcel?.ownerId != null;
+      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
+      if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
+      const showFill = isOwned || isHovered || isSelected;
+
+      const borderColor = isSelected
+        ? new THREE.Color("#ffffff")
+        : isHovered
+          ? HOVER_COLOR.clone().multiplyScalar(2.0)
+          : isOwned
+            ? fillColor.clone().multiplyScalar(2.2)
+            : BORDER_COLOR;
+
+      applyInstance(fillMeshRef.current,   i, fillPos,   showFill ? fillSize * sizeVar * pulse : 0, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
+      matrixDirty = true;
+      colorDirty  = true;
+    }
+
+    // ── Ambient breathe — one bucket of ~200 owned tiles per frame ────────────
+    // Each tile breathes at its own phase offset so the effect ripples across
+    // the globe rather than all tiles pulsing in unison.
+    if (breatheIndices.length > 0) {
+      const bucketStart = breatheBucketRef.current * BREATHE_BUCKET_SIZE;
+      const bucketEnd   = Math.min(bucketStart + BREATHE_BUCKET_SIZE, breatheIndices.length);
+
+      for (let b = bucketStart; b < bucketEnd; b++) {
+        const i = breatheIndices[b];
+        // Skip tiles already handled by the high-priority loop above.
+        if (toProcess.has(i)) continue;
+
+        const coord  = plotCoords[i];
+        const parcel = plotIdToParcel.get(coord.plotId);
+        if (!parcel?.ownerId) continue;
+
+        // Slow breathe: period ~4s, amplitude ±15%, unique phase per tile.
+        const phase      = (i * 0.618033) % (Math.PI * 2); // golden ratio spread
+        const breathe    = 1.0 + Math.sin(pulseRef.current * 0.6 + phase) * 0.15;
+        const baseColor  = getPlotColor(parcel, currentPlayerId, players);
+        const fillColor  = baseColor.clone().multiplyScalar(breathe);
+        const borderColor = fillColor.clone().multiplyScalar(1.8);
+
+        // Color-only update — position and scale don't change, so no matrix write.
+        fillMeshRef.current.setColorAt(i, fillColor);
+        borderMeshRef.current.setColorAt(i, borderColor);
+        colorDirty = true;
+      }
+
+      // Advance bucket; wrap around.
+      breatheBucketRef.current = (bucketEnd >= breatheIndices.length) ? 0 : breatheBucketRef.current + 1;
+    }
+
+    // Only upload to GPU when something actually changed.
+    if (matrixDirty) {
+      fillMeshRef.current.instanceMatrix.needsUpdate   = true;
+      borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    }
+    if (colorDirty) {
+      if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
+      if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+    }
+  });
+
+
+Verification checklist
+	∙	npx tsc --noEmit — zero errors
+	∙	All owned tiles (yours, other players’, AI factions) gently breathe in brightness
+	∙	Each tile is slightly out of phase with its neighbors — no synchronized flash
+	∙	Battle tiles still pulse red fast
+	∙	Your tiles still pulse green
+	∙	No latLngToVec3 calls inside useFrame
+	∙	Frame rate stable — check browser DevTools Performance tab
+
+The visual result: the globe will look like a living organism. Owned tiles across the world slowly shimmer at different phases — volcanic tiles glowing and fading in deep orange-red, ocean tiles drifting in cyan, forest tiles breathing green. The golden ratio phase offset (0.618033) is specifically chosen because it’s irrational — it guarantees no two tiles share a phase period, so you never get visible wave patterns, just organic variation.​​​​​​​​​​​​​​​​

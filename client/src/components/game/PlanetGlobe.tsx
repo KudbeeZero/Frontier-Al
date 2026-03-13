@@ -870,6 +870,41 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     mesh.setColorAt(i, color);
   };
 
+  // Pre-cached 3D positions for fill and border layers — never recomputed in useFrame.
+  const fillPositions3D = useMemo(() => {
+    const arr: THREE.Vector3[] = [];
+    for (const coord of plotCoords) {
+      arr.push(latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006));
+    }
+    return arr;
+  }, [plotCoords]);
+
+  const borderPositions3D = useMemo(() => {
+    const arr: THREE.Vector3[] = [];
+    for (const coord of plotCoords) {
+      arr.push(latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004));
+    }
+    return arr;
+  }, [plotCoords]);
+
+  // Indices of all owned-but-not-player tiles eligible for ambient breathe.
+  // Recomputed only when parcels/players change — not per frame.
+  const breatheIndices = useMemo(() => {
+    const indices: number[] = [];
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      if (parcel?.ownerId && parcel.ownerId !== currentPlayerId && !parcel.activeBattleId) {
+        indices.push(i);
+      }
+    }
+    return indices;
+  }, [plotCoords, plotIdToParcel, currentPlayerId]);
+
+  // Which bucket of breatheIndices to update this frame.
+  const breatheBucketRef = useRef(0);
+  const BREATHE_BUCKET_SIZE = 200;
+
   const prevHoveredRef = useRef<number | null>(null);
 
   useFrame((_, delta) => {
@@ -878,16 +913,17 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
     const currentHovered = hoveredIndexRef.current;
     const prevHovered    = prevHoveredRef.current;
+    let matrixDirty = false;
+    let colorDirty  = false;
 
+    // ── High-priority animated tiles (selected, owned-by-me, battles, hover) ──
     const toProcess = new Set<number>(animatedIndices);
     if (currentHovered !== null) toProcess.add(currentHovered);
     if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
     prevHoveredRef.current = currentHovered;
 
-    if (toProcess.size === 0) return;
-
     for (const i of toProcess) {
-      const coord = plotCoords[i];
+      const coord  = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
       const isSelected = parcel?.id === selectedPlotId;
       const sizeVar = getPlotSizeVariant(coord.plotId);
@@ -896,8 +932,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
         : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
 
-      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
-      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
+      // Use pre-cached positions — no trig here.
+      const fillPos   = fillPositions3D[i];
+      const borderPos = borderPositions3D[i];
 
       let fillColor: THREE.Color;
       const isHovered = hoveredIndexRef.current === i;
@@ -911,7 +948,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId, players);
       }
-      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      const isOwned = parcel?.ownerId != null;
       if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
       if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
       const showFill = isOwned || isHovered || isSelected;
@@ -923,14 +960,55 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           : isOwned
             ? fillColor.clone().multiplyScalar(2.2)
             : BORDER_COLOR;
-      applyInstance(fillMeshRef.current, i, fillPos, showFill ? fillSize * sizeVar * pulse : 0, fillColor);
+
+      applyInstance(fillMeshRef.current,   i, fillPos,   showFill ? fillSize * sizeVar * pulse : 0, fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
+      matrixDirty = true;
+      colorDirty  = true;
     }
 
-    fillMeshRef.current.instanceMatrix.needsUpdate = true;
-    borderMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
-    if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+    // ── Ambient breathe — one bucket of ~200 owned tiles per frame ────────────
+    // Each tile breathes at its own phase offset so the effect ripples across
+    // the globe rather than all tiles pulsing in unison.
+    if (breatheIndices.length > 0) {
+      const bucketStart = breatheBucketRef.current * BREATHE_BUCKET_SIZE;
+      const bucketEnd   = Math.min(bucketStart + BREATHE_BUCKET_SIZE, breatheIndices.length);
+
+      for (let b = bucketStart; b < bucketEnd; b++) {
+        const i = breatheIndices[b];
+        // Skip tiles already handled by the high-priority loop above.
+        if (toProcess.has(i)) continue;
+
+        const coord  = plotCoords[i];
+        const parcel = plotIdToParcel.get(coord.plotId);
+        if (!parcel?.ownerId) continue;
+
+        // Slow breathe: period ~4s, amplitude ±15%, unique phase per tile.
+        const phase      = (i * 0.618033) % (Math.PI * 2); // golden ratio spread
+        const breathe    = 1.0 + Math.sin(pulseRef.current * 0.6 + phase) * 0.15;
+        const baseColor  = getPlotColor(parcel, currentPlayerId, players);
+        const fillColor  = baseColor.clone().multiplyScalar(breathe);
+        const borderColor = fillColor.clone().multiplyScalar(1.8);
+
+        // Color-only update — position and scale don't change, so no matrix write.
+        fillMeshRef.current.setColorAt(i, fillColor);
+        borderMeshRef.current.setColorAt(i, borderColor);
+        colorDirty = true;
+      }
+
+      // Advance bucket; wrap around.
+      breatheBucketRef.current = (bucketEnd >= breatheIndices.length) ? 0 : breatheBucketRef.current + 1;
+    }
+
+    // Only upload to GPU when something actually changed.
+    if (matrixDirty) {
+      fillMeshRef.current.instanceMatrix.needsUpdate   = true;
+      borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    }
+    if (colorDirty) {
+      if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
+      if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+    }
   });
 
   useEffect(() => {
