@@ -1632,7 +1632,7 @@ export class DbStorage implements IStorage {
     });
   }
 
-  // ── Trade Station ───────────────────────────────────────────────────────────
+  // ── Trade Station ────────────────────────────────────────────────────────────
 
   async getOpenTradeOrders(): Promise<TradeOrder[]> {
     await this.initialize();
@@ -1672,6 +1672,46 @@ export class DbStorage implements IStorage {
       .where(eq(tradeOrdersTable.id, orderId));
 
     return { success: true };
+  }
+
+  async getTradeHistory(limit = 50): Promise<TradeOrder[]> {
+    await this.initialize();
+    return this.db
+      .select()
+      .from(tradeOrdersTable)
+      .where(eq(tradeOrdersTable.status, "filled"))
+      .orderBy(desc(tradeOrdersTable.filledAt))
+      .limit(limit);
+  }
+
+  async getTradeLeaderboard(): Promise<{ playerId: string; name: string; tradesPosted: number; tradesFilled: number }[]> {
+    await this.initialize();
+    const allOrders = await this.db.select().from(tradeOrdersTable);
+
+    const map = new Map<string, { name: string; tradesPosted: number; tradesFilled: number }>();
+
+    for (const row of allOrders) {
+      // Count as posted for the offerer
+      if (!map.has(row.offererId)) {
+        map.set(row.offererId, { name: row.offererName, tradesPosted: 0, tradesFilled: 0 });
+      }
+      map.get(row.offererId)!.tradesPosted += 1;
+
+      // Count as filled for the filler (only for filled orders)
+      if (row.status === "filled" && row.filledById) {
+        if (!map.has(row.filledById)) {
+          map.set(row.filledById, { name: row.filledByName ?? row.filledById, tradesPosted: 0, tradesFilled: 0 });
+        } else if (row.filledByName && !map.get(row.filledById)!.name) {
+          map.get(row.filledById)!.name = row.filledByName;
+        }
+        map.get(row.filledById)!.tradesFilled += 1;
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([playerId, v]) => ({ playerId, ...v }))
+      .sort((a, b) => (b.tradesPosted + b.tradesFilled) - (a.tradesPosted + a.tradesFilled))
+      .slice(0, 20);
   }
 
   async fillTradeOrder(
@@ -1739,10 +1779,10 @@ export class DbStorage implements IStorage {
         })
         .where(eq(playersTable.id, fillerId));
 
-      // 6. Mark order filled
+      // 6. Mark order filled — persist filler identity for history / leaderboard
       const now = Date.now();
       const [filled] = await tx.update(tradeOrdersTable)
-        .set({ status: "filled", filledById: fillerId, filledAt: now })
+        .set({ status: "filled", filledById: fillerId, filledByName: fillerRow.name, filledAt: now })
         .where(eq(tradeOrdersTable.id, orderId))
         .returning();
 

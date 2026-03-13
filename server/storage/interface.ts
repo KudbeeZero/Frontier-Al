@@ -73,4 +73,6 @@ export interface IStorage {
   createTradeOrder(order: InsertTradeOrder): Promise<TradeOrder>;
   cancelTradeOrder(orderId: string, playerId: string): Promise<{ success: boolean; error?: string }>;
   fillTradeOrder(orderId: string, fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }>;
+  getTradeHistory(limit?: number): Promise<TradeOrder[]>;
+  getTradeLeaderboard(): Promise<{ playerId: string; name: string; tradesPosted: number; tradesFilled: number }[]>;
 }

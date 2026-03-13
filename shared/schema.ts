@@ -597,6 +597,7 @@ export interface TradeOrder {
   status: "open" | "filled" | "cancelled";
   createdAt: number;
   filledById: string | null;
+  filledByName: string | null;
   filledAt: number | null;
 }
 

@@ -1275,6 +1275,26 @@ export async function registerRoutes(
 
   // ── Trade Station ────────────────────────────────────────────────────────────
 
+  app.get("/api/trade/history", async (_req, res) => {
+    try {
+      const history = await withDbRetry(() => storage.getTradeHistory(50), "getTradeHistory");
+      res.json(history);
+    } catch (err) {
+      console.error("[trade] getTradeHistory error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/trade/leaderboard", async (_req, res) => {
+    try {
+      const board = await withDbRetry(() => storage.getTradeLeaderboard(), "getTradeLeaderboard");
+      res.json(board);
+    } catch (err) {
+      console.error("[trade] getTradeLeaderboard error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/trade/orders", async (_req, res) => {
     try {
       const orders = await withDbRetry(() => storage.getOpenTradeOrders(), "getOpenTradeOrders");

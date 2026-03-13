@@ -234,6 +234,7 @@ export const tradeOrders = pgTable("trade_orders", {
   status:       varchar("status", { length: 20 }).notNull().default("open"),
   createdAt:    bigint("created_at", { mode: "number" }).notNull(),
   filledById:   varchar("filled_by_id", { length: 36 }),
+  filledByName: varchar("filled_by_name", { length: 100 }),
   filledAt:     bigint("filled_at", { mode: "number" }),
 });
 

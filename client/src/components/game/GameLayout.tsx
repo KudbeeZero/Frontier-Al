@@ -9,6 +9,7 @@ import { LandSheet } from "./LandSheet";
 import { InventoryPanel } from "./InventoryPanel";
 import { BattlesPanel } from "./BattlesPanel";
 import { LeaderboardPanel } from "./LeaderboardPanel";
+import { TradeStationPanel } from "./TradeStation";
 import { CommanderPanel } from "./CommanderPanel";
 import { EconomicsPanel } from "./EconomicsPanel";
 import { GamerTagModal } from "./GamerTagModal";
@@ -830,6 +831,13 @@ export function GameLayout() {
           )}
           {activeTab === "economics" && (
             <EconomicsPanel className="h-full" />
+          )}
+          {activeTab === "trade" && (
+            <TradeStationPanel
+              currentPlayerId={player?.id ?? ""}
+              currentPlayerName={player?.name ?? ""}
+              className="h-full"
+            />
           )}
           <div
             className={activeTab === "intel" ? "h-full" : "hidden"}

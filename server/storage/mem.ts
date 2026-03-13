@@ -1342,4 +1342,6 @@ export class MemStorage implements IStorage {
   async fillTradeOrder(_orderId: string, _fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }> {
     return { success: false, error: "Not supported in memory storage" };
   }
+  async getTradeHistory(_limit = 50): Promise<TradeOrder[]> { return []; }
+  async getTradeLeaderboard(): Promise<{ playerId: string; name: string; tradesPosted: number; tradesFilled: number }[]> { return []; }
 }
