@@ -1377,14 +1377,19 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
-        minDistance={GLOBE_RADIUS * 2.2}
-        maxDistance={GLOBE_RADIUS * 4.8}
-        rotateSpeed={0.45}
-        zoomSpeed={1.0}
-        enableDamping
+        enableDamping={true}
         dampingFactor={0.08}
-        autoRotate={false}
-        autoRotateSpeed={0.4}
+        rotateSpeed={0.45}
+        zoomSpeed={0.7}
+        minDistance={GLOBE_RADIUS * 1.6}
+        maxDistance={GLOBE_RADIUS * 4.2}
+        minPolarAngle={Math.PI * 0.18}
+        maxPolarAngle={Math.PI * 0.82}
+        touches={{
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_ROTATE,
+        }}
+        makeDefault
       />
     </>
   );
@@ -1507,7 +1512,7 @@ export default function PlanetGlobe({
       <Canvas
         camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 38 }}
         gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-        style={{ background: "#010306" }}
+        style={{ background: "#010306", touchAction: "none" }}
       >
         <Scene
           parcels={parcels}
