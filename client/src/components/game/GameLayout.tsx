@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ResourceHUD } from "./ResourceHUD";
 import PlanetGlobe from "./PlanetGlobe";
 import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
@@ -713,34 +712,6 @@ export function GameLayout() {
         </div>
       )}
 
-      {player && (
-        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20 hidden sm:block", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
-          <ResourceHUD
-            iron={player.iron}
-            fuel={player.fuel}
-            crystal={player.crystal}
-            frontier={player.frontier}
-            algoBalance={balance}
-            frontierDailyRate={
-              gameState
-                ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
-                    .reduce((s, p) => s + p.frontierPerDay, 0)
-                : undefined
-            }
-            frontierPending={
-              gameState
-                ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
-                    .reduce((s, p) => {
-                      const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
-                      return s + p.frontierAccumulated + days * p.frontierPerDay;
-                    }, 0)
-                : undefined
-            }
-          />
-        </div>
-      )}
 
       <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
         {isLoading ? (
