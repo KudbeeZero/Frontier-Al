@@ -3,12 +3,12 @@ import { getBattleReplay } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
-import { broadcastGameState, markDirty } from "./wsServer";
+import { broadcastGameState, broadcastRaw, markDirty } from "./wsServer";
 import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
 
 // ── Chain Service ─────────────────────────────────────────────────────────────
@@ -1272,6 +1272,104 @@ export async function registerRoutes(
       console.warn("[ORBITAL] background check:", error instanceof Error ? error.message : error);
     }
   }, 5 * 60 * 1000);
+
+  // ── Trade Station ────────────────────────────────────────────────────────────
+
+  app.get("/api/trade/orders", async (_req, res) => {
+    try {
+      const orders = await withDbRetry(() => storage.getOpenTradeOrders(), "getOpenTradeOrders");
+      res.json(orders);
+    } catch (err) {
+      console.error("[trade] getOpenTradeOrders error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/trade/orders", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const player = await storage.getPlayer(playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+
+      const parsed = createTradeOrderSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid input" });
+      }
+      const { giveResource, giveAmount, wantResource, wantAmount } = parsed.data;
+
+      const order = await withDbRetry(() => storage.createTradeOrder({
+        id:           crypto.randomUUID(),
+        offererId:    playerId,
+        offererName:  player.name,
+        giveResource,
+        giveAmount,
+        wantResource,
+        wantAmount,
+        status:       "open",
+        createdAt:    Date.now(),
+        filledById:   null,
+        filledAt:     null,
+      }), "createTradeOrder");
+
+      res.json(order);
+    } catch (err) {
+      console.error("[trade] createTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/trade/orders/:id", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const result = await withDbRetry(
+        () => storage.cancelTradeOrder(req.params.id, playerId),
+        "cancelTradeOrder",
+      );
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[trade] cancelTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/trade/orders/:id/fill", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const fillerPlayer = await storage.getPlayer(playerId);
+      if (!fillerPlayer) return res.status(404).json({ error: "Player not found" });
+
+      const result = await withDbRetry(
+        () => storage.fillTradeOrder(req.params.id, playerId),
+        "fillTradeOrder",
+      );
+      if (!result.success) return res.status(400).json({ error: result.error });
+
+      // Broadcast TRADE_FILLED to all connected clients
+      const trade = result.trade!;
+      broadcastRaw({
+        type:         "TRADE_FILLED",
+        offererName:  trade.offererName,
+        fillerName:   fillerPlayer.name,
+        giveResource: trade.giveResource,
+        giveAmount:   trade.giveAmount,
+        wantResource: trade.wantResource,
+        wantAmount:   trade.wantAmount,
+      });
+
+      markDirty();
+      res.json({ success: true, trade });
+    } catch (err) {
+      console.error("[trade] fillTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
   app.get("/api/admin/mint-status/:plotId", async (req, res) => {
     const adminKey = process.env.ADMIN_KEY;

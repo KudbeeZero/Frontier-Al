@@ -582,6 +582,35 @@ export type SpecialAttackAction = z.infer<typeof specialAttackActionSchema>;
 export type DeployDroneAction = z.infer<typeof deployDroneActionSchema>;
 export type DeploySatelliteAction = z.infer<typeof deploySatelliteActionSchema>;
 
+// ─── Trade Station ────────────────────────────────────────────────────────────
+
+export type TradeResource = "iron" | "fuel" | "crystal" | "frontier";
+
+export interface TradeOrder {
+  id: string;
+  offererId: string;
+  offererName: string;
+  giveResource: TradeResource;
+  giveAmount: number;
+  wantResource: TradeResource;
+  wantAmount: number;
+  status: "open" | "filled" | "cancelled";
+  createdAt: number;
+  filledById: string | null;
+  filledAt: number | null;
+}
+
+export const createTradeOrderSchema = z.object({
+  giveResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  giveAmount: z.number().int().min(1).max(10000),
+  wantResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  wantAmount: z.number().int().min(1).max(10000),
+}).refine(d => d.giveResource !== d.wantResource, {
+  message: "Cannot trade a resource for itself",
+});
+
+// ─── calculateFrontierPerDay ──────────────────────────────────────────────────
+
 export function calculateFrontierPerDay(improvements: Improvement[]): number {
   let perDay = 1;
   

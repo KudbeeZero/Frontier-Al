@@ -97,6 +97,14 @@ function _broadcastRaw(obj: unknown): void {
 }
 
 /**
+ * broadcastRaw — send any custom message envelope to all connected clients.
+ * Use for non-game-state events such as TRADE_FILLED notifications.
+ */
+export function broadcastRaw(obj: unknown): void {
+  _broadcastRaw(obj);
+}
+
+/**
  * broadcastGameState — kept for backward compatibility.
  * Callers that already have a fresh gameState object can push it immediately
  * without waiting for the flush tick. Used by routes that need instant feedback

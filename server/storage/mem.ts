@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 import type {
   LandParcel,
   Player,
@@ -1330,5 +1331,15 @@ export class MemStorage implements IStorage {
   async triggerOrbitalCheck(): Promise<OrbitalEvent | null> {
     if (Math.random() > ORBITAL_IMPACT_CHANCE) return null;
     return this.createOrbitalImpactEvent("IMPACT_STRIKE");
+  }
+
+  // ── Trade Station stubs (MemStorage — dev/test only) ──────────────────────
+  async getOpenTradeOrders(): Promise<TradeOrder[]> { return []; }
+  async createTradeOrder(order: InsertTradeOrder): Promise<TradeOrder> { return order as TradeOrder; }
+  async cancelTradeOrder(_orderId: string, _playerId: string): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: "Not supported in memory storage" };
+  }
+  async fillTradeOrder(_orderId: string, _fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }> {
+    return { success: false, error: "Not supported in memory storage" };
   }
 }

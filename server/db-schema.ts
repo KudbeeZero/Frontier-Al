@@ -219,6 +219,27 @@ export const orbitalEvents = pgTable(
   })
 );
 
+// ─── trade_orders ─────────────────────────────────────────────────────────────
+// Peer-to-peer resource exchange orders.
+// Status lifecycle: open → filled | cancelled
+
+export const tradeOrders = pgTable("trade_orders", {
+  id:           varchar("id", { length: 36 }).primaryKey(),
+  offererId:    varchar("offerer_id", { length: 36 }).notNull(),
+  offererName:  varchar("offerer_name", { length: 100 }).notNull(),
+  giveResource: varchar("give_resource", { length: 20 }).notNull(),
+  giveAmount:   integer("give_amount").notNull(),
+  wantResource: varchar("want_resource", { length: 20 }).notNull(),
+  wantAmount:   integer("want_amount").notNull(),
+  status:       varchar("status", { length: 20 }).notNull().default("open"),
+  createdAt:    bigint("created_at", { mode: "number" }).notNull(),
+  filledById:   varchar("filled_by_id", { length: 36 }),
+  filledAt:     bigint("filled_at", { mode: "number" }),
+});
+
+export type TradeOrder = typeof tradeOrders.$inferSelect;
+export type InsertTradeOrder = typeof tradeOrders.$inferInsert;
+
 // ─── game_events ──────────────────────────────────────────────────────────────
 
 export const gameEvents = pgTable(

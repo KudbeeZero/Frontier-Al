@@ -88,6 +88,9 @@ import {
   battles as battlesTable,
   gameEvents as gameEventsTable,
   orbitalEvents as orbitalEventsTable,
+  tradeOrders as tradeOrdersTable,
+  type TradeOrder,
+  type InsertTradeOrder,
 } from "../db-schema";
 import {
   rowToParcel,
@@ -1627,5 +1630,125 @@ export class DbStorage implements IStorage {
       upgradeBase:    (a) => this.upgradeBase(a),
       addEvent:       (e) => this.addEvent(e),
     });
+  }
+
+  // ── Trade Station ───────────────────────────────────────────────────────────
+
+  async getOpenTradeOrders(): Promise<TradeOrder[]> {
+    await this.initialize();
+    return this.db
+      .select()
+      .from(tradeOrdersTable)
+      .where(eq(tradeOrdersTable.status, "open"))
+      .orderBy(desc(tradeOrdersTable.createdAt));
+  }
+
+  async createTradeOrder(order: InsertTradeOrder): Promise<TradeOrder> {
+    await this.initialize();
+    const [row] = await this.db
+      .insert(tradeOrdersTable)
+      .values(order)
+      .returning();
+    return row;
+  }
+
+  async cancelTradeOrder(
+    orderId: string,
+    playerId: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    await this.initialize();
+    const [order] = await this.db
+      .select()
+      .from(tradeOrdersTable)
+      .where(eq(tradeOrdersTable.id, orderId));
+
+    if (!order) return { success: false, error: "Order not found" };
+    if (order.offererId !== playerId) return { success: false, error: "Not your order" };
+    if (order.status !== "open") return { success: false, error: "Order is not open" };
+
+    await this.db
+      .update(tradeOrdersTable)
+      .set({ status: "cancelled" })
+      .where(eq(tradeOrdersTable.id, orderId));
+
+    return { success: true };
+  }
+
+  async fillTradeOrder(
+    orderId: string,
+    fillerId: string,
+  ): Promise<{ success: boolean; error?: string; trade?: TradeOrder }> {
+    await this.initialize();
+    let result: { success: boolean; error?: string; trade?: TradeOrder } = { success: false };
+
+    await this.db.transaction(async (tx) => {
+      // 1. Fetch and validate the order
+      const [order] = await tx
+        .select()
+        .from(tradeOrdersTable)
+        .where(eq(tradeOrdersTable.id, orderId));
+
+      if (!order) { result = { success: false, error: "Order not found" }; return; }
+      if (order.status !== "open") { result = { success: false, error: "Order is no longer open" }; return; }
+      if (order.offererId === fillerId) { result = { success: false, error: "Cannot fill your own order" }; return; }
+
+      // 2. Fetch both players
+      const [offererRow] = await tx
+        .select()
+        .from(playersTable)
+        .where(eq(playersTable.id, order.offererId));
+      const [fillerRow] = await tx
+        .select()
+        .from(playersTable)
+        .where(eq(playersTable.id, fillerId));
+
+      if (!offererRow) { result = { success: false, error: "Offerer not found" }; return; }
+      if (!fillerRow)  { result = { success: false, error: "Filler not found" };  return; }
+
+      // 3. Verify balances — resource columns are iron/fuel/crystal/frontier (all integers)
+      const resourceCols = { iron: playersTable.iron, fuel: playersTable.fuel, crystal: playersTable.crystal, frontier: playersTable.frontier } as const;
+      type ResKey = keyof typeof resourceCols;
+      const giveCol = resourceCols[order.giveResource as ResKey];
+      const wantCol = resourceCols[order.wantResource as ResKey];
+
+      const offererBalance = (offererRow as unknown as Record<string, number>)[order.giveResource] ?? 0;
+      const fillerBalance  = (fillerRow  as unknown as Record<string, number>)[order.wantResource] ?? 0;
+
+      if (offererBalance < order.giveAmount) {
+        result = { success: false, error: "Offerer no longer has enough resources" };
+        return;
+      }
+      if (fillerBalance < order.wantAmount) {
+        result = { success: false, error: "Insufficient resources to fill this order" };
+        return;
+      }
+
+      // 4. Deduct giveResource from offerer, credit wantResource to offerer
+      await tx.update(playersTable)
+        .set({
+          [order.giveResource]: sql`${giveCol} - ${order.giveAmount}`,
+          [order.wantResource]: sql`${wantCol} + ${order.wantAmount}`,
+        })
+        .where(eq(playersTable.id, order.offererId));
+
+      // 5. Deduct wantResource from filler, credit giveResource to filler
+      await tx.update(playersTable)
+        .set({
+          [order.wantResource]: sql`${wantCol} - ${order.wantAmount}`,
+          [order.giveResource]: sql`${giveCol} + ${order.giveAmount}`,
+        })
+        .where(eq(playersTable.id, fillerId));
+
+      // 6. Mark order filled
+      const now = Date.now();
+      const [filled] = await tx.update(tradeOrdersTable)
+        .set({ status: "filled", filledById: fillerId, filledAt: now })
+        .where(eq(tradeOrdersTable.id, orderId))
+        .returning();
+
+      result = { success: true, trade: filled };
+    });
+
+    return result;
   }
 }

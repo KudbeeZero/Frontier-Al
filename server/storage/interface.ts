@@ -20,6 +20,7 @@ import type {
   OrbitalSatellite,
   OrbitalEvent,
 } from "@shared/schema";
+import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
 export interface IStorage {
   getGameState(): Promise<GameState>;
@@ -66,4 +67,10 @@ export interface IStorage {
   resolveOrbitalEvent(eventId: string): Promise<void>;
   /** Trigger a random impact check — may or may not create an event. */
   triggerOrbitalCheck(): Promise<OrbitalEvent | null>;
+
+  // ── Trade Station ─────────────────────────────────────────────────────────
+  getOpenTradeOrders(): Promise<TradeOrder[]>;
+  createTradeOrder(order: InsertTradeOrder): Promise<TradeOrder>;
+  cancelTradeOrder(orderId: string, playerId: string): Promise<{ success: boolean; error?: string }>;
+  fillTradeOrder(orderId: string, fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }>;
 }
