@@ -1063,7 +1063,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     borderMeshRef.current.instanceMatrix.needsUpdate = true;
     if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
-    readyRef.current = true;
+    if (parcels.length > 0) readyRef.current = true;
   }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, fillSize, borderSize]);
 
   // Sphere-based hover — fires on the invisible coverage sphere, always hits the globe surface
