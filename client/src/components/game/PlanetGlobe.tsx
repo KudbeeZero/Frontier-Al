@@ -20,6 +20,7 @@ const GLOBE_RADIUS = 2;
 const PLOT_COUNT = 21000;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
+// Faction colors kept for LandSheet label display only — NOT used for tile fill.
 const FACTION_COLORS: Record<string, {
   three: THREE.Color;
   hex: string;
@@ -32,8 +33,19 @@ const FACTION_COLORS: Record<string, {
   "SPECTRE":  { three: new THREE.Color("#d500f9"), hex: "#d500f9", glow: "#6a0080", label: "SPECTRE"  },
 };
 
-const COLOR_PLAYER   = new THREE.Color("#00ff6a");
-const COLOR_SELECTED = new THREE.Color("#ffffff");
+// Tile fill palette — flat, always-on, no per-frame multiplication needed.
+const COLOR_PLAYER   = new THREE.Color("#00e676"); // bright green — your territory
+const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy player territory
+const COLOR_AI       = new THREE.Color("#ff6d00"); // same orange — AI faction territory
+const COLOR_BATTLE   = new THREE.Color("#ff1744"); // red — active battle
+const COLOR_SELECTED = new THREE.Color("#ffffff"); // white — selected
+const COLOR_HOVER    = new THREE.Color("#1a6fff"); // blue — hovered
+// Unowned: visible slate-blue grid — bright enough to see, dim enough not to
+// dominate the terrain texture underneath.
+const COLOR_UNOWNED  = new THREE.Color("#1a3a5c");
+// Border colors
+const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
+const COLOR_BORDER_UNOWNED = new THREE.Color("#0d2a40"); // very dim outline grid
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
 
@@ -653,6 +665,7 @@ function AtmosphereGlow() {
   );
 }
 
+// Display color map used by the LandSheet tooltip (UI hex strings, not Three).
 const BIOME_DISPLAY_COLORS: Record<string, string> = {
   forest:   "#00ff41",
   desert:   "#ffae00",
@@ -664,46 +677,18 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
   swamp:    "#00ffcc",
 };
 
-// Unowned tiles render as a dim slate-blue so the planet grid is legible before
-// any territory is claimed.  Sum of RGB = 0.376 < 0.40 so the ownership threshold
-// check (sum > 0.40) still correctly classifies these tiles as unclaimed.
-const UNOWNED_DIM = new THREE.Color(0x102030);
-// Fixed highlight shown when hovering over any tile (owned or unowned)
-const HOVER_COLOR  = new THREE.Color("#1a6fff");
-
-// Biome-tinted base colours for human-owned tiles.
-// Used as fallback so owned tiles are always visible even before the players
-// array has fully resolved from the initial game state fetch.
-const BIOME_PLOT_COLORS: Record<string, THREE.Color> = {
-  volcanic: new THREE.Color("#ff5722"),
-  mountain: new THREE.Color("#90a4ae"),
-  desert:   new THREE.Color("#ffca28"),
-  forest:   new THREE.Color("#66bb6a"),
-  plains:   new THREE.Color("#aed581"),
-  tundra:   new THREE.Color("#80deea"),
-  swamp:    new THREE.Color("#26a69a"),
-  water:    new THREE.Color("#29b6f6"),
-};
-function getBiomeColor(parcel: LandParcel | undefined): THREE.Color {
-  if (!parcel?.biome) return new THREE.Color("#ff6e40");
-  return BIOME_PLOT_COLORS[parcel.biome]?.clone() ?? new THREE.Color("#ff6e40");
-}
+/**
+ * Returns the flat fill color for a tile.
+ * Simple 4-state logic: player-owned | enemy-owned | unowned | missing.
+ * No biome tinting. No faction colors. No per-frame multipliers needed.
+ */
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
-  players: Player[]
 ): THREE.Color {
-  // With AdditiveBlending, UNOWNED_DIM adds a very faint teal tint that
-  // makes the grid visible + clickable without drowning the terrain texture.
-  if (!parcel) return UNOWNED_DIM;
-  if (!parcel.ownerId) return UNOWNED_DIM;
-  if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
-  const owner = players.find(p => p.id === parcel.ownerId);
-  if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
-    return FACTION_COLORS[owner.name].three.clone();
-  }
-  // Biome colour guarantees visibility even if players hasn't loaded yet.
-  return getBiomeColor(parcel);
+  if (!parcel || !parcel.ownerId)                              return COLOR_UNOWNED.clone();
+  if (currentPlayerId && parcel.ownerId === currentPlayerId)   return COLOR_PLAYER.clone();
+  return COLOR_ENEMY.clone(); // all other owners, AI or human
 }
 
 function StarField() {
@@ -815,9 +800,6 @@ function getPlotSizeVariant(plotId: number): number {
   return SIZE_VARIANTS[plotId % SIZE_VARIANTS.length];
 }
 
-// Subtle blue ring drawn with AdditiveBlending on the dark background —
-// makes the hex grid outline softly visible on unclaimed tiles.
-const BORDER_COLOR = new THREE.Color(0x0d1a26);
 
 // Pre-compute sphere used for hit-testing (analytic intersection, no mesh needed)
 const HIT_SPHERE = new THREE.Sphere(new THREE.Vector3(0, 0, 0), GLOBE_RADIUS);
@@ -909,23 +891,6 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     return arr;
   }, [plotCoords]);
 
-  // Indices of all owned-but-not-player tiles eligible for ambient breathe.
-  // Recomputed only when parcels/players change — not per frame.
-  const breatheIndices = useMemo(() => {
-    const indices: number[] = [];
-    for (let i = 0; i < plotCoords.length; i++) {
-      const coord = plotCoords[i];
-      const parcel = plotIdToParcel.get(coord.plotId);
-      if (parcel?.ownerId && parcel.ownerId !== currentPlayerId && !parcel.activeBattleId) {
-        indices.push(i);
-      }
-    }
-    return indices;
-  }, [plotCoords, plotIdToParcel, currentPlayerId]);
-
-  // Which bucket of breatheIndices to update this frame.
-  const breatheBucketRef = useRef(0);
-  const BREATHE_BUCKET_SIZE = 200;
 
   const prevHoveredRef = useRef<number | null>(null);
 
@@ -935,94 +900,61 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
     const currentHovered = hoveredIndexRef.current;
     const prevHovered    = prevHoveredRef.current;
-    let matrixDirty = false;
-    let colorDirty  = false;
+    prevHoveredRef.current = currentHovered;
 
-    // ── High-priority animated tiles (selected, owned-by-me, battles, hover) ──
+    // Build the set of tiles that need per-frame updates:
+    // selected, active battles, hovered, and just-un-hovered (to reset).
     const toProcess = new Set<number>(animatedIndices);
     if (currentHovered !== null) toProcess.add(currentHovered);
     if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
-    prevHoveredRef.current = currentHovered;
+
+    if (toProcess.size === 0) return;
+
+    let colorDirty  = false;
+    let matrixDirty = false;
 
     for (const i of toProcess) {
-      const coord  = plotCoords[i];
-      const parcel = plotIdToParcel.get(coord.plotId);
-      const isSelected = parcel?.id === selectedPlotId;
+      const coord   = plotCoords[i];
+      const parcel  = plotIdToParcel.get(coord.plotId);
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
-      const pulse = isSelected
-        ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
-        : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
+      const isSelected = parcel?.id === selectedPlotId;
+      const isHovered  = currentHovered === i;
+      const isOwned    = !!parcel?.ownerId;
 
-      // Use pre-cached positions — no trig here.
       const fillPos   = fillPositions3D[i];
       const borderPos = borderPositions3D[i];
 
       let fillColor: THREE.Color;
-      const isHovered = hoveredIndexRef.current === i;
-      if (parcel?.activeBattleId) {
-        const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
-        fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
-      } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
-        fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
-      } else if (parcel?.ownerId) {
-        fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
+
+      if (isHovered) {
+        fillColor = COLOR_HOVER.clone();
+      } else if (isSelected) {
+        const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.08;
+        fillColor = COLOR_SELECTED.clone().multiplyScalar(pulse);
+      } else if (parcel?.activeBattleId) {
+        const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
+        fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
       } else {
-        fillColor = getPlotColor(parcel, currentPlayerId, players);
+        // Tile is in toProcess but no special state — restore its static color.
+        fillColor = getPlotColor(parcel, currentPlayerId);
       }
-      const isOwned = parcel?.ownerId != null;
-      if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
-      if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
-      const showFill = isOwned || isHovered || isSelected;
 
-      const borderColor = isSelected
-        ? new THREE.Color("#ffffff")
-        : isHovered
-          ? HOVER_COLOR.clone().multiplyScalar(2.0)
-          : isOwned
-            ? fillColor.clone().multiplyScalar(2.2)
-            : BORDER_COLOR;
+      const borderColor = isSelected || isHovered
+        ? COLOR_SELECTED.clone()
+        : isOwned
+          ? COLOR_BORDER_OWNED.clone()
+          : COLOR_BORDER_UNOWNED.clone();
 
-      applyInstance(fillMeshRef.current,   i, fillPos,   isHovered || isSelected ? fillSize * sizeVar * pulse : isOwned ? fillSize * sizeVar * pulse : fillSize * sizeVar * 0.7, fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
-      matrixDirty = true;
+      const scale = isOwned || isSelected || isHovered ? 1.0 : 0.85;
+
+      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * scale, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * scale, borderColor);
+
       colorDirty  = true;
+      matrixDirty = true;
     }
 
-    // ── Ambient breathe — one bucket of ~200 owned tiles per frame ────────────
-    // Each tile breathes at its own phase offset so the effect ripples across
-    // the globe rather than all tiles pulsing in unison.
-    if (breatheIndices.length > 0) {
-      const bucketStart = breatheBucketRef.current * BREATHE_BUCKET_SIZE;
-      const bucketEnd   = Math.min(bucketStart + BREATHE_BUCKET_SIZE, breatheIndices.length);
-
-      for (let b = bucketStart; b < bucketEnd; b++) {
-        const i = breatheIndices[b];
-        // Skip tiles already handled by the high-priority loop above.
-        if (toProcess.has(i)) continue;
-
-        const coord  = plotCoords[i];
-        const parcel = plotIdToParcel.get(coord.plotId);
-        if (!parcel?.ownerId) continue;
-
-        // Slow breathe: period ~4s, amplitude ±15%, unique phase per tile.
-        const phase      = (i * 0.618033) % (Math.PI * 2); // golden ratio spread
-        const breathe    = 1.0 + Math.sin(pulseRef.current * 0.6 + phase) * 0.15;
-        const baseColor  = getPlotColor(parcel, currentPlayerId, players);
-        const fillColor  = baseColor.clone().multiplyScalar(breathe);
-        const borderColor = fillColor.clone().multiplyScalar(1.8);
-
-        // Color-only update — position and scale don't change, so no matrix write.
-        fillMeshRef.current.setColorAt(i, fillColor);
-        borderMeshRef.current.setColorAt(i, borderColor);
-        colorDirty = true;
-      }
-
-      // Advance bucket; wrap around.
-      breatheBucketRef.current = (bucketEnd >= breatheIndices.length) ? 0 : breatheBucketRef.current + 1;
-    }
-
-    // Only upload to GPU when something actually changed.
     if (matrixDirty) {
       fillMeshRef.current.instanceMatrix.needsUpdate   = true;
       borderMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -1035,38 +967,50 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
+
     for (let i = 0; i < plotCoords.length; i++) {
-      const coord = plotCoords[i];
+      const coord  = plotCoords[i];
       const parcel = plotIdToParcel.get(coord.plotId);
-      const isSelected = parcel?.id === selectedPlotId;
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
-      const fillPos   = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.006);
-      const borderPos = latLngToVec3(coord.lat, coord.lng, GLOBE_RADIUS * 1.004);
+      const fillPos   = fillPositions3D[i];
+      const borderPos = borderPositions3D[i];
 
+      // Determine fill color — simple 4-state, no multiplyScalar.
       let fillColor: THREE.Color;
-      if (parcel?.activeBattleId) {
-        fillColor = new THREE.Color("#ff1744").multiplyScalar(0.9);
+      const isOwned    = !!parcel?.ownerId;
+      const isSelected = parcel?.id === selectedPlotId;
+
+      if (isSelected) {
+        fillColor = COLOR_SELECTED.clone();
+      } else if (parcel?.activeBattleId) {
+        fillColor = COLOR_BATTLE.clone();
       } else {
-        fillColor = getPlotColor(parcel, currentPlayerId, players);
+        fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      const isOwned = (fillColor.r + fillColor.g + fillColor.b) > 0.40;
+      // Border: white ring on owned, very dim grid line on unowned.
       const borderColor = isSelected
-        ? new THREE.Color("#ffffff")
+        ? COLOR_SELECTED.clone()
         : isOwned
-          ? fillColor.clone().multiplyScalar(2.2)
-          : BORDER_COLOR;
-      applyInstance(fillMeshRef.current, i, fillPos, fillSize * sizeVar * (isOwned ? 1.0 : 0.7), fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar, borderColor);
+          ? COLOR_BORDER_OWNED.clone()
+          : COLOR_BORDER_UNOWNED.clone();
 
+      // All tiles rendered at the same base scale — no size penalty for unowned.
+      const scale = isOwned || isSelected ? 1.0 : 0.85;
+      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * scale, fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * scale, borderColor);
     }
-    fillMeshRef.current.instanceMatrix.needsUpdate = true;
+
+    fillMeshRef.current.instanceMatrix.needsUpdate   = true;
     borderMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (fillMeshRef.current.instanceColor) fillMeshRef.current.instanceColor.needsUpdate = true;
+    if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+
+    // Only set ready once we have real parcel data.
     if (parcels.length > 0) readyRef.current = true;
-  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel, dummy, fillSize, borderSize]);
+  }, [parcels, players, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
+      fillPositions3D, borderPositions3D, fillSize, borderSize]);
 
   // Sphere-based hover — fires on the invisible coverage sphere, always hits the globe surface
   const handlePointerMove = useCallback((e: any) => {
@@ -1109,27 +1053,26 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
 
-      {/* Border ring — glows with ownership color on claimed tiles */}
+      {/* Border ring — thin outline. Normal blending so dark colors are visible. */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={1.0}
+          opacity={0.9}
           depthWrite={false}
           side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
 
-      {/* Fill layer — normal blending: unowned tiles shown at 0.7 scale with dim slate, owned tiles at full scale */}
+      {/* Fill layer — depthWrite=true so owned tile colors occlude terrain. */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.75}
-          depthWrite={false}
+          opacity={0.82}
+          depthWrite={true}
           side={THREE.DoubleSide}
         />
       </instancedMesh>
