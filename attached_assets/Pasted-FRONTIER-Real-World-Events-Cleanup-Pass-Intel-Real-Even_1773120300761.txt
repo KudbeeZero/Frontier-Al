@@ -1,0 +1,304 @@
+FRONTIER — Real World Events Cleanup
+Pass: Intel-Real-Events
+
+Context:
+The world event system emits fake demo data and is missing real events from most
+game actions. This pass:
+1. Removes ALL demo/seed data and the route that serves it
+2. Enriches existing real events with proper metadata (names, biomes)
+3. Wires real events to mine, mint-avatar, special-attack, deploy-drone,
+   deploy-satellite actions
+4. Cleans up WorldIntelPanel — removes seed button and empty-state seed hint
+
+DO NOT TOUCH: storage.ts, shared/schema.ts, shared/worldEvents.ts,
+GlobeEventOverlays.tsx, PlanetGlobe.tsx, GameLayout.tsx, or any battle engine logic.
+
+Files to modify:
+- server/worldEventStore.ts
+- server/routes.ts
+- client/src/components/game/WorldIntelPanel.tsx
+
+---
+
+EDIT 1 — server/worldEventStore.ts
+
+Remove the entire seedDemoWorldEvents function and its export.
+
+Replace this entire block:
+export function seedDemoWorldEvents(): void {
+  if (store.length >= 5) return;
+  const now = Date.now();
+  const h = 60 * 60 * 1000;
+  const demos: Omit<WorldEvent, "id">[] = [
+    ...
+  ];
+  demos.forEach(e => appendWorldEvent(e));
+}
+
+With nothing. Delete it entirely.
+
+Also update the import line at the top of the file — remove WorldEventType from
+the import since it's no longer needed after removing the seed function:
+Change:
+import type { WorldEvent, WorldEventType, WorldEventFilters } from "@shared/worldEvents";
+To:
+import type { WorldEvent, WorldEventFilters } from "@shared/worldEvents";
+
+---
+
+EDIT 2 — server/routes.ts
+
+A) Update the import from worldEventStore on line 10.
+Remove seedDemoWorldEvents from the import:
+Change:
+import { appendWorldEvent, listWorldEvents, getRecentWorldEvents, seedDemoWorldEvents } from "./worldEventStore";
+To:
+import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
+
+B) Remove the entire dev-seed route:
+Remove this block:
+  app.post("/api/world/events/dev-seed", (_req, res) => {
+    try { seedDemoWorldEvents(); res.json({ success: true }); }
+    catch { res.status(500).json({ error: "Seed failed" }); }
+  });
+
+C) Enrich the existing battle_started event (inside /api/actions/attack handler).
+Find:
+          appendWorldEvent({ type: "battle_started", timestamp: Date.now(), lat: targetParcel.lat, lng: targetParcel.lng, plotId: targetParcel.plotId, defenderPlotId: targetParcel.plotId, playerId: action.attackerId, severity: "high", metadata: { battleId: battle.id, targetParcelId: action.targetParcelId } });
+
+Replace with:
+          const attackerPlayer = await storage.getPlayer(action.attackerId).catch(() => undefined);
+          const defenderName = targetParcel.ownerId
+            ? (await storage.getPlayer(targetParcel.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+            : "Unclaimed";
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: targetParcel.lat,
+            lng: targetParcel.lng,
+            plotId: targetParcel.plotId,
+            defenderPlotId: targetParcel.plotId,
+            playerId: action.attackerId,
+            severity: "high",
+            metadata: {
+              battleId: battle.id,
+              attacker: attackerPlayer?.name ?? "Unknown",
+              defender: defenderName,
+              biome: targetParcel.biome,
+            }
+          });
+
+D) Enrich the existing land_claimed event (inside /api/actions/purchase handler).
+Find:
+      appendWorldEvent({ type: "land_claimed", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: action.playerId, metadata: { plotId: parcel.plotId } });
+
+Replace with:
+      appendWorldEvent({
+        type: "land_claimed",
+        timestamp: Date.now(),
+        lat: parcel.lat,
+        lng: parcel.lng,
+        plotId: parcel.plotId,
+        playerId: action.playerId,
+        severity: "medium",
+        metadata: {
+          playerName: player.name,
+          biome: parcel.biome,
+          plotId: parcel.plotId,
+        }
+      });
+
+E) Enrich the existing battle_resolved event (inside the resolveBattles interval).
+Find:
+            appendWorldEvent({ type: "battle_resolved", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: battle.attackerId, severity: "high", metadata: { battleId: battle.id, outcome: battle.outcome } });
+
+Replace with:
+            const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
+            appendWorldEvent({
+              type: "battle_resolved",
+              timestamp: Date.now(),
+              lat: parcel.lat,
+              lng: parcel.lng,
+              plotId: parcel.plotId,
+              playerId: battle.attackerId,
+              severity: battle.outcome === "attacker_wins" ? "high" : "medium",
+              metadata: {
+                battleId: battle.id,
+                outcome: battle.outcome,
+                attacker: resolvedAttacker?.name ?? "Unknown",
+              }
+            });
+
+F) Add world event to /api/actions/mine handler.
+After the line:
+      const result = await storage.mineResources(action);
+      res.json({ success: true, yield: result });
+
+Add (before the broadcastGameState call, inside a try/catch):
+      try {
+        const minedParcel = await storage.getParcel(action.parcelId);
+        if (minedParcel) {
+          appendWorldEvent({
+            type: "resource_pulse",
+            timestamp: Date.now(),
+            lat: minedParcel.lat,
+            lng: minedParcel.lng,
+            plotId: minedParcel.plotId,
+            playerId: action.playerId,
+            severity: "low",
+            metadata: {
+              iron: result.iron,
+              fuel: result.fuel,
+              crystal: result.crystal,
+              biome: minedParcel.biome,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
+
+G) Add world event to /api/actions/mint-avatar handler.
+After the line:
+      const avatar = await storage.mintAvatar(action);
+      res.json({ success: true, avatar });
+
+Add:
+      try {
+        const mintPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        if (mintPlayer) {
+          appendWorldEvent({
+            type: "commander_deployed",
+            timestamp: Date.now(),
+            lat: 0,
+            lng: 0,
+            playerId: action.playerId,
+            severity: "medium",
+            metadata: {
+              playerName: mintPlayer.name,
+              tier: action.tier,
+              commanderName: avatar.name,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
+
+H) Add world event to /api/actions/special-attack handler.
+After the line:
+      const result = await storage.executeSpecialAttack(action);
+      res.json({ success: true, result });
+
+Add:
+      try {
+        const saParcel = await storage.getParcel(action.targetParcelId).catch(() => undefined);
+        const saPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        if (saParcel) {
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: saParcel.lat,
+            lng: saParcel.lng,
+            plotId: saParcel.plotId,
+            playerId: action.playerId,
+            severity: "high",
+            metadata: {
+              attackType: action.attackType,
+              attacker: saPlayer?.name ?? "Unknown",
+              defender: saParcel.ownerId
+                ? (await storage.getPlayer(saParcel.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+                : "Unclaimed",
+              special: true,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
+
+I) Add world event to /api/actions/deploy-drone handler.
+After the line:
+      const drone = await storage.deployDrone(action);
+      res.json({ success: true, drone });
+
+Add:
+      try {
+        const dronePlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        appendWorldEvent({
+          type: "scan_ping",
+          timestamp: Date.now(),
+          endTimestamp: Date.now() + 20 * 60_000,
+          lat: 0,
+          lng: 0,
+          playerId: action.playerId,
+          severity: "low",
+          metadata: {
+            playerName: dronePlayer?.name ?? "Unknown",
+            source: "drone",
+          }
+        });
+      } catch { /* non-critical */ }
+
+J) Add world event to /api/actions/deploy-satellite handler.
+After the line:
+      const satellite = await storage.deploySatellite(action);
+      res.json({ success: true, satellite });
+
+Add:
+      try {
+        const satPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        appendWorldEvent({
+          type: "scan_ping",
+          timestamp: Date.now(),
+          endTimestamp: Date.now() + 60 * 60_000,
+          lat: 0,
+          lng: 0,
+          playerId: action.playerId,
+          severity: "low",
+          metadata: {
+            playerName: satPlayer?.name ?? "Unknown",
+            source: "satellite",
+          }
+        });
+      } catch { /* non-critical */ }
+
+---
+
+EDIT 3 — client/src/components/game/WorldIntelPanel.tsx
+
+A) Remove the handleSeedDemo callback entirely:
+Remove:
+  const handleSeedDemo = useCallback(async () => {
+    await fetch("/api/world/events/dev-seed", { method: "POST" });
+    setReplayOffsetMs(0);
+  }, []);
+
+B) Remove the Seed Demo button from the JSX.
+Find and remove:
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={handleSeedDemo}>
+            <Zap className="w-3 h-3 mr-1" /> Seed Demo
+          </Button>
+
+C) Remove the "click Seed Demo to populate" hint from the empty state.
+Find:
+          No events yet — click Seed Demo to populate
+
+Replace with:
+          No events in this time window
+
+D) Remove the Zap icon import if it's only used by the seed button.
+Check whether Zap is used anywhere else in the file. If the only usage was the
+seed button, remove Zap from the lucide-react import line.
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- seedDemoWorldEvents no longer exists anywhere in the codebase
+- The /api/world/events/dev-seed route no longer exists
+- The "Seed Demo" button no longer appears in WorldIntelPanel
+- battle_started events include attacker and defender names in metadata
+- land_claimed events include playerName and biome in metadata
+- battle_resolved events include attacker name and outcome in metadata
+- mine action emits a resource_pulse event
+- mint-avatar action emits a commander_deployed event
+- special-attack action emits a battle_started event
+- deploy-drone emits a scan_ping event
+- deploy-satellite emits a scan_ping event
+- All new appendWorldEvent calls are inside try/catch blocks
+- No changes to storage.ts, shared/schema.ts, or any other files

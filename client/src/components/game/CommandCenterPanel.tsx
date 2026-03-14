@@ -168,6 +168,7 @@ function SelectedParcelActions({
   const isEnemy = parcel.ownerId && parcel.ownerId !== player.id;
   const canMine = isOwned && Date.now() - parcel.lastMineTs >= MINE_COOLDOWN_MS;
   const biomeBonus = biomeBonuses[parcel.biome];
+  const avgYieldPct = Math.round(((biomeBonus.ironMod + biomeBonus.fuelMod + biomeBonus.crystalMod) / 3 - 1) * 100);
 
   return (
     <div
@@ -200,8 +201,7 @@ function SelectedParcelActions({
             )}
           </div>
           <div className="text-[10px] text-muted-foreground mt-0.5 ml-5">
-            Richness {parcel.richness}% · Yield {biomeBonus.yieldMod >= 1 ? "+" : ""}
-            {Math.round((biomeBonus.yieldMod - 1) * 100)}%
+            Richness {parcel.richness}% · Yield {avgYieldPct >= 0 ? "+" : ""}{avgYieldPct}%
           </div>
         </div>
         <div className="flex items-center gap-1 text-sm font-mono font-bold">

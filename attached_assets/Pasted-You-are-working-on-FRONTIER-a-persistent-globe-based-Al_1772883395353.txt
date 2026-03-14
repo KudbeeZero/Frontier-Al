@@ -1,0 +1,219 @@
+You are working on FRONTIER, a persistent globe-based Algorand strategy game built with:
+- React 18 + TypeScript + Vite
+- Three.js + @react-three/fiber + @react-three/drei
+- Express server
+- shared schema types
+- current 3D globe with land plots and faction gameplay
+
+Your task is to implement **Phase 1: World Intel / Tactical Replay**.
+
+GOAL
+Add a replayable world-history system so the game can record major events and replay them on the globe with a timeline scrubber. This is NOT real-world OSINT. It is purely game-state reconstruction from in-game events.
+
+IMPORTANT RULES
+- Do not rewrite the whole globe.
+- Do not migrate to ArcGIS or Cesium.
+- Keep the current Three.js globe.
+- Build this as an additive system.
+- Prefer the smallest working implementation first.
+- Use full replacement files when needed instead of partial diffs.
+- Keep main gameplay working.
+- If storage is currently mixed between memory and DB, implement this feature in a way that works now and can be migrated later.
+
+PHASE 1 SCOPE
+Implement these features only:
+
+1. WORLD EVENT MODEL
+Create a canonical event model for replayable game events.
+
+Add a shared type for:
+- id
+- type
+- timestamp
+- endTimestamp optional
+- plotId optional
+- attackerPlotId optional
+- defenderPlotId optional
+- lat
+- lng
+- altitude optional
+- factionId optional
+- playerId optional
+- severity optional
+- visibility optional
+- metadata object
+
+Supported event types for Phase 1:
+- land_claimed
+- battle_started
+- battle_resolved
+- commander_deployed
+- scan_ping
+- jammer_zone
+- faction_movement
+- resource_pulse
+
+2. SERVER EVENT STORE
+Add a server-side world event store and API endpoints.
+
+If there is already a storage abstraction, integrate into it cleanly.
+If there is only in-memory support right now, create a dedicated in-memory event store module that can later be swapped to DB.
+
+Need:
+- appendWorldEvent(event)
+- listWorldEvents({ start, end, types, limit })
+- getRecentWorldEvents()
+- optional seedDemoWorldEvents() for local testing
+
+3. AUTO-LOG GAME ACTIONS
+Hook event creation into existing gameplay flows wherever practical:
+- land purchase / claim -> land_claimed
+- attack launch -> battle_started
+- attack resolution -> battle_resolved
+- commander action / special attack if available -> commander_deployed
+- AI faction movement tick if available -> faction_movement
+- mining tick or periodic yield pulse -> resource_pulse
+
+If exact hook points are hard to locate, wire the first 3 only:
+- land_claimed
+- battle_started
+- battle_resolved
+
+4. API ENDPOINTS
+Add:
+- GET /api/world/events
+  query params:
+  - start
+  - end
+  - types
+  - limit
+- GET /api/world/events/recent
+- POST /api/world/events/dev-seed
+  dev-only endpoint to seed sample replay data
+
+Return normalized JSON.
+
+5. CLIENT TYPES + QUERY HOOK
+Add client-side types and query hooks for world events.
+Use React Query if already present.
+
+Need:
+- useWorldEvents(filters)
+- useRecentWorldEvents()
+
+6. TACTICAL REPLAY UI
+Create a new client UI panel called something like:
+- World Intel
+or
+- Tactical Replay
+
+This panel should include:
+- timeline scrubber
+- play/pause button
+- speed selector (1x, 5x, 20x)
+- layer toggles for:
+  - battles
+  - claims
+  - scans
+  - jamming
+  - faction movement
+- last 15m / 1h / 24h presets
+
+7. GLOBE OVERLAY RENDERING
+Render replay events on the existing globe without replacing current land rendering.
+
+Add a lightweight overlay system:
+- battle_started -> red/orange pulse at plot
+- battle_resolved -> ring burst or resolved marker
+- land_claimed -> claim beacon pulse
+- scan_ping -> expanding blue scan ring
+- jammer_zone -> translucent sphere / halo
+- faction_movement -> animated arc or moving point between 2 positions
+
+Keep it lightweight:
+- no thousands of heavy meshes
+- use memoization
+- use instancing or very small mesh counts where possible
+- only render filtered events in the active replay window
+
+8. REPLAY TIME FILTERING
+Implement client replay state:
+- selected timestamp
+- playing boolean
+- playback speed
+- visible event layers
+- selected range preset
+
+At time T, render:
+- point-in-time events near T
+- duration events where timestamp <= T <= endTimestamp
+
+9. MOBILE-FIRST PANEL
+Keep the replay controls usable on mobile.
+Use existing UI patterns if there is already a bottom sheet / drawer / panel component.
+
+10. SAFE DEFAULTS
+If no real events exist, show seeded demo events in dev only.
+Do not break current gameplay if replay data fails to load.
+
+TARGET FILES TO ADD OR UPDATE
+Use the existing project structure as much as possible. Likely files to add:
+
+shared/
+- schema.ts or a new shared/worldEvents.ts
+
+server/
+- worldEvents.ts
+- routes.ts
+- storage.ts if storage abstraction exists
+- optional dev seed helper
+
+client/src/
+- components/game/WorldIntelPanel.tsx
+- components/game/ReplayTimeline.tsx
+- components/game/ReplayLayerToggles.tsx
+- components/game/GlobeEventOverlays.tsx
+- hooks/useWorldEvents.ts
+- lib/worldReplay.ts or similar utility
+- update existing globe component to mount GlobeEventOverlays
+- update existing navigation so World Intel can be opened
+
+IMPLEMENTATION DETAILS
+- Reuse existing lat/lng/plot mapping utilities where possible.
+- If plot IDs already map to globe positions, use that instead of recalculating.
+- If only 3D vectors exist, derive lat/lng once and reuse.
+- Keep event payloads compact.
+- Avoid expensive rerenders on every animation frame.
+- Replay playback should update on an interval, not by causing full heavy scene recalculation.
+- Prefer derived filtered arrays with useMemo.
+- If battle resolution data does not yet contain exact lat/lng, derive from involved plot IDs.
+- If faction movement does not exist yet in gameplay logic, seed fake examples for dev mode only.
+
+ACCEPTANCE CRITERIA
+When done, all of the following should be true:
+
+1. I can open a World Intel / Tactical Replay panel in the app.
+2. I can fetch world events from the API.
+3. Land claims create replay events.
+4. Battle start and battle resolution create replay events.
+5. I can scrub through time and see markers appear/disappear on the globe.
+6. I can toggle event layers on/off.
+7. The app remains performant and current plot rendering still works.
+8. Demo seed data works in development for testing.
+9. The code is organized so Phase 2 can later add:
+   - fog of war
+   - signal confidence
+   - delayed intel
+   - false positives
+   - orbital scans
+   - faction route heatmaps
+
+DELIVERY FORMAT
+Return:
+1. a short summary of what was added
+2. the exact files changed
+3. full replacement contents for each changed file
+4. any shell commands I need to run
+5. any manual testing steps
+
+If you must choose between completeness and safety, choose the smallest working end-to-end version.

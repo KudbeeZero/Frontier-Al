@@ -1,0 +1,38 @@
+Now I can see exactly what needs to go. That floating panel showing IRON 200 / FUEL 150 / CRYSTAL 50 / FRNTR 0.0 / ALGO 0 is the target — not the top navigation header. Here is the condensed, copy-ready prompt.
+
+PASS: Remove Floating Resource Panel — All Screens
+Context: A floating resource bar displaying IRON, FUEL, CRYSTAL, FRNTR, and ALGO values is rendering over the globe on both mobile and desktop. This panel is redundant — the same data is accessible in another panel. It must be removed completely from all views. The top navigation header (faction list, UTC clock, coordinate readouts) is not touched.
+DO NOT TOUCH: the top navigation header, faction sidebar (NEXUS-7, KRONOS, VANGUARD, SPECTRE, YOU), UTC clock, coordinate overlays, bottom nav bar (MAP / INVENTORY / BATTLES / INTEL / MORE), globe, or any game state.
+
+EDIT 1 — Locate the resource panel component
+Search the codebase for the component rendering these five values. Look for any file containing the strings IRON, FUEL, CRYSTAL, FRNTR, and ALGO rendered as labeled stat blocks with icons. It will most likely be one of:
+	∙	client/src/components/ResourceBar.tsx
+	∙	client/src/components/ResourcePanel.tsx
+	∙	client/src/components/HUD.tsx
+	∙	client/src/components/StatsBar.tsx
+Once found, note the component name exactly.
+
+EDIT 2 — Remove the import and JSX usage from the parent layout
+In whichever file renders the game view (likely client/src/pages/game.tsx or client/src/components/GameLayout.tsx), find and delete both the import line and the JSX element. Example pattern to find and delete:
+
+import { ResourceBar } from '@/components/ResourceBar'
+
+
+and:
+
+<ResourceBar />
+
+
+Delete both lines entirely. Do not replace with anything. Do not hide with CSS. Do not add a feature flag. Remove completely.
+
+EDIT 3 — Confirm no other render sites
+Run a global search across client/src/ for the component name found in Edit 1. If it appears in any other file (e.g. a mobile layout wrapper or a separate route), delete that import and JSX usage there as well.
+
+Verification checklist:
+	∙	npx tsc --noEmit passes with zero new errors
+	∙	Mobile portrait: floating IRON/FUEL/CRYSTAL/FRNTR/ALGO panel is gone, globe fills the space cleanly
+	∙	Mobile landscape: same — no resource panel anywhere on screen
+	∙	Desktop: resource panel is gone, no empty gap or broken layout where it was
+	∙	Top navigation header, faction list, UTC clock, and coordinate overlays are completely unchanged
+	∙	Bottom nav bar (MAP / INVENTORY / BATTLES / INTEL / MORE) is completely unchanged
+	∙	No console errors from missing component references after removal​​​​​​​​​​​​​​​​

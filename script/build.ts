@@ -9,6 +9,8 @@ const rootDir = path.resolve(__dirname, "..");
 
 const allowlist = [
   "@google/generative-ai",
+  "@perawallet/connect",
+  "algosdk",
   "axios",
   "connect-pg-simple",
   "cors",
@@ -19,6 +21,7 @@ const allowlist = [
   "express-rate-limit",
   "express-session",
   "jsonwebtoken",
+  "lute-connect",
   "memorystore",
   "multer",
   "nanoid",

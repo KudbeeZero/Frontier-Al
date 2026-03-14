@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical } from "lucide-react";
+import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap } from "lucide-react";
 import { SiTelegram, SiX, SiGithub, SiDiscord } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +12,15 @@ interface TopBarProps {
   isConnected: boolean;
   className?: string;
   mobileMenuContent?: React.ReactNode;
+  mobileResources?: {
+    iron: number;
+    fuel: number;
+    crystal: number;
+    frontier: number;
+  } | null;
 }
 
-export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProps) {
+export function TopBar({ isConnected, className, mobileMenuContent, mobileResources }: TopBarProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -61,6 +67,28 @@ export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProp
           </div>
         </div>
       </div>
+
+      {/* Mobile resource strip — visible only below sm breakpoint */}
+      {mobileResources && (
+        <div className="flex items-center gap-2.5 sm:hidden">
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Pickaxe className="w-3 h-3 text-iron" />
+            <span className="text-iron">{mobileResources.iron}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Fuel className="w-3 h-3 text-fuel" />
+            <span className="text-fuel">{mobileResources.fuel}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Gem className="w-3 h-3 text-crystal" />
+            <span className="text-crystal">{mobileResources.crystal}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Zap className="w-3 h-3 text-primary" />
+            <span className="text-primary">{mobileResources.frontier.toFixed(1)}</span>
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center gap-1 sm:gap-2">
         <div className="hidden sm:flex items-center gap-1 mr-1 border-r border-border pr-2">

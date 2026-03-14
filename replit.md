@@ -1,51 +1,62 @@
-# FRONTIER - Algorand Strategy Game
+# Frontier AL: Algorand Testnet Strategy Game
 
-## Overview
-FRONTIER is a persistent 2D map-based war strategy game where players and AI factions compete for 21,000 land plots, powered by the Algorand blockchain (TestNet). The game features wallet-gated gameplay, a two-tier economy (defense improvements cost iron/fuel, facilities cost FRONTIER tokens), and a clear color-coded map. It is designed for multi-chain portability and includes a mobile-first UI.
+Frontier AL is a massive-scale strategy game set on a 3D globe, where players compete for 21,000 land plots on the Algorand Testnet.
 
-## User Preferences
-The user wants the agent to focus on maintaining the project's core vision as a persistent 2D map-based war strategy game on Algorand. Prioritize features that enhance wallet-gated gameplay, the two-tier economy, and multi-chain portability. Any changes should align with the established cyberpunk/military sci-fi theme. For development, the user prefers adherence to the existing project structure and technological choices.
+## Project Status
+- **Phase**: Production Ready
+- **Network**: Algorand Testnet
+- **ASA ID**: 755818217 (FRONTIER / FRNTR)
+- **Factions**:
+  - NEXUS-7 (756388635)
+  - KRONOS (756388636)
+  - VANGUARD (756388647)
+  - SPECTRE (756388648)
 
-## System Architecture
+## Architecture
+- **Frontend**: Vite + React + Three.js (React Three Fiber) + Tailwind CSS
+- **Backend**: Express + Node.js + Drizzle ORM
+- **Database**: Replit PostgreSQL (or MemStorage fallback)
+- **Blockchain**: Algorand (Pera Wallet / LUTE)
 
-### UI/UX Decisions
-The game features a mobile-first UI with bottom navigation, using a cyberpunk/military sci-fi theme with Rajdhani and Inter fonts. The 2D map rendering uses an HTML Canvas with an equirectangular projection, displaying 3-layer planet textures (albedo, night lights, clouds). A 3D globe, built with Three.js and React Three Fiber, shows 21K instanced plot meshes. Key UI components include a `BottomNav`, `LandSheet` for plot actions, `LeaderboardPanel`, `BattlesPanel`, `InventoryPanel`, and `WalletConnect`. Visual effects include an animated star field with twinkling stars and an atmospheric blue glow.
+## Production Configuration
+- **Server Port**: Respects `process.env.PORT` (default 5000).
+- **SPA Fallback**: Compatible with Express 5 / path-to-regexp 8+ using internal filtering logic in `server/static.ts`.
+- **Build Command**: `npm run build`
+- **Start Command**: `node dist/index.cjs`
 
-### Technical Implementations
-- **Frontend**: React 18, TypeScript, Vite, TailwindCSS.
-- **Backend**: Node.js, Express, utilizing in-memory storage for game state.
-- **Map & Globe**: `FlatMap.tsx` handles the 2D canvas map, while `PlanetGlobe.tsx` (legacy) provides a 3D globe with instanced mesh rendering for plots.
-- **Blockchain Integration**: Algorand TestNet, with dual wallet support (Pera + LUTE) using AlgoSDK, @perawallet/connect, and lute-connect. AlgoNode cloud endpoints are used for TestNet access.
-- **State Management**: `WalletContext` for shared wallet state and React Query for game data fetching and mutations.
-- **Algorand Transactions**: Client-side atomic transaction batching is implemented to group multiple game actions into a single wallet signature request.
+## Key Files
+- `server/index.ts`: Express server entry point with production port handling.
+- `server/routes.ts`: All API route handlers — imports ONLY from chain service layer.
+- `server/static.ts`: Critical SPA routing logic for production.
+- `server/storage.ts`: Thin barrel re-export; delegates to decomposed module.
+- `server/storage/interface.ts`: `IStorage` interface definition.
+- `server/storage/game-rules.ts`: Pure functions — biome logic, row converters, leaderboard, coordinates.
+- `server/storage/seeder.ts`: `seedDatabase(db)` — one-time world seeding + schema migrations.
+- `server/storage/ai-engine.ts`: `runAITurn(db, ops)` — AI faction logic with injected `AiOps`.
+- `server/storage/mem.ts`: `MemStorage` in-memory implementation.
+- `server/storage/db.ts`: `DbStorage` PostgreSQL implementation.
+- `server/services/chain/`: Chain service layer (all algosdk usage isolated here).
+  - `client.ts`: algodClient, indexerClient, admin account/address.
+  - `asa.ts`: FRONTIER ASA management + batched transfers.
+  - `land.ts`: Plot NFT minting (`mintLandNft`) + custodian transfer (`transferLandNft`).
+  - `factions.ts`: Faction identity ASA bootstrap.
+- `client/src/components/game/PlanetGlobe.tsx`: 3D globe visualization and plot interaction.
+- `client/src/components/game/GameLayout.tsx`: Main game UI layout and action handlers.
+- `shared/schema.ts`: Game constants, mechanics, and types.
+- `shared/orbitalEngine.ts`: Deterministic cosmetic orbital event generation.
 
-### Feature Specifications
-- **Land System**: 21,000 plots distributed using a Fibonacci sphere algorithm, each with a unique plotId, lat/lng, biome, and richness. Eight distinct biomes are assigned based on latitude and noise. Plots have deterministic names and belong to named sectors.
-- **Resources**: Iron, Fuel, Crystal, and FRONTIER (ASA token) are core game resources.
-- **FRONTIER Token Economy**: A 1 billion supply ASA token earned passively per owned plot, with biome-based earning rates. Claiming is an on-chain transaction.
-- **Land Purchase**: Plots are purchased with ALGO, with biome-based pricing, requiring an on-chain transaction.
-- **Game Actions**: Players can Mine, Upgrade, Build, Attack, Purchase land, Claim FRONTIER, and Collect All resources.
-- **Improvements System**: Includes Turrets, Shield Generators, Mining Drills, Storage Depots, Radar Arrays, and Fortresses, each with specific defense, yield, or capacity benefits.
-- **AI Factions**: Four distinct AI factions (NEXUS-7, KRONOS, VANGUARD, SPECTRE) with varying strategic behaviors, using spatial proximity for neighbor detection.
-- **Commander Avatar System**: Players can mint multiple commander avatars (Sentinel, Phantom, Reaper) by burning FRONTIER tokens. Commanders provide ATK/DEF bonuses and special abilities.
-- **Special Attacks**: Commanders enable unique abilities like Orbital Strike, EMP Blast, Siege Barrage, and Sabotage, costing FRONTIER and having cooldowns.
-- **Recon Drones**: Players can deploy drones to scout enemy territory.
-- **Gamertag System**: New players choose a gamertag validated server-side.
-- **Orbital Satellites**: Animated surveillance satellites orbit the globe.
+## Chain Service Migration (Complete)
+- All algosdk usage is isolated in `server/services/chain/`.
+- `server/routes.ts` imports ONLY from the chain service — never directly from algosdk.
+- `server/algorand.ts` was removed (dead code, fully superseded by chain service).
+- `batchedTransferFrontierAsa` in `asa.ts` uses the chain service's `_frontierAsaId` (fixes bug where claims would fail using stale module-local variable).
 
-## External Dependencies
-
-- **Blockchain**: Algorand TestNet (chainId: 416002, genesisID: testnet-v1.0)
-- **Wallets**: Pera Wallet, LUTE Wallet
-- **Algorand Endpoints**:
-    - Algod: `https://testnet-api.algonode.cloud`
-    - Indexer: `https://testnet-idx.algonode.cloud`
-- **Algorand SDK**: `algosdk`
-- **Wallet Connectors**: `@perawallet/connect`, `lute-connect`
-- **Frontend Framework**: React 18
-- **TypeScript**: For type safety
-- **Build Tool**: Vite
-- **Styling Framework**: TailwindCSS
-- **3D Graphics**: Three.js, `@react-three/fiber`, `@react-three/drei`
-- **Backend Framework**: Node.js, Express
-- **Query Management**: React Query
+## Key Behavioral Notes
+- **Claim pipeline**: opt-in check → credit DB balance → queue on-chain batch transfer (fire-and-forget for fast response).
+- **NFT minting**: idempotency-guarded, fire-and-forget; custodian mode (admin holds NFT if buyer not opted in).
+- **NFT delivery**: `POST /api/nft/deliver/:plotId` — checks buyer has opted into the specific plot ASA, then transfers from admin custody. UI in `LandSheet.tsx` shows "Claim NFT" button for in-custody plots, "In Wallet" badge once delivered. `GET /api/nft/plot/:plotId` returns current mint status and explorer link.
+- **NFT URL fix**: `PUBLIC_BASE_URL` is stripped of trailing slashes before use to prevent double-slash URLs (`//nft/metadata/1`). Falls back to `REPLIT_DOMAINS` env var so minting works even when `PUBLIC_BASE_URL` is not explicitly set.
+- **Minting simplification**: Removed the always-doomed immediate transfer attempt from `mintLandNft` — a freshly-created ASA can never have a buyer opt-in yet, so the transfer always failed. NFT now correctly goes straight to admin custody; buyer uses deliver endpoint after opting in.
+- **Batched transfers**: up to 16 transfers per Algorand atomic group, flushed every 5s or when group is full.
+- **`waitForConfirmation` rounds**: 2 (reduced from 4 for lower latency).
+- **TypeScript target**: ES2020 (supports BigInt literal syntax used in chain service).

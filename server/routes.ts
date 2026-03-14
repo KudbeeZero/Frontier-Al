@@ -1,40 +1,97 @@
 import type { Express } from "express";
+import { getBattleReplay } from "./services/redis";
 import { createServer, type Server } from "http";
+import algosdk from "algosdk";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema } from "@shared/schema";
 import { z } from "zod";
-import { initializeBlockchain, getFrontierAsaId, getAdminAddress, getAdminBalance, transferFrontierASA, isAddressOptedInToFrontier, batchedTransferFrontierASA, mintPlotNftToAddress, algodClient, indexerClient } from "./algorand";
-import { db } from "./db";
-import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable } from "./db-schema";
+import { db, withDbRetry } from "./db";
+import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
+import { broadcastGameState, broadcastRaw, markDirty } from "./wsServer";
+import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
+
+// ── Chain Service ─────────────────────────────────────────────────────────────
+// All algosdk usage is now isolated in server/services/chain/*.
+// Routes import ONLY from the service layer — never from algosdk directly.
+import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
+import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
+import { mintLandNft, transferLandNft } from "./services/chain/land";
+import {
+  bootstrapFactionIdentities,
+  getAllFactionAsaIds,
+  getFactionAsaId,
+  FACTION_DEFINITIONS,
+} from "./services/chain/factions";
+
+const algodClient    = getAlgodClient();
+const indexerClient  = getIndexerClient();
+
+/**
+ * Fire-and-forget on-chain FRONTIER burn via clawback.
+ * Only fires for real wallets (not AI, not placeholder addresses).
+ * Game action is never blocked if this fails — DB is source of truth.
+ */
+function fireBurn(walletAddress: string, amount: number, note: string): void {
+  const asaId = getFrontierAsaId();
+  const isRealWallet =
+    walletAddress &&
+    walletAddress !== 'PLAYER_WALLET' &&
+    !walletAddress.startsWith('AI_') &&
+    algosdk.isValidAddress(walletAddress);
+
+  if (!asaId || !isRealWallet || amount <= 0) return;
+
+  clawbackFrontierAsa(walletAddress, amount, note)
+    .then(txId => { if (txId) console.log(`[burn] ${amount} FRONTIER from ${walletAddress} txId=${txId}`); })
+    .catch(err => console.error('[burn] clawback failed:', err));
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
+  // ── Blockchain Initialization (via Chain Service) ──────────────────────────
   let blockchainReady = false;
-  initializeBlockchain().then((result) => {
-    blockchainReady = result.asaId !== null;
-    console.log(`Blockchain initialized: ASA=${result.asaId}, Admin=${result.adminAddress}, ALGO=${result.adminAlgo}`);
-    if (!blockchainReady) {
-      console.warn("Blockchain initialization incomplete: ASA not created (check ALGO balance and env vars).");
+  (async () => {
+    try {
+      const forceNew = process.env.FORCE_NEW_ASA === "true";
+      const asaId    = await getOrCreateFrontierAsa({ forceNew });
+      setFrontierAsaId(asaId);
+      blockchainReady = true;
+      const adminAddr = getAdminAddress();
+      const balance   = await getAdminBalance();
+      console.log(`[routes] Blockchain ready: ASA=${asaId}, Admin=${adminAddr}, ALGO=${balance.algo}`);
+
+      // Bootstrap faction identity ASAs (idempotent — safe on every restart)
+      const factionBaseUrl = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
+      if (!factionBaseUrl) throw new Error("[faction seed] PUBLIC_BASE_URL must be set — cannot seed faction metadata without a valid public URL");
+      bootstrapFactionIdentities(factionBaseUrl).catch((err) =>
+        console.error("[routes] Faction identity bootstrap failed:", err)
+      );
+    } catch (err) {
+      console.error("[routes] Blockchain init failed:", err);
     }
-  }).catch((err) => {
-    console.error("Blockchain init failed:", err);
-  });
+  })();
 
   app.get("/api/blockchain/status", async (_req, res) => {
     try {
-      const asaId = getFrontierAsaId();
+      const asaId      = getFrontierAsaId();
       const adminAddress = getAdminAddress();
-      const balance = await getAdminBalance();
+      const balance    = await getAdminBalance();
+      const forceNew   = process.env.FORCE_NEW_ASA === "true";
+      const network    = process.env.ALGORAND_NETWORK ?? "testnet";
+      const factionAsaIds = getAllFactionAsaIds();
       res.json({
         ready: blockchainReady,
         frontierAsaId: asaId,
         adminAddress,
         adminAlgoBalance: balance.algo,
         adminFrontierBalance: balance.frontierAsa,
+        network,
+        forceNewAsaEnabled: forceNew,
+        factionIdentities: factionAsaIds,
       });
     } catch (error) {
       res.json({ ready: false, frontierAsaId: null, adminAddress: null });
@@ -128,11 +185,41 @@ export async function registerRoutes(
   app.get("/api/blockchain/opt-in-check/:address", async (req, res) => {
     try {
       const queryAsaId = req.query.assetId ? Number(req.query.assetId) : undefined;
-      const optedIn = await isAddressOptedInToFrontier(req.params.address, queryAsaId);
+      const optedIn = await isAddressOptedIn(req.params.address, queryAsaId);
       res.json({ optedIn, asaId: getFrontierAsaId() });
     } catch (error) {
       res.json({ optedIn: false, asaId: getFrontierAsaId() });
     }
+  });
+
+  // ── Faction Identity Metadata ────────────────────────────────────────────────
+  // ARC-3 style metadata for each AI faction identity ASA.
+  // Referenced as assetURL on the on-chain ASA — permanent, do not change path.
+  app.get("/faction/:name", (req, res) => {
+    const factionName = decodeURIComponent(req.params.name);
+    const def = FACTION_DEFINITIONS.find((f) => f.name === factionName);
+    if (!def) return res.status(404).json({ error: "Faction not found" });
+
+    const asaId       = getFactionAsaId(factionName);
+    const baseUrl     = process.env.PUBLIC_BASE_URL ?? `${req.protocol}://${req.get("host")}`;
+    const explorerUrl = asaId ? `https://allo.info/asset/${asaId}` : null;
+
+    res.json({
+      name:        def.assetName,
+      description: def.lore,
+      image:       `${baseUrl}/faction/images/${encodeURIComponent(factionName)}.svg`,
+      external_url: `${baseUrl}/faction/${encodeURIComponent(factionName)}`,
+      properties: {
+        factionName: def.name,
+        unitName:    def.unitName,
+        behavior:    def.behavior,
+        assetId:     asaId,
+        explorerUrl,
+        totalSupply: def.totalSupply,
+        game:        "FRONTIER",
+        version:     1,
+      },
+    });
   });
 
   // ── NFT Metadata (ARC-3) ────────────────────────────────────────────────────
@@ -158,10 +245,8 @@ export async function registerRoutes(
       // /nft/metadata/:plotId returns a real public URL rather than localhost.
       // Without it, NFT image links in metadata JSON will be broken for anyone
       // not running the server locally.
-      const reqHost = req.get("host") || "";
-      const isLocal = reqHost.includes("localhost") || reqHost.includes("127.0.0.1");
-      const baseUrl = process.env.PUBLIC_BASE_URL || (isLocal ? null : `${req.protocol}://${reqHost}`);
-
+      const rawBaseUrl = process.env.PUBLIC_BASE_URL || null;
+      const baseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, "") : null;
       if (!baseUrl) {
         // Metadata would contain localhost URLs — log and return a 503 so the
         // caller knows the data is unreliable rather than silently serving bad URLs.
@@ -187,15 +272,18 @@ export async function registerRoutes(
       }
 
       // ARC-3 style metadata — keep lean; mutable game state is excluded.
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, max-age=86400");
       res.json({
         name:         `Frontier Plot #${parcel.plotId}`,
-        description:  "A land parcel on the Frontier globe. Own, upgrade, and battle for territory.",
-        image:        `${baseUrl}/nft/biomes/${parcel.biome}.svg`,
+        description:  `A ${parcel.biome} land parcel on the Frontier globe. Richness: ${parcel.richness}%. Own, mine, upgrade, and battle for territory on the Algorand blockchain.`,
+        image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
         external_url: `${baseUrl}/plot/${parcel.plotId}`,
         properties: {
           plotId:            parcel.plotId,
           biome:             parcel.biome,
-          coordinates:       { lat: parcel.lat, lng: parcel.lng },
+          lat:               parcel.lat,
+          lng:               parcel.lng,
           richness:          parcel.richness,
           purchasePriceAlgo: parcel.purchasePriceAlgo,
           version:           1,
@@ -243,13 +331,70 @@ export async function registerRoutes(
     }
   });
 
+  // Deliver a custody-held Plot NFT to its owner after they have opted in.
+  // POST /api/nft/deliver/:plotId  body: { address: string }
+  app.post("/api/nft/deliver/:plotId", async (req, res) => {
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId) || plotId < 1) {
+      return res.status(400).json({ error: "plotId must be a positive integer" });
+    }
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+
+    const { address } = req.body;
+    if (!address || !algosdk.isValidAddress(address)) {
+      return res.status(400).json({ error: "Valid Algorand address required in body.address" });
+    }
+
+    try {
+      const [row] = await db.select().from(plotNftsTable).where(eq(plotNftsTable.plotId, plotId));
+
+      if (!row) return res.status(404).json({ error: "No NFT record for this plot — not yet minted" });
+
+      const assetId = row.assetId ? Number(row.assetId) : null;
+      if (!assetId) return res.status(404).json({ error: "NFT not yet minted for this plot" });
+
+      const adminAddr = getAdminAddress();
+      if (row.mintedToAddress !== adminAddr) {
+        return res.json({ success: false, reason: "not_in_custody", message: "NFT already delivered to buyer", assetId });
+      }
+
+      // Verify the caller's wallet has opted into this specific plot NFT ASA
+      const optedIn = await isAddressOptedIn(address, assetId);
+      if (!optedIn) {
+        return res.json({
+          success: false,
+          reason: "not_opted_in",
+          message: `Add asset ${assetId} to your Pera wallet to receive your Plot NFT. Your land ownership is already recorded.`,
+          assetId,
+          hint: "opt_in_required"
+        });
+      }
+
+      // Transfer the NFT from admin to the buyer
+      const { txId } = await transferLandNft({ assetId, toAddress: address });
+
+      // Update the holder address in plot_nfts
+      await db.update(plotNftsTable)
+        .set({ mintedToAddress: address })
+        .where(eq(plotNftsTable.plotId, plotId));
+
+      console.log(`[nft/deliver] plotId=${plotId} assetId=${assetId} delivered to ${address} txId=${txId}`);
+      res.json({ success: true, plotId, assetId, txId, explorerUrl: `https://allo.info/asset/${assetId}` });
+    } catch (error) {
+      console.error(`[nft/deliver] plotId=${plotId} error:`, error instanceof Error ? error.message : error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Delivery failed" });
+    }
+  });
+
   app.post("/api/actions/connect-wallet", async (req, res) => {
     try {
       const { playerId, address } = req.body;
       if (!playerId || !address) {
         return res.status(400).json({ error: "playerId and address are required" });
       }
-      if (typeof address !== "string" || address.length !== 58) {
+      if (!address || !algosdk.isValidAddress(address)) {
         return res.status(400).json({ error: "Invalid Algorand address" });
       }
       await storage.updatePlayerAddress(playerId, address);
@@ -265,9 +410,9 @@ export async function registerRoutes(
         const asaId = getFrontierAsaId();
         if (asaId && address && !address.startsWith("AI_")) {
           try {
-            const optedIn = await isAddressOptedInToFrontier(address);
+            const optedIn = await isAddressOptedIn(address);
             if (optedIn) {
-              welcomeBonusTxId = await batchedTransferFrontierASA(address, 500);
+              welcomeBonusTxId = await batchedTransferFrontierAsa(address, 500);
               console.log(`Welcome bonus ASA transfer: 500 FRONTIER to ${address}, TX: ${welcomeBonusTxId}`);
             }
           } catch (err) {
@@ -284,10 +429,21 @@ export async function registerRoutes(
 
   app.get("/api/game/state", async (req, res) => {
     try {
-      const gameState = await storage.getGameState();
+      const gameState = await withDbRetry(() => storage.getGameState(), "getGameState");
       res.json(gameState);
+      broadcastGameState(gameState);
     } catch (error) {
       console.error("Error fetching game state:", error);
+      res.status(500).json({ error: "Failed to fetch game state" });
+    }
+  });
+
+  app.get("/api/game/slim-state", async (req, res) => {
+    try {
+      const slimState = await withDbRetry(() => storage.getSlimGameState(), "getSlimGameState");
+      res.json(slimState);
+    } catch (error) {
+      console.error("Error fetching slim game state:", error);
       res.status(500).json({ error: "Failed to fetch game state" });
     }
   });
@@ -335,10 +491,10 @@ export async function registerRoutes(
         // Fire-and-forget ASA transfer
         const asaId = getFrontierAsaId();
         if (asaId && !address.startsWith("AI_")) {
-          isAddressOptedInToFrontier(address)
+          isAddressOptedIn(address)
             .then((optedIn) => {
               if (optedIn) {
-                batchedTransferFrontierASA(address, 500)
+                batchedTransferFrontierAsa(address, 500)
                   .then((txId) =>
                     console.log(`Welcome bonus: 500 FRONTIER → ${address}, TX: ${txId}`)
                   )
@@ -432,6 +588,29 @@ export async function registerRoutes(
     }
   });
 
+  // Returns all faction identity records for the game UI
+  app.get("/api/factions", async (_req, res) => {
+    try {
+      const factionAsaIds = getAllFactionAsaIds();
+      const factions = FACTION_DEFINITIONS.map((f) => ({
+        name:        f.name,
+        unitName:    f.unitName,
+        assetName:   f.assetName,
+        behavior:    f.behavior,
+        lore:        f.lore,
+        totalSupply: f.totalSupply,
+        assetId:     factionAsaIds[f.name] ?? null,
+        explorerUrl: factionAsaIds[f.name]
+          ? `https://allo.info/asset/${factionAsaIds[f.name]}`
+          : null,
+        onChain:     factionAsaIds[f.name] != null,
+      }));
+      res.json({ factions });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch faction data" });
+    }
+  });
+
   app.get("/api/game/leaderboard", async (req, res) => {
     try {
       const leaderboard = await storage.getLeaderboard();
@@ -446,6 +625,27 @@ export async function registerRoutes(
       const action = mineActionSchema.parse(req.body);
       const result = await storage.mineResources(action);
       res.json({ success: true, yield: result });
+      markDirty();
+      try {
+        const minedParcel = await storage.getParcel(action.parcelId);
+        if (minedParcel) {
+          appendWorldEvent({
+            type: "resource_pulse",
+            timestamp: Date.now(),
+            lat: minedParcel.lat,
+            lng: minedParcel.lng,
+            plotId: minedParcel.plotId,
+            playerId: action.playerId,
+            severity: "low",
+            metadata: {
+              iron: result.iron,
+              fuel: result.fuel,
+              crystal: result.crystal,
+              biome: minedParcel.biome,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mining failed" });
@@ -457,6 +657,7 @@ export async function registerRoutes(
       const action = upgradeActionSchema.parse(req.body);
       const parcel = await storage.upgradeBase(action);
       res.json({ success: true, parcel });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Upgrade failed" });
@@ -467,7 +668,38 @@ export async function registerRoutes(
     try {
       const action = attackActionSchema.parse(req.body);
       const battle = await storage.deployAttack(action);
+      if (action.crystalBurned && action.crystalBurned > 0) {
+        const attackPlayer = await storage.getPlayer(action.attackerId);
+        if (attackPlayer) fireBurn(attackPlayer.address, action.crystalBurned, `Crystal burn battleId=${battle.id}`);
+      }
       res.json({ success: true, battle });
+      markDirty();
+      // Log world event
+      try {
+        const targetParcelEvt = await storage.getParcel(action.targetParcelId);
+        const attackerEvt = await storage.getPlayer(action.attackerId).catch(() => undefined);
+        if (targetParcelEvt) {
+          const defenderName = targetParcelEvt.ownerId
+            ? (await storage.getPlayer(targetParcelEvt.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+            : "Unclaimed";
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: targetParcelEvt.lat,
+            lng: targetParcelEvt.lng,
+            plotId: targetParcelEvt.plotId,
+            defenderPlotId: targetParcelEvt.plotId,
+            playerId: action.attackerId,
+            severity: "high",
+            metadata: {
+              battleId: battle.id,
+              attacker: attackerEvt?.name ?? "Unknown",
+              defender: defenderName,
+              biome: targetParcelEvt.biome,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Attack failed" });
@@ -478,7 +710,17 @@ export async function registerRoutes(
     try {
       const action = buildActionSchema.parse(req.body);
       const parcel = await storage.buildImprovement(action);
+      const buildPlayer = await storage.getPlayer(action.playerId);
+      if (buildPlayer) {
+        const { FACILITY_INFO } = await import('@shared/schema');
+        const info = FACILITY_INFO[action.improvementType as keyof typeof FACILITY_INFO];
+        const built = parcel.improvements?.find((i: any) => i.type === action.improvementType);
+        const level = built?.level ?? 1;
+        const cost = info?.costFrontier?.[level - 1] ?? 0;
+        if (cost > 0) fireBurn(buildPlayer.address, cost, `Build improvement plotId=${parcel.plotId}`);
+      }
       res.json({ success: true, parcel });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Build failed" });
@@ -488,50 +730,131 @@ export async function registerRoutes(
   app.post("/api/actions/purchase", async (req, res) => {
     try {
       const action = purchaseActionSchema.parse(req.body);
+
+      // Validate player and wallet BEFORE executing the purchase.
+      const player = await storage.getPlayer(action.playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+
+      // Reject purchases from placeholder/unconnected wallet addresses.
+      // This mirrors the client-side guard and cannot be bypassed by direct API calls.
+      if (
+        !player.address ||
+        player.address === "PLAYER_WALLET" ||
+        player.address.startsWith("AI_") ||
+        !algosdk.isValidAddress(player.address)
+      ) {
+        return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
+      }
+
+      const buyerAddress = player.address;
       const parcel = await storage.purchaseLand(action);
+      console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
+      const buyerForEvent = await storage.getPlayer(action.playerId).catch(() => null);
+      appendWorldEvent({
+        type: "land_claimed",
+        timestamp: Date.now(),
+        lat: parcel.lat,
+        lng: parcel.lng,
+        plotId: parcel.plotId,
+        playerId: action.playerId,
+        severity: "medium",
+        metadata: { plotId: parcel.plotId, playerName: buyerForEvent?.name ?? "Unknown", biome: parcel.biome }
+      });
 
       // Mint a Plot NFT (Algorand ASA) for human players only.
-      // AI purchases do not receive NFTs. Fire-and-forget so the HTTP
-      // response is immediate; minting happens in the background.
       let nftAssetId: number | null = null;
-      const player = await storage.getPlayer(action.playerId);
-      const buyerAddress = player?.address;
       const isHumanBuyer =
         buyerAddress &&
         !buyerAddress.startsWith("AI_") &&
         buyerAddress !== "PLAYER_WALLET" &&
-        buyerAddress.length === 58;
+        algosdk.isValidAddress(buyerAddress);
 
       if (isHumanBuyer && db) {
-        // Check if already minted (idempotency guard)
-        const [existingNft] = await db
-          .select()
-          .from(plotNftsTable)
-          .where(eq(plotNftsTable.plotId, parcel.plotId));
+        // ── Idempotency guard ────────────────────────────────────────────────
+        // Key: "mint:{playerId}:{plotId}" — prevents double-mint on rapid clicks.
+        const idempotencyKey = `mint:${action.playerId}:${parcel.plotId}`;
+        const now = Date.now();
 
-        if (existingNft?.assetId) {
-          nftAssetId = Number(existingNft.assetId);
+        const [existingKey] = await db
+          .select()
+          .from(mintIdempotencyTable)
+          .where(eq(mintIdempotencyTable.key, idempotencyKey));
+
+        console.log(`[mint-audit] idempotency check plotId=${parcel.plotId} status=${existingKey?.status ?? 'new'}`);
+
+        if (existingKey && (existingKey.status === "confirmed" || existingKey.status === "pending")) {
+          nftAssetId = existingKey.assetId ?? null;
           console.log(
-            `[purchase] plotId=${parcel.plotId} NFT already exists, assetId=${nftAssetId}`
+            `[purchase] plotId=${parcel.plotId} idempotency hit status=${existingKey.status} assetId=${nftAssetId}`
           );
         } else {
-          // Fire-and-forget: mint in background, don't block response
-          mintPlotNftToAddress(parcel.plotId, buyerAddress)
-            .then(({ assetId }) => {
-              console.log(
-                `[purchase] plotId=${parcel.plotId} NFT minted, assetId=${assetId}`
-              );
-            })
-            .catch((err) => {
-              console.error(
-                `[purchase] NFT minting failed for plotId=${parcel.plotId}:`,
-                err instanceof Error ? err.message : err
-              );
-            });
+          // Mark pending before async work to prevent concurrent duplicates
+          if (!existingKey) {
+            await db.insert(mintIdempotencyTable).values({
+              key: idempotencyKey,
+              status: "pending",
+              assetId: null,
+              txId: null,
+              createdAt: now,
+              updatedAt: now,
+            }).onConflictDoNothing();
+          }
+
+          // Resolve the public base URL, stripping any trailing slash.
+          // Falls back to REPLIT_DOMAINS (available in all Replit deployments) so
+          // NFT metadata is always hosted at a reachable URL.
+          const rawBase =
+            process.env.PUBLIC_BASE_URL ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "");
+          const PUBLIC_BASE_URL = rawBase.replace(/\/+$/, "");
+
+          if (PUBLIC_BASE_URL) {
+            // Fire-and-forget: mint in background, don't block response
+            mintLandNft({ plotId: parcel.plotId, receiverAddress: buyerAddress, metadataBaseUrl: PUBLIC_BASE_URL })
+              .then(async (result) => {
+                console.log(`[mint-audit] minted plotId=${parcel.plotId} asaId=${result.assetId} txId=${result.createTxId}`);
+                // Persist to plot_nfts (upsert)
+                await db.insert(plotNftsTable).values({
+                  plotId: parcel.plotId,
+                  assetId: result.assetId,
+                  mintedToAddress: result.mintedToAddress,
+                  mintedAt: Date.now(),
+                }).onConflictDoUpdate({
+                  target: plotNftsTable.plotId,
+                  set: { assetId: result.assetId, mintedToAddress: result.mintedToAddress, mintedAt: Date.now() },
+                });
+                // Mark idempotency confirmed
+                await db.update(mintIdempotencyTable)
+                  .set({ status: "confirmed", assetId: result.assetId, txId: result.createTxId, updatedAt: Date.now() })
+                  .where(eq(mintIdempotencyTable.key, idempotencyKey));
+                console.log(`[mint-audit] transfer queued plotId=${parcel.plotId} toAddress=${buyerAddress}`);
+                console.log(`[purchase] plotId=${parcel.plotId} NFT minted assetId=${result.assetId}`);
+              })
+              .catch(async (err) => {
+                console.error(`[mint-audit] FAIL plotId=${parcel.plotId}`, err);
+                await db.update(mintIdempotencyTable)
+                  .set({ status: "failed", updatedAt: Date.now() })
+                  .where(eq(mintIdempotencyTable.key, idempotencyKey));
+                console.error(`[purchase] NFT minting failed for plotId=${parcel.plotId}:`, err instanceof Error ? err.message : err);
+              });
+          } else {
+            console.warn(`[purchase] PUBLIC_BASE_URL not set — skipping NFT mint for plotId=${parcel.plotId}`);
+            await db.update(mintIdempotencyTable)
+              .set({ status: "failed", updatedAt: Date.now() })
+              .where(eq(mintIdempotencyTable.key, idempotencyKey));
+          }
         }
       }
 
-      res.json({ success: true, parcel, nftAssetId });
+      res.json({
+        success: true,
+        parcel,
+        nft: {
+          status: "minting",
+          message: "Your Plot NFT is being minted. Add it to your Pera wallet once you receive the asset ID."
+        }
+      });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Purchase failed" });
@@ -543,6 +866,7 @@ export async function registerRoutes(
       const action = collectActionSchema.parse(req.body);
       const result = await storage.collectAll(action.playerId);
       res.json({ success: true, collected: result });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Collection failed" });
@@ -556,31 +880,41 @@ export async function registerRoutes(
       const player = await storage.getPlayer(action.playerId);
       if (!player) return res.status(404).json({ error: "Player not found" });
 
+      const walletAddress = player.address;
+      const asaId = getFrontierAsaId();
+      const isRealWallet =
+        walletAddress &&
+        walletAddress !== "PLAYER_WALLET" &&
+        !walletAddress.startsWith("AI_");
+
+      // Step 1: Check opt-in BEFORE crediting the DB balance.
+      // Real wallets that haven't opted in cannot receive on-chain tokens,
+      // so we refuse the claim entirely instead of silently crediting in-game
+      // balance that can never be settled on-chain.
+      if (asaId && isRealWallet) {
+        const optedIn = await isAddressOptedIn(walletAddress);
+        if (!optedIn) {
+          return res.json({ success: false, reason: "wallet_not_opted_in" });
+        }
+      }
+
+      // Step 2: Credit the DB balance only after confirming opt-in.
       const result = await storage.claimFrontier(action.playerId);
       let txId: string | undefined;
 
-      const walletAddress = player.address;
-      const asaId = getFrontierAsaId();
-      if (asaId && result.amount > 0 && walletAddress && walletAddress !== "PLAYER_WALLET" && !walletAddress.startsWith("AI_")) {
-        // Queue into the batcher (fire-and-forget) so the HTTP response is immediate.
-        // Multiple concurrent claims are grouped into Algorand atomic transaction
-        // batches that flush once 1 KB of combined data is accumulated (≤ 16 txns).
-        isAddressOptedInToFrontier(walletAddress).then((optedIn) => {
-          if (optedIn) {
-            batchedTransferFrontierASA(walletAddress, result.amount)
-              .then((batchTxId) =>
-                console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
-              )
-              .catch((err) =>
-                console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
-              );
-          } else {
-            console.log(`Player ${walletAddress} not opted into FRONTIER ASA, claim recorded in-game only`);
-          }
-        }).catch((err) => console.error("Opt-in check failed:", err));
+      // Step 3: Queue the on-chain transfer (fire-and-forget so response is immediate).
+      if (asaId && result.amount > 0 && isRealWallet) {
+        batchedTransferFrontierAsa(walletAddress, result.amount)
+          .then((batchTxId) =>
+            console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
+          )
+          .catch((err) =>
+            console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
+          );
       }
 
       res.json({ success: true, claimed: result, txId, asaId });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Claim failed" });
@@ -591,7 +925,31 @@ export async function registerRoutes(
     try {
       const action = mintAvatarActionSchema.parse(req.body);
       const avatar = await storage.mintAvatar(action);
+      const mintPlayer = await storage.getPlayer(action.playerId);
+      if (mintPlayer) {
+        const { COMMANDER_INFO } = await import('@shared/schema');
+        const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
+        if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+      }
       res.json({ success: true, avatar });
+      try {
+        const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => undefined);
+        if (mintPlayerEvt) {
+          appendWorldEvent({
+            type: "commander_deployed",
+            timestamp: Date.now(),
+            lat: 0, lng: 0,
+            playerId: action.playerId,
+            severity: "medium",
+            metadata: {
+              playerName: mintPlayerEvt.name,
+              tier: action.tier,
+              commanderName: avatar.name,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Mint failed" });
@@ -604,6 +962,7 @@ export async function registerRoutes(
       if (!playerId || commanderIndex === undefined) return res.status(400).json({ error: "playerId and commanderIndex required" });
       const activeCommander = await storage.switchCommander(playerId, commanderIndex);
       res.json({ success: true, activeCommander });
+      markDirty();
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Switch failed" });
     }
@@ -614,6 +973,30 @@ export async function registerRoutes(
       const action = specialAttackActionSchema.parse(req.body);
       const result = await storage.executeSpecialAttack(action);
       res.json({ success: true, result });
+      markDirty();
+      try {
+        const saParcel = await storage.getParcel(action.targetParcelId).catch(() => undefined);
+        const saPlayer = await storage.getPlayer(action.playerId).catch(() => undefined);
+        if (saParcel) {
+          appendWorldEvent({
+            type: "battle_started",
+            timestamp: Date.now(),
+            lat: saParcel.lat,
+            lng: saParcel.lng,
+            plotId: saParcel.plotId,
+            playerId: action.playerId,
+            severity: "high",
+            metadata: {
+              attackType: action.attackType,
+              attacker: saPlayer?.name ?? "Unknown",
+              defender: saParcel.ownerId
+                ? (await storage.getPlayer(saParcel.ownerId).catch(() => undefined))?.name ?? "Unclaimed"
+                : "Unclaimed",
+              special: true,
+            }
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Special attack failed" });
@@ -624,7 +1007,27 @@ export async function registerRoutes(
     try {
       const action = deployDroneActionSchema.parse(req.body);
       const drone = await storage.deployDrone(action);
+      const dronePlayer = await storage.getPlayer(action.playerId);
+      if (dronePlayer) {
+        const { DRONE_MINT_COST_FRONTIER } = await import('@shared/schema');
+        fireBurn(dronePlayer.address, DRONE_MINT_COST_FRONTIER, `Drone deploy`);
+      }
+      try {
+        const dronePlayerEvt = await storage.getPlayer(action.playerId).catch(() => null);
+        if (dronePlayerEvt) {
+          appendWorldEvent({
+            type: "scan_ping",
+            timestamp: Date.now(),
+            endTimestamp: Date.now() + 30 * 60_000,
+            lat: 0, lng: 0,
+            playerId: action.playerId,
+            severity: "low",
+            metadata: { playerName: dronePlayerEvt.name, source: "drone" }
+          });
+        }
+      } catch { /* non-critical */ }
       res.json({ success: true, drone });
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Drone deployment failed" });
@@ -635,10 +1038,81 @@ export async function registerRoutes(
     try {
       const action = deploySatelliteActionSchema.parse(req.body);
       const satellite = await storage.deploySatellite(action);
+      const satPlayer = await storage.getPlayer(action.playerId);
+      if (satPlayer) {
+        const { SATELLITE_DEPLOY_COST_FRONTIER } = await import('@shared/schema');
+        fireBurn(satPlayer.address, SATELLITE_DEPLOY_COST_FRONTIER, `Satellite deploy`);
+      }
       res.json({ success: true, satellite });
+      try {
+        const satPlayerEvt = await storage.getPlayer(action.playerId).catch(() => undefined);
+        appendWorldEvent({
+          type: "scan_ping",
+          timestamp: Date.now(),
+          endTimestamp: Date.now() + 60 * 60_000,
+          lat: 0,
+          lng: 0,
+          playerId: action.playerId,
+          severity: "low",
+          metadata: {
+            playerName: satPlayerEvt?.name ?? "Unknown",
+            source: "satellite",
+          }
+        });
+      } catch { /* non-critical */ }
+      markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
       res.status(400).json({ error: error instanceof Error ? error.message : "Satellite deployment failed" });
+    }
+  });
+
+  // ── GET /api/parcels/attackable ─────────────────────────────────────────────
+  // Returns up to 50 parcels owned by other players, not under active battle,
+  // sorted by total stored resources descending.
+  // Optional query param: ?biome=forest
+  app.get("/api/parcels/attackable", async (req, res) => {
+    try {
+      const { session } = req as any;
+      const playerId = (session?.playerId as string) ?? "";
+      const biomeFilter = req.query.biome as string | undefined;
+
+      const rows = await withDbRetry(
+        () =>
+          db
+            .select({
+              id:             parcelsTable.id,
+              plotId:         parcelsTable.plotId,
+              biome:          parcelsTable.biome,
+              ownerId:        parcelsTable.ownerId,
+              defenseLevel:   parcelsTable.defenseLevel,
+              lat:            parcelsTable.lat,
+              lng:            parcelsTable.lng,
+              ironStored:     parcelsTable.ironStored,
+              fuelStored:     parcelsTable.fuelStored,
+              crystalStored:  parcelsTable.crystalStored,
+              activeBattleId: parcelsTable.activeBattleId,
+            })
+            .from(parcelsTable)
+            .where(
+              sql`
+                ${parcelsTable.ownerId} IS NOT NULL
+                AND ${parcelsTable.ownerId} != ${playerId}
+                AND ${parcelsTable.activeBattleId} IS NULL
+                ${biomeFilter ? sql`AND ${parcelsTable.biome} = ${biomeFilter}` : sql``}
+              `
+            )
+            .orderBy(
+              sql`(${parcelsTable.ironStored} + ${parcelsTable.fuelStored} + ${parcelsTable.crystalStored}) DESC`
+            )
+            .limit(50),
+        "getAttackableParcels"
+      );
+
+      res.json({ parcels: rows });
+    } catch (err) {
+      console.error("[/api/parcels/attackable]", err);
+      res.status(500).json({ error: "Failed to fetch attackable parcels" });
     }
   });
 
@@ -666,7 +1140,6 @@ export async function registerRoutes(
   app.get("/api/orbital/active", async (_req, res) => {
     try {
       const events = await storage.getActiveOrbitalEvents();
-      console.log(`[ORBITAL-DEBUG] GET /api/orbital/active | found: ${events.length} events`);
       res.json({ events });
     } catch (error) {
       console.error("[ORBITAL-DEBUG] getActiveOrbitalEvents error:", error);
@@ -692,7 +1165,6 @@ export async function registerRoutes(
   app.post("/api/orbital/resolve/:id", async (req, res) => {
     try {
       await storage.resolveOrbitalEvent(req.params.id);
-      console.log(`[ORBITAL-DEBUG] POST /api/orbital/resolve/${req.params.id} | resolved`);
       res.json({ success: true });
     } catch (error) {
       console.error("[ORBITAL-DEBUG] resolveOrbitalEvent error:", error);
@@ -700,27 +1172,263 @@ export async function registerRoutes(
     }
   });
 
-  // Background tasks: resolve battles, run AI turns, trigger orbital checks
+  // World Intel API endpoints
+  app.get("/api/world/events", async (req, res) => {
+    try {
+      const { start, end, types, limit } = req.query;
+      const filters: import("@shared/worldEvents").WorldEventFilters = {};
+      if (start)  filters.start  = Number(start);
+      if (end)    filters.end    = Number(end);
+      if (limit)  filters.limit  = Number(limit);
+      if (types)  filters.types  = String(types).split(",") as import("@shared/worldEvents").WorldEventType[];
+      res.json(listWorldEvents(filters));
+    } catch { res.status(500).json({ error: "Failed to fetch world events" }); }
+  });
+
+  app.get("/api/world/events/recent", (_req, res) => {
+    try { res.json(getRecentWorldEvents()); }
+    catch { res.status(500).json({ error: "Failed to fetch recent events" }); }
+  });
+
+  // Battle replay — returns the stored replay record for a resolved battle.
+  // Available for 24 hours after resolution. Returns 404 after expiry.
+  app.get("/api/battle/replay/:battleId", async (req, res) => {
+    try {
+      const { battleId } = req.params;
+      if (!battleId || typeof battleId !== "string") {
+        return res.status(400).json({ error: "battleId is required" });
+      }
+      const replay = await getBattleReplay(battleId);
+      if (!replay) {
+        return res.status(404).json({
+          error: "Replay not available",
+          reason: "Battle replay expires after 24 hours or Redis is not configured"
+        });
+      }
+      res.json(replay);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch battle replay" });
+    }
+  });
+
+
+  // Staggered background tasks — avoids hammering Neon with simultaneous queries
   setInterval(async () => {
     try {
-      await storage.resolveBattles();
-      await storage.runAITurn();
+      const resolved = await withDbRetry(() => storage.resolveBattles(), "resolveBattles");
+      if (resolved.length > 0) {
+        for (const battle of resolved) {
+          try {
+            const parcel = await storage.getParcel(battle.targetParcelId);
+            if (parcel) {
+              const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
+              appendWorldEvent({
+                type: "battle_resolved",
+                timestamp: Date.now(),
+                lat: parcel.lat,
+                lng: parcel.lng,
+                plotId: parcel.plotId,
+                playerId: battle.attackerId,
+                severity: battle.outcome === "attacker_wins" ? "high" : "medium",
+                metadata: {
+                  battleId: battle.id,
+                  outcome: battle.outcome,
+                  attacker: resolvedAttacker?.name ?? "Unknown",
+                }
+              });
+            }
+          } catch { /* non-critical */ }
+        }
+        markDirty();
+      }
     } catch (error) {
-      console.error("Background task error:", error);
+      console.warn("Background task (battles):", error instanceof Error ? error.message : error);
     }
   }, 15000);
+
+  setInterval(async () => {
+    try {
+      if (process.env.AI_ENABLED !== "false") {
+        const aiEvents = await withDbRetry(() => storage.runAITurn(), "runAITurn");
+        if (aiEvents && aiEvents.length > 0) markDirty();
+      }
+    } catch (error) {
+      console.warn("Background task (AI):", error instanceof Error ? error.message : error);
+    }
+  }, 20000);
 
   // Orbital check every 5 minutes
   setInterval(async () => {
     try {
-      const event = await storage.triggerOrbitalCheck();
+      const event = await withDbRetry(() => storage.triggerOrbitalCheck(), "triggerOrbitalCheck");
       if (event) {
-        console.log(`[ORBITAL-DEBUG] Background orbital check | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
+        console.log(`[ORBITAL] new impact id=${event.id} type=${event.type}`);
+        markDirty();
       }
     } catch (error) {
-      console.error("[ORBITAL-DEBUG] Background orbital check error:", error);
+      console.warn("[ORBITAL] background check:", error instanceof Error ? error.message : error);
     }
   }, 5 * 60 * 1000);
+
+  // ── Trade Station ────────────────────────────────────────────────────────────
+
+  app.get("/api/trade/history", async (_req, res) => {
+    try {
+      const history = await withDbRetry(() => storage.getTradeHistory(50), "getTradeHistory");
+      res.json(history);
+    } catch (err) {
+      console.error("[trade] getTradeHistory error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/trade/leaderboard", async (_req, res) => {
+    try {
+      const board = await withDbRetry(() => storage.getTradeLeaderboard(), "getTradeLeaderboard");
+      res.json(board);
+    } catch (err) {
+      console.error("[trade] getTradeLeaderboard error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/trade/orders", async (_req, res) => {
+    try {
+      const orders = await withDbRetry(() => storage.getOpenTradeOrders(), "getOpenTradeOrders");
+      res.json(orders);
+    } catch (err) {
+      console.error("[trade] getOpenTradeOrders error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/trade/orders", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const player = await storage.getPlayer(playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+
+      const parsed = createTradeOrderSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid input" });
+      }
+      const { giveResource, giveAmount, wantResource, wantAmount } = parsed.data;
+
+      const order = await withDbRetry(() => storage.createTradeOrder({
+        id:           crypto.randomUUID(),
+        offererId:    playerId,
+        offererName:  player.name,
+        giveResource,
+        giveAmount,
+        wantResource,
+        wantAmount,
+        status:       "open",
+        createdAt:    Date.now(),
+        filledById:   null,
+        filledAt:     null,
+      }), "createTradeOrder");
+
+      res.json(order);
+    } catch (err) {
+      console.error("[trade] createTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/trade/orders/:id", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const result = await withDbRetry(
+        () => storage.cancelTradeOrder(req.params.id, playerId),
+        "cancelTradeOrder",
+      );
+      if (!result.success) return res.status(400).json({ error: result.error });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[trade] cancelTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/trade/orders/:id/fill", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const fillerPlayer = await storage.getPlayer(playerId);
+      if (!fillerPlayer) return res.status(404).json({ error: "Player not found" });
+
+      const result = await withDbRetry(
+        () => storage.fillTradeOrder(req.params.id, playerId),
+        "fillTradeOrder",
+      );
+      if (!result.success) return res.status(400).json({ error: result.error });
+
+      // Broadcast TRADE_FILLED to all connected clients
+      const trade = result.trade!;
+      broadcastRaw({
+        type:         "TRADE_FILLED",
+        offererName:  trade.offererName,
+        fillerName:   fillerPlayer.name,
+        giveResource: trade.giveResource,
+        giveAmount:   trade.giveAmount,
+        wantResource: trade.wantResource,
+        wantAmount:   trade.wantAmount,
+      });
+
+      markDirty();
+      res.json({ success: true, trade });
+    } catch (err) {
+      console.error("[trade] fillTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/admin/mint-status/:plotId", async (req, res) => {
+    const adminKey = process.env.ADMIN_KEY;
+    if (adminKey && req.query.adminKey !== adminKey) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const plotId = parseInt(req.params.plotId, 10);
+    if (isNaN(plotId)) {
+      return res.status(400).json({ error: "Invalid plotId" });
+    }
+
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+
+    try {
+      const [nftRecord] = await db
+        .select()
+        .from(plotNftsTable)
+        .where(eq(plotNftsTable.plotId, plotId));
+
+      const idmpKey = `mint-plot-${plotId}`;
+      const [idempotencyKey] = await db
+        .select()
+        .from(mintIdempotencyTable)
+        .where(eq(mintIdempotencyTable.key, idmpKey));
+
+      if (!nftRecord && !idempotencyKey) {
+        return res.status(404).json({ error: "No mint record found for this plot" });
+      }
+
+      res.json({
+        plotId,
+        nftRecord: nftRecord || null,
+        idempotencyKey: idempotencyKey || null,
+      });
+    } catch (error) {
+      console.error(`[admin] mint-status error plotId=${plotId}`, error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
   return httpServer;
 }

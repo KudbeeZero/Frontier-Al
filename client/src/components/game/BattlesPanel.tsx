@@ -75,24 +75,24 @@ function BattleCard({
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
           {attacker?.isAI ? <Bot className="w-3 h-3" /> : <User className="w-3 h-3" />}
-          <span className="font-mono truncate max-w-[80px]">{attacker?.name || "?"}</span>
+          <span className="font-mono truncate max-w-[100px]">{attacker?.name || "?"}</span>
         </div>
         <ChevronRight className="w-3 h-3 text-muted-foreground" />
         <div className="flex items-center gap-1.5">
-          <span className="font-mono truncate max-w-[80px]">{defender?.name || "Unclaimed"}</span>
+          <span className="font-mono truncate max-w-[100px]">{defender?.name || "Unclaimed"}</span>
           {defender?.isAI ? <Bot className="w-3 h-3" /> : defender ? <User className="w-3 h-3" /> : null}
         </div>
       </div>
 
       {battle.status === "pending" && (
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="w-2.5 h-2.5" /> Resolves in
             </span>
             <span className="font-mono">{formatTime(remaining)}</span>
           </div>
-          <Progress value={progress} className="h-1" />
+          <Progress value={progress} className="h-1.5" />
         </div>
       )}
 
@@ -105,12 +105,20 @@ function BattleCard({
         </span>
       </div>
 
+      {battle.crystalBurned != null && battle.crystalBurned > 0 && (
+        <div className="flex items-center gap-1 text-[10px] text-cyan-400">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+          <span className="font-mono">{battle.crystalBurned}</span>
+          <span className="text-muted-foreground">crystal burned</span>
+        </div>
+      )}
+
       <div className="flex gap-1.5">
         {onViewOnGlobe && (
           <Button
             variant="outline"
             size="sm"
-            className="flex-1 h-7 text-[10px] font-display uppercase tracking-wide gap-1.5 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
+            className="flex-1 h-8 text-xs font-display uppercase tracking-wide gap-1.5 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"
             onClick={() => onViewOnGlobe(battle.targetParcelId)}
           >
             <Globe className="w-3 h-3" />
@@ -121,7 +129,7 @@ function BattleCard({
           <Button
             variant="outline"
             size="sm"
-            className="flex-1 h-7 text-[10px] font-display uppercase tracking-wide gap-1.5"
+            className="flex-1 h-8 text-xs font-display uppercase tracking-wide gap-1.5"
             onClick={() => onWatch(battle.id)}
           >
             <Eye className="w-3 h-3" />
@@ -197,7 +205,7 @@ export function BattlesPanel({ battles, events, players, onWatchBattle, onViewOn
         <div className="p-3 space-y-3">
           {activeBattles.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-destructive flex items-center gap-1.5">
+              <h3 className="text-xs font-display uppercase tracking-wide text-destructive flex items-center gap-1.5">
                 <AlertTriangle className="w-3 h-3" /> Active Battles
               </h3>
               {activeBattles.map((b) => (
@@ -208,7 +216,7 @@ export function BattlesPanel({ battles, events, players, onWatchBattle, onViewOn
 
           {recentBattles.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground">
                 Recent Battles
               </h3>
               {recentBattles.map((b) => (
@@ -219,7 +227,7 @@ export function BattlesPanel({ battles, events, players, onWatchBattle, onViewOn
 
           {battleEvents.length > 0 && (
             <div className="space-y-1">
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-display uppercase tracking-wide text-muted-foreground">
                 Battle Log
               </h3>
               {battleEvents.map((e) => (
@@ -230,8 +238,8 @@ export function BattlesPanel({ battles, events, players, onWatchBattle, onViewOn
 
           {activeBattles.length === 0 && recentBattles.length === 0 && battleEvents.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-              <Swords className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="font-display uppercase tracking-wide text-sm">No Battles Yet</p>
+              <Swords className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p className="font-display uppercase tracking-wide text-base">No Battles Yet</p>
               <p className="text-xs mt-1">Attack enemy territory to start a battle</p>
             </div>
           )}

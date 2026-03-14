@@ -1,0 +1,263 @@
+Here is the complete prompt, ready to paste into the Replit agent.
+
+## FRONTIER — Owned Tile Ambient Breathe + Color Fix — Pass TileBreath
+
+### Context
+
+Two problems are being fixed in this single pass:
+
+1. Owned parcels appear black because `getPlotColor` returns `UNOWNED_DIM` when the
+   `players` array hasn't resolved yet, causing `isOwned` (derived from color sum) to
+   be false and the tile to render at scale=0.
+
+2. Owned tiles are completely static. We want all owned tiles to slowly "breathe" —
+   a gentle, slow brightness oscillation that makes the globe feel alive — with each
+   tile out of phase with its neighbours so the effect is organic rather than
+   synchronized.
+
+Performance contract:
+- `latLngToVec3` must NOT be called inside `useFrame`. Positions are pre-cached into
+  two `useMemo` arrays (fill layer and border layer) computed once on mount.
+- `instanceMatrix.needsUpdate` is only set when a matrix actually changed (scale/pos).
+  The breathe effect is colour-only, so it never dirties the matrix buffer.
+- `instanceColor.needsUpdate` is set per frame only when colour changed.
+- Breathe tiles are processed in rolling buckets of 200 per frame, spreading CPU cost
+  across ~100 frames. At 60fps this means the full globe completes one breathe pass
+  every ~1.7 seconds — invisible to the player, zero frame budget impact.
+- `isOwned` must be derived from `parcel?.ownerId != null`, not from a colour sum.
+  Colour-sum ownership was the root cause of the black tile bug.
+
+DO NOT TOUCH: any server files, `routes.ts`, `wsServer.ts`, `GameLayout.tsx`,
+`GlobeEventOverlays.tsx`, hover logic, selected tile logic, battle tile logic,
+or the `useEffect` static initialiser.
+
+---
+
+### Edit 1 — Replace `getPlotColor` with a biome-safe version
+
+Find:
+
+
+function getPlotColor(
+parcel: LandParcel | undefined,
+currentPlayerId: string | null,
+players: Player[]
+): THREE.Color {
+// With AdditiveBlending, UNOWNED_DIM adds a very faint teal tint that
+// makes the grid visible + clickable without drowning the terrain texture.
+if (!parcel) return UNOWNED_DIM;
+if (!parcel.ownerId) return UNOWNED_DIM;
+if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
+const owner = players.find(p => p.id === parcel.ownerId);
+if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
+return FACTION_COLORS[owner.name].three.clone();
+}
+return new THREE.Color(”#ff6e40”);
+}
+
+
+Replace with:
+
+
+// Biome-tinted base colours for human-owned tiles.
+// Used as fallback so owned tiles are always visible even before the players
+// array has fully resolved from the initial game state fetch.
+const BIOME_PLOT_COLORS: Record<string, THREE.Color> = {
+volcanic: new THREE.Color(”#ff5722”),
+mountain: new THREE.Color(”#90a4ae”),
+desert:   new THREE.Color(”#ffca28”),
+forest:   new THREE.Color(”#66bb6a”),
+plains:   new THREE.Color(”#aed581”),
+tundra:   new THREE.Color(”#80deea”),
+swamp:    new THREE.Color(”#26a69a”),
+water:    new THREE.Color(”#29b6f6”),
+};
+function getBiomeColor(parcel: LandParcel | undefined): THREE.Color {
+if (!parcel?.biome) return new THREE.Color(”#ff6e40”);
+return BIOME_PLOT_COLORS[parcel.biome]?.clone() ?? new THREE.Color(”#ff6e40”);
+}
+function getPlotColor(
+parcel: LandParcel | undefined,
+currentPlayerId: string | null,
+players: Player[]
+): THREE.Color {
+if (!parcel) return UNOWNED_DIM;
+if (!parcel.ownerId) return UNOWNED_DIM;
+if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER;
+const owner = players.find(p => p.id === parcel.ownerId);
+if (owner && owner.isAI && owner.name && FACTION_COLORS[owner.name]) {
+return FACTION_COLORS[owner.name].three.clone();
+}
+// Biome colour guarantees visibility even if players hasn’t loaded yet.
+return getBiomeColor(parcel);
+}
+
+
+---
+
+### Edit 2 — Pre-cache tile positions and add breathe state, immediately before `const prevHoveredRef`
+
+Find:
+
+
+const prevHoveredRef = useRef<number | null>(null);
+
+
+Insert immediately before it:
+
+
+// Pre-cached 3D positions for fill and border layers.
+// Computing these inside useFrame would call latLngToVec3 (trig) on every
+// animated tile every frame — this moves that cost to mount time only.
+const fillPositions3D = useMemo(() => {
+return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.006));
+}, [plotCoords]);
+const borderPositions3D = useMemo(() => {
+return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.004));
+}, [plotCoords]);
+// Indices of all owned-but-not-current-player tiles eligible for ambient breathe.
+// Excludes battle tiles (they have their own fast pulse) and the player’s own tiles
+// (which are handled in the high-priority animatedIndices loop).
+const breatheIndices = useMemo(() => {
+const indices: number[] = [];
+for (let i = 0; i < plotCoords.length; i++) {
+const coord  = plotCoords[i];
+const parcel = plotIdToParcel.get(coord.plotId);
+if (parcel?.ownerId && parcel.ownerId !== currentPlayerId && !parcel.activeBattleId) {
+indices.push(i);
+}
+}
+return indices;
+}, [plotCoords, plotIdToParcel, currentPlayerId]);
+const breatheBucketRef  = useRef(0);
+const BREATHE_BUCKET_SIZE = 200;
+
+
+---
+
+### Edit 3 — Replace the entire `useFrame` block
+
+Find the entire block beginning with `useFrame((_, delta) => {` and ending with the
+closing `});` of that callback (after the four `needsUpdate = true` lines), and replace
+the whole thing with:
+
+
+
+useFrame((_, delta) => {
+if (!fillMeshRef.current || !borderMeshRef.current || !readyRef.current) return;
+pulseRef.current += delta * 2.5;
+
+const currentHovered = hoveredIndexRef.current;
+const prevHovered    = prevHoveredRef.current;
+let matrixDirty = false;
+let colorDirty  = false;
+
+// ── High-priority tiles: selected, player-owned, battles, hovered ────────
+const toProcess = new Set<number>(animatedIndices);
+if (currentHovered !== null) toProcess.add(currentHovered);
+if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+prevHoveredRef.current = currentHovered;
+
+for (const i of toProcess) {
+  const coord  = plotCoords[i];
+  const parcel = plotIdToParcel.get(coord.plotId);
+  const isSelected = parcel?.id === selectedPlotId;
+  const sizeVar    = getPlotSizeVariant(coord.plotId);
+
+  const pulse = isSelected
+    ? 1.0 + Math.sin(pulseRef.current * 2) * 0.08
+    : 1.0 + Math.sin(pulseRef.current + i * 0.1) * 0.04;
+
+  const fillPos   = fillPositions3D[i];
+  const borderPos = borderPositions3D[i];
+
+  let fillColor: THREE.Color;
+  const isHovered = hoveredIndexRef.current === i;
+  if (parcel?.activeBattleId) {
+    const bp = 0.8 + Math.sin(pulseRef.current * 3) * 0.2;
+    fillColor = new THREE.Color("#ff1744").multiplyScalar(bp);
+  } else if (currentPlayerId && parcel?.ownerId === currentPlayerId) {
+    fillColor = COLOR_PLAYER.clone().multiplyScalar(1.4 + Math.sin(pulseRef.current + i * 0.1) * 0.12);
+  } else if (parcel?.ownerId) {
+    fillColor = getPlotColor(parcel, currentPlayerId, players).clone().multiplyScalar(1.25);
+  } else {
+    fillColor = getPlotColor(parcel, currentPlayerId, players);
+  }
+
+  const isOwned = parcel?.ownerId != null;
+  if (isHovered) fillColor = isOwned ? fillColor.clone().multiplyScalar(1.6) : HOVER_COLOR;
+  if (isSelected) fillColor = COLOR_SELECTED.clone().multiplyScalar(1.4);
+  const showFill = isOwned || isHovered || isSelected;
+
+  const borderColor = isSelected
+    ? new THREE.Color("#ffffff")
+    : isHovered
+      ? HOVER_COLOR.clone().multiplyScalar(2.0)
+      : isOwned
+        ? fillColor.clone().multiplyScalar(2.2)
+        : BORDER_COLOR;
+
+  applyInstance(fillMeshRef.current,   i, fillPos,   showFill ? fillSize * sizeVar * pulse : 0, fillColor);
+  applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * pulse, borderColor);
+  matrixDirty = true;
+  colorDirty  = true;
+}
+
+// ── Ambient breathe — one bucket of owned tiles per frame ─────────────────
+// Tiles breathe at individual phase offsets derived from the golden ratio,
+// ensuring no two tiles share the same period and the effect stays organic.
+if (breatheIndices.length > 0) {
+  const bucketStart = breatheBucketRef.current * BREATHE_BUCKET_SIZE;
+  const bucketEnd   = Math.min(bucketStart + BREATHE_BUCKET_SIZE, breatheIndices.length);
+
+  for (let b = bucketStart; b < bucketEnd; b++) {
+    const i = breatheIndices[b];
+    if (toProcess.has(i)) continue; // already handled above
+
+    const coord  = plotCoords[i];
+    const parcel = plotIdToParcel.get(coord.plotId);
+    if (!parcel?.ownerId) continue;
+
+    // Period ~4 s, amplitude ±15%. Golden-ratio phase offset per tile.
+    const phase     = (i * 0.618033) % (Math.PI * 2);
+    const breathe   = 1.0 + Math.sin(pulseRef.current * 0.6 + phase) * 0.15;
+    const baseColor = getPlotColor(parcel, currentPlayerId, players);
+    const fillColor = baseColor.clone().multiplyScalar(breathe);
+
+    fillMeshRef.current.setColorAt(i, fillColor);
+    borderMeshRef.current.setColorAt(i, fillColor.clone().multiplyScalar(1.8));
+    colorDirty = true;
+  }
+
+  breatheBucketRef.current =
+    bucketEnd >= breatheIndices.length ? 0 : breatheBucketRef.current + 1;
+}
+
+// Only upload to GPU when something actually changed.
+if (matrixDirty) {
+  fillMeshRef.current.instanceMatrix.needsUpdate   = true;
+  borderMeshRef.current.instanceMatrix.needsUpdate = true;
+}
+if (colorDirty) {
+  if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
+  if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+}
+
+
+});
+
+
+---
+
+### Verification checklist
+
+After applying, run `npx tsc --noEmit` and confirm zero new errors. Then visually verify:
+
+- Owned parcels (yours, other players', AI factions) all show colour immediately on
+  globe load — no black tiles regardless of whether the players array has resolved.
+- All owned tiles breathe gently in brightness, each at its own phase.
+- The globe never shows a synchronised flash — the effect is organic and staggered.
+- Battle tiles continue to pulse red at their existing fast rate.
+- Your own parcels continue to pulse bright green.
+- Hover and selection highlighting are unaffected.
+- Frame rate is stable — confirm in browser DevTools Performance tab.

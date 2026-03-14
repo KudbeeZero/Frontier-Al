@@ -149,10 +149,10 @@ export function useBlockchainActions() {
   );
 
   const queueAttackAction = useCallback(
-    (plotId: number, troops: number, iron: number, fuel: number) => {
+    (plotId: number, troops: number, iron: number, fuel: number, crystal: number = 0) => {
       if (isReady && address) {
-        console.log(`[ACTION-DEBUG] queueAttackAction | path: enqueueGameAction→batch | plotId: ${plotId} | troops: ${troops} | ts: ${Date.now()}`);
-        enqueueGameAction("attack", plotId, { troops, iron, fuel });
+        console.log(`[ACTION-DEBUG] queueAttackAction | path: enqueueGameAction→batch | plotId: ${plotId} | troops: ${troops} | crystal: ${crystal} | ts: ${Date.now()}`);
+        enqueueGameAction("attack", plotId, { troops, iron, fuel, crystal });
       }
     },
     [isReady, address]
@@ -273,14 +273,35 @@ export function useBlockchainActions() {
   );
 
   const signMineAction = useCallback(
-    (plotId: number) => signGameAction("mine", plotId),
-    [signGameAction]
+    async (plotId: number) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
   );
 
   const signUpgradeAction = useCallback(
-    (plotId: number, upgradeType: string) =>
-      signGameAction("upgrade", plotId, { upgradeType }),
-    [signGameAction]
+    async (plotId: number, upgradeType: string) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
+  );
+
+  const signBuildAction = useCallback(
+    async (plotId: number, improvementType: string) => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
+  );
+
+  const signCollectAction = useCallback(
+    async () => {
+      // Server-side only, no wallet signature required.
+      return null;
+    },
+    []
   );
 
   const signAttackAction = useCallback(
@@ -420,15 +441,40 @@ export function useBlockchainActions() {
     [isReady, address, frontierAsaId, isOptedIn, toast]
   );
 
+  const signOptInToPlotNft = useCallback(
+    async (assetId: number): Promise<boolean> => {
+      if (!address) {
+        toast({ title: "Wallet Required", description: "Connect your wallet first.", variant: "destructive" });
+        return false;
+      }
+      try {
+        await optInToASA(address, assetId);
+        toast({ title: "Opt-In Complete", description: `Opted into ASA ${assetId}. Claiming your NFT...` });
+        return true;
+      } catch (err: any) {
+        if (err?.message?.includes("cancelled") || err?.message?.includes("rejected")) {
+          toast({ title: "Opt-In Cancelled", description: "You cancelled the opt-in." });
+        } else {
+          toast({ title: "Opt-In Failed", description: err instanceof Error ? err.message : "Opt-in failed", variant: "destructive" });
+        }
+        return false;
+      }
+    },
+    [address, toast]
+  );
+
   return {
     isPending,
     lastTxId,
     signMineAction,
     signUpgradeAction,
+    signBuildAction,
+    signCollectAction,
     signAttackAction,
     signPurchaseAction,
     signClaimFrontierAction,
     signOptInToFrontier,
+    signOptInToPlotNft,
     queueMineAction,
     queueUpgradeAction,
     queueAttackAction,

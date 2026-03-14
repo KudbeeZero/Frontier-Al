@@ -1,0 +1,152 @@
+PASS: TRADE STATION — V1 Order Book
+
+CONTEXT:
+- Players table has: iron, fuel, crystal, frontier columns (integers)
+- No trade logic exists anywhere yet
+- WebSocket broadcast infrastructure is already live
+- Add ADDITIVE only — do NOT touch battle logic, parcel logic, or AI faction code
+
+FILES TO MODIFY:
+1. server/db-schema.ts
+2. server/storage/interface.ts
+3. server/storage/db.ts
+4. server/routes.ts
+5. shared/schema.ts (validation types)
+6. client/src/ (new TradeStation component)
+
+---
+
+EDIT 1 — server/db-schema.ts
+Add this table AFTER the players table definition:
+
+export const tradeOrders = pgTable("trade_orders", {
+  id:           varchar("id", { length: 36 }).primaryKey(),
+  offererId:    varchar("offerer_id", { length: 36 }).notNull(),
+  offererName:  varchar("offerer_name", { length: 100 }).notNull(),
+  giveResource: varchar("give_resource", { length: 20 }).notNull(), // "iron"|"fuel"|"crystal"|"frontier"
+  giveAmount:   integer("give_amount").notNull(),
+  wantResource: varchar("want_resource", { length: 20 }).notNull(),
+  wantAmount:   integer("want_amount").notNull(),
+  status:       varchar("status", { length: 20 }).notNull().default("open"), // "open"|"filled"|"cancelled"
+  createdAt:    bigint("created_at", { mode: "number" }).notNull(),
+  filledById:   varchar("filled_by_id", { length: 36 }),
+  filledAt:     bigint("filled_at", { mode: "number" }),
+});
+
+---
+
+EDIT 2 — Add migration
+Run: npx drizzle-kit generate
+Then: npx drizzle-kit migrate
+
+---
+
+EDIT 3 — server/storage/interface.ts
+Add these method signatures to IStorage interface:
+
+  getOpenTradeOrders(): Promise<TradeOrder[]>;
+  createTradeOrder(order: InsertTradeOrder): Promise<TradeOrder>;
+  cancelTradeOrder(orderId: string, playerId: string): Promise<{ success: boolean; error?: string }>;
+  fillTradeOrder(orderId: string, fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }>;
+
+Where TradeOrder and InsertTradeOrder are imported from db-schema.ts
+
+---
+
+EDIT 4 — server/storage/db.ts
+Implement the four methods above.
+
+fillTradeOrder must be ATOMIC — use a db.transaction() block:
+1. Fetch the order, verify status === "open"
+2. Fetch offerer player, verify they still have giveAmount of giveResource
+3. Fetch filler player, verify they have wantAmount of wantResource
+4. Deduct giveResource from offerer, credit wantResource to offerer
+5. Deduct wantResource from filler, credit giveResource to filler
+6. Set order status = "filled", filledById, filledAt
+7. Return success
+
+If any check fails, rollback and return { success: false, error: "..." }
+
+cancelTradeOrder: verify orderId belongs to playerId, set status = "cancelled"
+
+---
+
+EDIT 5 — server/routes.ts
+Add four new REST endpoints BEFORE the catch-all / 404 handler:
+
+GET  /api/trade/orders           → storage.getOpenTradeOrders()
+POST /api/trade/orders           → body: { giveResource, giveAmount, wantResource, wantAmount } → storage.createTradeOrder(...)
+DELETE /api/trade/orders/:id     → storage.cancelTradeOrder(id, req.user.id)
+POST /api/trade/orders/:id/fill  → storage.fillTradeOrder(id, req.user.id)
+
+After a successful fill, broadcast a WebSocket message to all clients:
+{
+  type: "TRADE_FILLED",
+  offererName: trade.offererName,
+  fillerName: fillerPlayer.name,
+  giveResource: trade.giveResource,
+  giveAmount: trade.giveAmount,
+  wantResource: trade.wantResource,
+  wantAmount: trade.wantAmount
+}
+
+Add input validation:
+- giveAmount and wantAmount must be integers >= 1
+- giveResource and wantResource must be one of: "iron", "fuel", "crystal", "frontier"
+- giveResource !== wantResource
+- Player must be authenticated (existing auth middleware)
+
+---
+
+EDIT 6 — shared/schema.ts
+Add Zod schemas:
+
+export const createTradeOrderSchema = z.object({
+  giveResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  giveAmount: z.number().int().min(1).max(10000),
+  wantResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  wantAmount: z.number().int().min(1).max(10000),
+}).refine(d => d.giveResource !== d.wantResource, {
+  message: "Cannot trade a resource for itself"
+});
+
+---
+
+EDIT 7 — client/src/components/TradeStation.tsx  (NEW FILE)
+Create a React component with:
+
+State:
+- orders: TradeOrder[] (fetched from GET /api/trade/orders, refreshed every 10s via TanStack Query)
+- showCreateForm: boolean
+- form state: giveResource, giveAmount, wantResource, wantAmount
+
+UI layout:
+- Header: "⚡ Trade Station" with subtitle "Post offers. Other commanders accept."
+- Active orders list:
+  - Each order shows: "[offererName] offers [giveAmount] [giveResource] → wants [wantAmount] [wantResource]"
+  - Ratio shown as e.g. "1:2.5"
+  - "Accept" button (disabled if it's your own order, disabled if you can't afford it)
+  - Your own orders show "Cancel" button instead
+- "New Order" button opens inline form
+- Form: dropdowns for giveResource/wantResource, number inputs for amounts, "Post Order" submit
+
+Use existing ShadCN UI components (Button, Card, Badge, Select, Input).
+Use TanStack Query's useMutation for post/fill/cancel.
+Show toast on success/error using existing toast infrastructure.
+
+Styling: match existing FRONTIER dark UI aesthetic — dark background, amber/orange accents.
+
+DO NOT add a router entry. Export the component. It will be wired into the main panel system in a later pass.
+
+---
+
+VERIFICATION CHECKLIST:
+[ ] npx tsc --noEmit passes with zero errors
+[ ] GET /api/trade/orders returns [] on fresh DB
+[ ] POST /api/trade/orders creates an order, deducting nothing yet
+[ ] POST /api/trade/orders/:id/fill atomically swaps resources
+[ ] Cannot fill your own order (should return error)
+[ ] Cannot fill if insufficient resources (should return error)
+[ ] Cancel sets status = "cancelled" and it disappears from GET /api/trade/orders
+[ ] WebSocket TRADE_FILLED fires on successful fill
+[ ] No changes to battle, parcel, AI faction, or globe code

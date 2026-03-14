@@ -1,0 +1,262 @@
+PASS: Commander NFT Gate — MemStorage Parity + AttackModal Hard Require
+Context: DbStorage already has the Commander gate and concurrent attack cap.
+This pass adds identical guards to MemStorage and tightens the AttackModal UI
+so the submit button is disabled (with a clear message) when no commander is
+selected. The battle engine, routes.ts, db.ts, and DbStorage are not touched.
+
+Verified against live repo:
+  - server/storage/mem.ts — deployAttack at line 712; COMMANDER_INFO and
+    COMMANDER_LOCK_MS are already imported; CommanderTier is NOT imported yet
+  - server/storage/db.ts — commander gate already present at lines 994–1020;
+    DO NOT MODIFY
+  - client/src/components/game/AttackModal.tsx — has selectedCommanderId state,
+    hasNoCommander flag, allCommandersLocked flag; submit disabled on both;
+    "No Cmd" button allows deselecting — this needs to become a required field
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 1 — server/storage/mem.ts: Add CommanderTier import
+────────────────────────────────────────────────────────────────────────────────
+
+The file already imports CommanderAvatar, COMMANDER_INFO, and COMMANDER_LOCK_MS.
+Add CommanderTier to the existing type import block at the top of the file.
+
+FIND:
+  import type {
+    LandParcel,
+    Player,
+    Battle,
+    GameEvent,
+    GameState,
+    BiomeType,
+    MineAction,
+    UpgradeAction,
+    AttackAction,
+    BuildAction,
+    PurchaseAction,
+    LeaderboardEntry,
+    Improvement,
+    MintAvatarAction,
+    SpecialAttackAction,
+    DeployDroneAction,
+    DeploySatelliteAction,
+    CommanderAvatar,
+    ReconDrone,
+    OrbitalSatellite,
+    OrbitalEvent,
+    OrbitalEffect,
+    SlimGameState,
+    SlimParcel,
+    SlimPlayer,
+  } from "@shared/schema";
+
+REPLACE WITH:
+  import type {
+    LandParcel,
+    Player,
+    Battle,
+    GameEvent,
+    GameState,
+    BiomeType,
+    MineAction,
+    UpgradeAction,
+    AttackAction,
+    BuildAction,
+    PurchaseAction,
+    LeaderboardEntry,
+    Improvement,
+    MintAvatarAction,
+    SpecialAttackAction,
+    DeployDroneAction,
+    DeploySatelliteAction,
+    CommanderAvatar,
+    CommanderTier,
+    ReconDrone,
+    OrbitalSatellite,
+    OrbitalEvent,
+    OrbitalEffect,
+    SlimGameState,
+    SlimParcel,
+    SlimPlayer,
+  } from "@shared/schema";
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 2 — server/storage/mem.ts: Add commander gate + concurrent cap to
+          deployAttack (mirrors DbStorage exactly)
+────────────────────────────────────────────────────────────────────────────────
+
+Inside the deployAttack method, find the block that starts after the target
+ownership and active-battle checks and before the resource deduction. It
+currently looks like this:
+
+    if (targetParcel.activeBattleId) throw new Error("Territory is already under attack");
+
+    const totalIron = action.resourcesBurned.iron;
+    const totalFuel = action.resourcesBurned.fuel;
+    if (attacker.iron < totalIron || attacker.fuel < totalFuel) throw new Error("Insufficient resources for attack");
+
+REPLACE WITH:
+
+    if (targetParcel.activeBattleId) throw new Error("Territory is already under attack");
+
+    // ── Commander gate ────────────────────────────────────────────────────
+    if (!attacker.isAI && attacker.commanders.length === 0) {
+      throw new Error("A Commander is required to launch an attack. Mint one from the Commander panel.");
+    }
+
+    // ── Concurrent attack cap ─────────────────────────────────────────────
+    if (!attacker.isAI) {
+      const TIER_RANK: Record<string, number> = { sentinel: 1, phantom: 2, reaper: 3 };
+      const highestTier = attacker.commanders.reduce((best, c) => {
+        return (TIER_RANK[c.tier] ?? 0) > (TIER_RANK[best] ?? 0) ? c.tier : best;
+      }, "sentinel" as string);
+      const maxConcurrent = COMMANDER_INFO[highestTier as CommanderTier]?.maxConcurrentAttacks ?? 1;
+
+      const activeAttacks = Array.from(this.battles.values()).filter(
+        (b) => b.attackerId === attacker.id && b.status === "pending"
+      ).length;
+
+      if (activeAttacks >= maxConcurrent) {
+        throw new Error(
+          `Attack limit reached. Your ${highestTier} Commander allows ${maxConcurrent} simultaneous attack${maxConcurrent > 1 ? "s" : ""}. Wait for a battle to resolve.`
+        );
+      }
+    }
+
+    const totalIron = action.resourcesBurned.iron;
+    const totalFuel = action.resourcesBurned.fuel;
+    if (attacker.iron < totalIron || attacker.fuel < totalFuel) throw new Error("Insufficient resources for attack");
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 3 — client/src/components/game/AttackModal.tsx: Make commander required
+────────────────────────────────────────────────────────────────────────────────
+
+3a. Remove the "No Cmd" deselect button.
+    The current UI has a "No Cmd" card at the start of the commander row that
+    lets the player deselect all commanders. Since a commander is now required,
+    this option must be removed entirely.
+
+FIND the entire "No Commander" button block:
+
+                  {/* No Commander */}
+                  <button
+                    onClick={() => setSelectedCommanderId(null)}
+                    className={cn(
+                      "flex-shrink-0 w-16 h-20 rounded-md border-2 flex flex-col items-center justify-center gap-1 transition-colors",
+                      !selectedCommanderId
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-muted/20 hover:border-muted-foreground"
+                    )}
+                  >
+                    <Swords className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-[9px] font-display uppercase tracking-wide text-muted-foreground">No Cmd</span>
+                  </button>
+
+DELETE that entire block (the comment line and the <button>...</button>).
+
+3b. Auto-select the active commander on modal open.
+    The modal currently opens with selectedCommanderId as null. Change the
+    useState initializer to pre-select the player's active commander when
+    the modal opens, so players don't have to manually pick one every time.
+
+FIND:
+  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(null);
+
+REPLACE WITH:
+  const getDefaultCommanderId = (): string | null => {
+    if (!attacker) return null;
+    const cmds = attacker.commanders ?? [];
+    if (cmds.length === 0) return null;
+    // Prefer the active commander if available and unlocked
+    const active = cmds[attacker.activeCommanderIndex ?? 0];
+    if (active && !(active.lockedUntil && Date.now() < active.lockedUntil)) return active.id;
+    // Fall back to first unlocked commander
+    const unlocked = cmds.find(c => !(c.lockedUntil && Date.now() < c.lockedUntil));
+    return unlocked?.id ?? null;
+  };
+  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(getDefaultCommanderId);
+
+3c. Add a "no commander selected" disabled state.
+    The submit button already blocks on hasNoCommander and allCommandersLocked.
+    Add a third condition for when the player has commanders but hasn't
+    selected one (edge case after step 3b, but defensive).
+
+FIND:
+  const hasNoCommander = (attacker.commanders ?? []).length === 0;
+  const allCommandersLocked = (attacker.commanders ?? []).every(c => c.lockedUntil && Date.now() < c.lockedUntil);
+
+REPLACE WITH:
+  const hasNoCommander = (attacker.commanders ?? []).length === 0;
+  const allCommandersLocked = (attacker.commanders ?? []).every(c => c.lockedUntil && Date.now() < c.lockedUntil);
+  const noCommanderSelected = !hasNoCommander && !allCommandersLocked && !selectedCommanderId;
+
+3d. Add the noCommanderSelected warning block.
+    Inside the existing warning div (the yellow box that shows isOnCooldown,
+    !canAfford, hasNoCommander, allCommandersLocked warnings), add one more
+    condition at the end:
+
+FIND:
+            {allCommandersLocked && !hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                All Commanders locked. Wait for cooldown to expire.
+              </p>
+            )}
+
+REPLACE WITH:
+            {allCommandersLocked && !hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                All Commanders locked. Wait for cooldown to expire.
+              </p>
+            )}
+            {noCommanderSelected && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                Select a Commander to lead this attack.
+              </p>
+            )}
+
+3e. Add noCommanderSelected to the submit button disabled condition.
+
+FIND:
+            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked}
+
+REPLACE WITH:
+            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked || noCommanderSelected}
+
+3f. Update the outer condition on the warning box to include noCommanderSelected.
+
+FIND:
+        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked) && (
+
+REPLACE WITH:
+        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked || noCommanderSelected) && (
+
+────────────────────────────────────────────────────────────────────────────────
+DO NOT TOUCH
+────────────────────────────────────────────────────────────────────────────────
+- server/storage/db.ts (commander gate already correct there)
+- server/engine/battle/* (pure engine, no change needed)
+- server/routes.ts (attack route unchanged)
+- shared/schema.ts (COMMANDER_INFO, CommanderTier, COMMANDER_LOCK_MS unchanged)
+- CommanderPanel.tsx (mint flow unchanged)
+- Any other component
+
+────────────────────────────────────────────────────────────────────────────────
+Verification checklist
+────────────────────────────────────────────────────────────────────────────────
+□ npx tsc --noEmit passes with zero new errors
+□ A player with no commanders: POST /api/actions/attack returns 400 with
+  "A Commander is required to launch an attack"
+□ A player with no commanders: AttackModal shows the warning and the
+  Deploy Attack button is disabled
+□ A player with one sentinel and it active/unlocked: modal opens with that
+  commander pre-selected and the button is immediately enabled (assuming
+  sufficient resources)
+□ A sentinel player with 1 active battle: launching a second attack is
+  rejected with the concurrent-cap error message
+□ A phantom player (maxConcurrentAttacks: 2) with 1 active battle can
+  launch a second attack; a third is rejected
+□ A reaper player can have 3 simultaneous pending battles
+□ All commanders locked: button disabled, correct warning shown
+□ The "No Cmd" button is absent from the commander selection row

@@ -1,0 +1,239 @@
+Let me check the current state of PlanetGlobe.tsx to confirm the patches landed correctly before writing the next prompt.​​​​​​​​​​​​​​​​
+
+All three patches landed correctly — readyRef, camera snapshot in pointerDownState, and early-return guard are all in place. I can also see the agent made some bonus improvements (ring geometry for plots, battle pulse animation, activeBattleId in animated indices, brighter lighting). Good. Now let me check what the next logical work lane is.​​​​​​​​​​​​​​​​
+
+Good — chain service isolation is already done. routes.ts has a comment confirming it imports only from the service layer, no direct algosdk usage. Work Lane 1 is complete. The next work lane is Work Lane 4: WebSocket push for wallet/chain state (replacing polling). Let me verify the current WS and polling setup before writing the prompt.​​​​​​​​​​​​​​​​
+
+Now I have a complete picture. The current state:
+	∙	useGameState polls /api/game/state every 5 seconds — this is the entire game world on every tick
+	∙	useOrbitalEngine polls /api/orbital/active every 30 seconds
+	∙	EconomicsPanel polls every 30 seconds
+	∙	No WebSocket exists anywhere in the codebase yet
+	∙	httpServer is already created in index.ts and passed to registerRoutes — the WS upgrade hook point is ready
+Here is the next prompt:
+
+FRONTIER — Work Lane 4: WebSocket Push
+Copy this entire prompt to the Replit AI agent.
+
+Add a WebSocket push layer to FRONTIER so the server broadcasts game state 
+changes to connected clients in real time, replacing the 5-second poll in 
+useGameState.ts.
+
+DO NOT remove any existing REST API routes.
+DO NOT change any database schema or migration files.
+DO NOT touch PlanetGlobe.tsx, AttackModal.tsx, or any component file.
+DO NOT modify the battle engine, AI engine, or chain service files.
+DO NOT change server/index.ts except for the one line noted below.
+DO NOT install socket.io — use the existing "ws" package already in package.json.
+
+---
+
+STEP 1 — Create server/wsServer.ts
+
+Create a new file at server/wsServer.ts with this exact content:
+
+```typescript
+/**
+ * server/wsServer.ts
+ *
+ * FRONTIER WebSocket broadcast server.
+ * Wraps the Node.js http.Server with a ws.WebSocketServer.
+ * Provides a single broadcast function used by routes to push game state
+ * changes to all connected clients.
+ *
+ * Message envelope format:
+ *   { type: "game_state_update", payload: GameState }
+ *   { type: "ping" }
+ *
+ * Clients MUST respond to "ping" with "pong" within 30 seconds or they
+ * are terminated. This keeps the Replit connection alive through its
+ * proxy idle timeout.
+ */
+
+import { WebSocketServer, WebSocket } from "ws";
+import type { Server } from "http";
+
+let _wss: WebSocketServer | null = null;
+
+export function initWsServer(httpServer: Server): WebSocketServer {
+  _wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  _wss.on("connection", (ws) => {
+    let alive = true;
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "pong") alive = true;
+      } catch { /* ignore malformed */ }
+    });
+
+    ws.on("error", () => ws.terminate());
+
+    // Ping this client every 25 seconds to keep Replit proxy alive
+    const pingInterval = setInterval(() => {
+      if (!alive) { clearInterval(pingInterval); ws.terminate(); return; }
+      alive = false;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 25_000);
+
+    ws.on("close", () => clearInterval(pingInterval));
+  });
+
+  console.log("[ws] WebSocket server attached to /ws");
+  return _wss;
+}
+
+export function broadcastGameState(payload: unknown): void {
+  if (!_wss) return;
+  const msg = JSON.stringify({ type: "game_state_update", payload });
+  for (const client of _wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
+  }
+}
+
+
+STEP 2 — Edit server/index.ts
+Find this line in server/index.ts:
+await registerRoutes(httpServer, app);
+Replace it with:
+const { initWsServer } = await import(”./wsServer”);
+initWsServer(httpServer);
+await registerRoutes(httpServer, app);
+That is the only change to server/index.ts.
+
+STEP 3 — Edit server/routes.ts
+At the top of server/routes.ts, add this import after the existing imports:
+import { broadcastGameState } from “./wsServer”;
+Then find every location in routes.ts where storage.getGameState() is called
+AND the result is sent as a JSON response (typically res.json(gameState) or
+similar). After EACH such call, add a broadcast call:
+broadcastGameState(gameState);
+There should be approximately 1-3 such locations. The main one is the
+GET /api/game/state handler. Also add a broadcast at the end of each mutation
+route that calls storage.getGameState() to return the updated state — these
+are routes like /api/actions/mine, /api/actions/attack, /api/actions/build,
+/api/actions/purchase, and similar action routes.
+DO NOT add broadcastGameState calls inside the background setInterval tasks —
+those already trigger indirectly through the game state.
+
+STEP 4 — Create client/src/hooks/useGameSocket.ts
+Create a new file at client/src/hooks/useGameSocket.ts with this exact content:
+
+/**
+ * useGameSocket.ts
+ *
+ * Connects to the FRONTIER WebSocket server and listens for game_state_update
+ * messages. On receipt, invalidates the /api/game/state TanStack Query cache
+ * so all components re-render with fresh data without polling.
+ *
+ * Falls back gracefully: if WebSocket fails to connect or is not supported,
+ * the existing 5-second refetchInterval in useGameState remains active.
+ */
+
+import { useEffect, useRef } from "react";
+import { queryClient } from "@/lib/queryClient";
+import type { GameState } from "@shared/schema";
+
+const WS_RECONNECT_DELAY_MS = 3_000;
+const WS_MAX_RECONNECTS = 10;
+
+export function useGameSocket() {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectCount = useRef(0);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function connect() {
+      if (reconnectCount.current >= WS_MAX_RECONNECTS) return;
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const url = `${protocol}//${window.location.host}/ws`;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectCount.current = 0;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+          if (msg.type === "game_state_update" && msg.payload) {
+            // Directly set the cache — no refetch round-trip needed
+            queryClient.setQueryData<GameState>(
+              ["/api/game/state"],
+              msg.payload as GameState
+            );
+          }
+        } catch { /* ignore malformed */ }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        reconnectCount.current += 1;
+        reconnectTimer.current = setTimeout(connect, WS_RECONNECT_DELAY_MS);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+
+    return () => {
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, []);
+}
+
+
+STEP 5 — Edit client/src/hooks/useGameState.ts
+Find this function in useGameState.ts:
+export function useGameState() {
+return useQuery<GameState>({
+queryKey: [”/api/game/state”],
+refetchInterval: 5000,
+});
+}
+Replace it with:
+export function useGameState() {
+return useQuery<GameState>({
+queryKey: [”/api/game/state”],
+refetchInterval: 30_000,  // fallback poll — WS push handles real-time updates
+});
+}
+That is the only change to useGameState.ts.
+
+STEP 6 — Edit client/src/components/game/GameLayout.tsx
+Find the component in GameLayout.tsx that calls useGameState() near the top
+of the component body. Add this line directly above it:
+useGameSocket();
+And add this import at the top of the file with the other hook imports:
+import { useGameSocket } from “@/hooks/useGameSocket”;
+That is the only change to GameLayout.tsx.
+
+VERIFICATION CHECKLIST (do not skip):
+After making all changes, verify:
+	1.	server/wsServer.ts exists and exports initWsServer and broadcastGameState
+	2.	server/index.ts calls initWsServer(httpServer) before registerRoutes
+	3.	server/routes.ts imports broadcastGameState from ./wsServer
+	4.	client/src/hooks/useGameSocket.ts exists
+	5.	useGameState.ts refetchInterval is now 30_000 (not 5000)
+	6.	GameLayout.tsx calls useGameSocket() and imports it
+DO NOT add TypeScript type assertions like “as any” unless strictly necessary.
+DO NOT change the shape of GameState or any shared schema types.
+DO NOT add new npm packages.
+
+
+---
+
+**What this does:** Every time a player action (mine, attack, build, purchase, etc.) completes on the server, the updated `GameState` is broadcast over WebSocket to all connected clients. TanStack Query's cache is updated directly — no round-trip refetch, instant UI update for all players. The 5s poll drops to a 30s safety-net fallback. The ping/pong keepalive prevents Replit's proxy from killing idle connections.​​​​​​​​​​​​​​​​

@@ -1,0 +1,297 @@
+PASS: Attack Source Selection — "Launch From" Parcel
+Context: BattleArcs always uses ownedParcels[0] as the arc origin because the
+Battle record has no source parcel. This pass adds sourceParcelId as an optional
+field to the schema, routes it through AttackModal, stores it in the DB, and
+wires BattleArcs to prefer it when present.
+
+Verified against live repo:
+  - shared/schema.ts — Battle interface at line 179, attackActionSchema at 341
+  - server/storage/db.ts — deployAttack stores battleValues; battles table insert
+  - server/db-schema.ts — battles table definition (confirm column exists or add)
+  - client/src/components/game/AttackModal.tsx — already receives attacker: Player
+    which has ownedParcels[] and the parcel objects come from parcels prop in GameLayout
+  - client/src/components/game/PlanetGlobe.tsx — BattleArcs uses playerFirstParcel
+    map to resolve arc origin at lines 261-272
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 1 — shared/schema.ts: Add sourceParcelId to Battle and attackActionSchema
+────────────────────────────────────────────────────────────────────────────────
+
+In the Battle interface, add the optional field after commanderId:
+
+FIND:
+  /** ID of the commander deployed in this attack */
+  commanderId?: string;
+}
+
+REPLACE WITH:
+  /** ID of the commander deployed in this attack */
+  commanderId?: string;
+  /** ID of the parcel the player chose to launch from (drives globe arc origin) */
+  sourceParcelId?: string;
+}
+
+In attackActionSchema, add the optional field after commanderId:
+
+FIND:
+  crystalBurned: z.number().min(0).optional(),
+  commanderId: z.string().optional(),
+});
+
+REPLACE WITH:
+  crystalBurned: z.number().min(0).optional(),
+  commanderId: z.string().optional(),
+  sourceParcelId: z.string().optional(),
+});
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 2 — server/db-schema.ts: Add sourceParcelId column to battles table
+────────────────────────────────────────────────────────────────────────────────
+
+Locate the battles table definition. Find where commanderId is defined and add
+sourceParcelId immediately after it:
+
+FIND (the commanderId line in the battles table):
+  commanderId:      varchar("commander_id", { length: 36 }),
+
+REPLACE WITH:
+  commanderId:      varchar("commander_id", { length: 36 }),
+  sourceParcelId:   varchar("source_parcel_id", { length: 36 }),
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 3 — server/storage/db.ts: Store and map sourceParcelId
+────────────────────────────────────────────────────────────────────────────────
+
+3a. In deployAttack, find the battleValues object construction.
+    Add sourceParcelId to it:
+
+FIND:
+        commanderId:      commanderId ?? null,
+      };
+
+REPLACE WITH:
+        commanderId:      commanderId ?? null,
+        sourceParcelId:   action.sourceParcelId ?? null,
+      };
+
+3b. Find the rowToBattle mapper function (or wherever Battle is constructed
+    from a DB row). Add sourceParcelId to the mapped object:
+
+FIND the line that maps commanderId in rowToBattle (it will look like):
+      commanderId:    row.commanderId ?? undefined,
+
+ADD immediately after it:
+      sourceParcelId: row.sourceParcelId ?? undefined,
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 4 — server/storage/mem.ts: Store sourceParcelId in MemStorage battle
+────────────────────────────────────────────────────────────────────────────────
+
+In deployAttack inside MemStorage, find the Battle object construction:
+
+FIND:
+      commanderId,
+    };
+
+REPLACE WITH:
+      commanderId,
+      sourceParcelId: action.sourceParcelId,
+    };
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 5 — client/src/components/game/AttackModal.tsx: Add "Launch From" selector
+────────────────────────────────────────────────────────────────────────────────
+
+5a. AttackModal needs to receive the player's owned parcels so the user can
+    pick a source. The attacker prop is already Player which has ownedParcels
+    (array of parcel IDs), but we also need the parcel objects for display.
+    Add a new prop to AttackModalProps:
+
+FIND:
+interface AttackModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetParcel: LandParcel | null;
+  attacker: Player | null;
+  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string) => void;
+  isAttacking: boolean;
+}
+
+REPLACE WITH:
+interface AttackModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetParcel: LandParcel | null;
+  attacker: Player | null;
+  ownedParcels: LandParcel[];
+  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string, sourceParcelId?: string) => void;
+  isAttacking: boolean;
+}
+
+5b. Destructure the new prop:
+
+FIND:
+export function AttackModal({
+  open,
+  onOpenChange,
+  targetParcel,
+  attacker,
+  onAttack,
+  isAttacking,
+}: AttackModalProps) {
+
+REPLACE WITH:
+export function AttackModal({
+  open,
+  onOpenChange,
+  targetParcel,
+  attacker,
+  ownedParcels,
+  onAttack,
+  isAttacking,
+}: AttackModalProps) {
+
+5c. Add state for the selected source parcel. Place this alongside the other
+    useState declarations at the top of the component:
+
+FIND:
+  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(getDefaultCommanderId);
+
+ADD immediately after:
+  const [sourceParcelId, setSourceParcelId] = useState<string | null>(
+    () => ownedParcels.length > 0 ? ownedParcels[0].id : null
+  );
+
+5d. Update handleSubmit to pass sourceParcelId:
+
+FIND:
+  const handleSubmit = () => {
+    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined);
+  };
+
+REPLACE WITH:
+  const handleSubmit = () => {
+    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined, sourceParcelId ?? undefined);
+  };
+
+5e. Add the "Launch From" selector UI. Place it between the "Combat Warning"
+    block and the "Choose Commander" block, but only render it when the
+    player owns more than one parcel:
+
+FIND:
+          {/* Commander Selection */}
+          {commanders.length > 0 && (
+
+ADD immediately before that line:
+          {/* Launch Origin */}
+          {ownedParcels.length > 1 && (
+            <div className="space-y-2">
+              <span className="text-sm font-display uppercase tracking-wide">Launch From</span>
+              <div className="overflow-x-auto pb-1">
+                <div className="flex gap-2 w-max">
+                  {ownedParcels.slice(0, 8).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSourceParcelId(p.id)}
+                      className={cn(
+                        "flex-shrink-0 w-16 h-16 rounded-md border-2 flex flex-col items-center justify-center gap-0.5 transition-colors px-1",
+                        sourceParcelId === p.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-muted/20 hover:border-muted-foreground"
+                      )}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-[9px] font-mono leading-tight text-center">#{p.plotId}</span>
+                      <span className="text-[8px] text-muted-foreground capitalize leading-tight">{p.biome}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Commander Selection */}
+          {commanders.length > 0 && (
+
+Make sure MapPin is in the existing import from lucide-react. It is already
+present in the imports (used in the AttackModal file already). If not, add it.
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 6 — Thread ownedParcels into AttackModal from GameLayout
+────────────────────────────────────────────────────────────────────────────────
+
+In client/src/components/game/GameLayout.tsx, find where AttackModal is rendered.
+It receives attacker={player}. Add the ownedParcels prop.
+
+FIND the AttackModal JSX in GameLayout (it will have attacker={player} and
+onAttack={...}). Add:
+
+  ownedParcels={
+    gameState
+      ? (gameState.parcels as LandParcel[]).filter(
+          (p) => player && p.ownerId === player.id
+        )
+      : []
+  }
+
+Also update the onAttack handler in GameLayout to accept and forward
+sourceParcelId. Find the handleAttack function (or inline handler). Its
+current signature ends with commanderId. Extend it:
+
+FIND the function that calls storage.deployAttack or the mutation that posts
+to /api/actions/attack. It currently constructs a body with commanderId.
+Add sourceParcelId to the body object.
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 7 — client/src/components/game/PlanetGlobe.tsx: Use sourceParcelId in arcs
+────────────────────────────────────────────────────────────────────────────────
+
+In BattleArcs, the arc origin is currently resolved via playerFirstParcel
+(a map from playerId → first owned parcel ID). Change it to prefer
+battle.sourceParcelId when present:
+
+FIND inside the arcs useMemo loop:
+      const attackerParcelId = playerFirstParcel.get(battle.attackerId);
+      if (!attackerParcelId) continue;
+      const atkCoord = parcelLatLng.get(attackerParcelId);
+      if (!atkCoord) continue;
+
+REPLACE WITH:
+      const attackerParcelId =
+        (battle as any).sourceParcelId ??
+        playerFirstParcel.get(battle.attackerId);
+      if (!attackerParcelId) continue;
+      const atkCoord = parcelLatLng.get(attackerParcelId);
+      if (!atkCoord) continue;
+
+────────────────────────────────────────────────────────────────────────────────
+DB MIGRATION NOTE
+────────────────────────────────────────────────────────────────────────────────
+Adding source_parcel_id as a nullable VARCHAR column requires a migration.
+After making the db-schema.ts change, run:
+
+  npx drizzle-kit generate
+  npx drizzle-kit migrate
+
+If drizzle-kit migrate is not available in this environment, run the generated
+SQL directly against Neon:
+  ALTER TABLE battles ADD COLUMN IF NOT EXISTS source_parcel_id VARCHAR(36);
+
+────────────────────────────────────────────────────────────────────────────────
+DO NOT TOUCH
+────────────────────────────────────────────────────────────────────────────────
+- Battle resolution logic in server/storage/db.ts resolveBattles()
+- server/engine/battle/* 
+- Any other schema fields
+
+────────────────────────────────────────────────────────────────────────────────
+Verification checklist
+────────────────────────────────────────────────────────────────────────────────
+□ npx tsc --noEmit passes with zero new errors
+□ Player with 1 owned parcel: no "Launch From" row appears in AttackModal
+□ Player with 3 owned parcels: row shows up to 3 parcel tiles, first selected
+□ Selecting a different source parcel: globe arc now draws from that parcel
+□ sourceParcelId is present in POST /api/actions/attack body
+□ battle.sourceParcelId is returned in the API response and in WebSocket state
+□ Existing battles without sourceParcelId still render arcs (fallback to
+  playerFirstParcel works correctly)

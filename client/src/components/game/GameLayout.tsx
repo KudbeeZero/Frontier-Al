@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TopBar } from "./TopBar";
-import { ResourceHUD } from "./ResourceHUD";
-import { FlatMap } from "./FlatMap";
 import PlanetGlobe from "./PlanetGlobe";
+import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
 import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
@@ -10,24 +9,27 @@ import { LandSheet } from "./LandSheet";
 import { InventoryPanel } from "./InventoryPanel";
 import { BattlesPanel } from "./BattlesPanel";
 import { LeaderboardPanel } from "./LeaderboardPanel";
+import { TradeStationPanel } from "./TradeStation";
 import { CommanderPanel } from "./CommanderPanel";
 import { EconomicsPanel } from "./EconomicsPanel";
-import { OnboardingFlow } from "./OnboardingFlow";
 import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
+import { WorldIntelPanel } from "./WorldIntelPanel";
+import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
-import { OrbitalCanvas } from "./OrbitalCanvas";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
+import { useGameSocket } from "@/hooks/useGameSocket";
+import { useQuery } from "@tanstack/react-query";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Map, Trophy } from "lucide-react";
+import { Coins, Shield, Globe, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -35,7 +37,7 @@ import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 export function GameLayout() {
   const wallet = useWallet();
   const { isConnected, balance, walletStatus } = wallet;
-  const isOnboarded = !!localStorage.getItem("frontier_onboarded_v1");
+  const isOnboarded = true;
   const {
     signPurchaseAction,
     signClaimFrontierAction,
@@ -53,13 +55,12 @@ export function GameLayout() {
     frontierAsaId,
     isOptedInToFrontier,
     treasuryAddress,
+    signOptInToPlotNft,
   } = useBlockchainActions();
+  useGameSocket();
   const { data: gameState, isLoading, error } = useGameState();
-  // Find the player that belongs to the currently connected wallet address.
-  // useCurrentPlayer now accepts an address so each wallet sees its own data.
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
-  // Orbital event engine (cosmetic + impact events)
   const { events: orbitalEvents, impactEvents } = useOrbitalEngine();
 
   const initializedAddressRef = useRef<string | null>(null);
@@ -82,18 +83,33 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
-  const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
   const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings">("warroom");
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // Per-parcel mining state — prevents double-clicks and rapid-fire clicking
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
+  const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
+
+  useEffect(() => {
+    if (livePulses.length === 0) return;
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setLivePulses(prev => prev.filter(p => now - p.startMs < 700));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [livePulses]);
+
   const lastLocatedOwnedId = useRef<string | null>(null);
   const lastLocatedEnemyId = useRef<string | null>(null);
+  const [replayTime, setReplayTime] = useState<number>(Date.now());
+  const [replayVisibleTypes, setReplayVisibleTypes] = useState<Set<string>>(new Set());
+  const replayWindowStart = useMemo(() => Date.now() - 24 * 60 * 60_000, []);
+  const { data: replayEvents = [] } = useWorldEvents({ start: replayWindowStart, limit: 500 });
+  const handleReplayStateChange = useCallback(({ replayTime: rt, visibleTypes: vt }: { replayTime: number; visibleTypes: Set<string> }) => {
+    setReplayTime(rt);
+    setReplayVisibleTypes(vt);
+  }, []);
 
-  // Tick every second for live FRNTR accumulation display in ResourceHUD.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -112,13 +128,7 @@ export function GameLayout() {
   const deployDroneMutation = useDeployDrone();
   const deploySatelliteMutation = useDeploySatellite();
 
-  useEffect(() => {
-    const seen = localStorage.getItem("frontier_onboarding_done") || localStorage.getItem("frontier_onboarded_v1");
-    if (!seen) setShowOnboarding(true);
-  }, []);
 
-  // When a wallet connects (or changes), look up / create the player for that
-  // specific address so each wallet always starts with isolated, fresh data.
   useEffect(() => {
     if (!wallet.address || !wallet.isConnected) return;
     if (initializedAddressRef.current === wallet.address) return;
@@ -141,16 +151,15 @@ export function GameLayout() {
       .catch((err) => console.error("Failed to initialise player for address:", err));
   }, [wallet.address, wallet.isConnected]);
 
-  const handleOnboardingComplete = () => {
-    localStorage.setItem("frontier_onboarding_done", "true");
-    localStorage.setItem("frontier_onboarded_v1", "1");
-    setShowOnboarding(false);
-  };
 
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
 
   const handleMine = async () => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
     if (miningParcelIds.has(selectedParcelId)) return;
     setMiningParcelIds((prev) => new Set([...prev, selectedParcelId]));
@@ -159,12 +168,20 @@ export function GameLayout() {
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(selectedParcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
             : "Resources extracted successfully.";
           toast({ title: "Mining Complete", description: desc });
+          if (selectedParcel) {
+            const pulse: LivePulse = {
+              id: `pulse-${Date.now()}-${Math.random()}`,
+              lat: selectedParcel.lat,
+              lng: selectedParcel.lng,
+              startMs: Date.now(),
+            };
+            setLivePulses(prev => [...prev, pulse]);
+          }
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
         onSettled: () => {
@@ -179,6 +196,10 @@ export function GameLayout() {
   };
 
   const handleMineParcel = async (parcelId: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player) return;
     if (miningParcelIds.has(parcelId)) return;
     const parcel = gameState?.parcels.find(p => p.id === parcelId);
@@ -189,12 +210,18 @@ export function GameLayout() {
       {
         onSuccess: (data: any) => {
           const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
-          // Log the mine action to chain once (after success) with actual mineral yields
           queueMineAction(parcel.plotId, yields);
           const desc = yields
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
             : "Resources extracted successfully.";
           toast({ title: "Mining Complete", description: desc });
+          const pulse: LivePulse = {
+            id: `pulse-${Date.now()}-${Math.random()}`,
+            lat: parcel.lat,
+            lng: parcel.lng,
+            startMs: Date.now(),
+          };
+          setLivePulses(prev => [...prev, pulse]);
         },
         onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
         onSettled: () => {
@@ -209,13 +236,18 @@ export function GameLayout() {
   };
 
   const handleUpgrade = async (type: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueUpgradeAction(selectedParcel.plotId, type);
     upgradeMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, upgradeType: type as any },
       {
-        onSuccess: () => toast({ title: "Upgrade Complete", description: `${type} upgraded.` }),
+        onSuccess: () => {
+          queueUpgradeAction(selectedParcel.plotId, type);
+          toast({ title: "Upgrade Complete", description: `${type} upgraded.` });
+        },
         onError: (error) => toast({ title: "Upgrade Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -223,14 +255,17 @@ export function GameLayout() {
 
   const handleAttackClick = () => setAttackModalOpen(true);
 
-  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, commanderId?: string) => {
+  const handleAttackConfirm = async (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string, sourceParcelId?: string) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget)
-    queueAttackAction(selectedParcel.plotId, troops, iron, fuel);
     attackMutation.mutate(
-      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, commanderId },
+      { attackerId: player.id, targetParcelId: selectedParcelId, troopsCommitted: troops, resourcesBurned: { iron, fuel }, crystalBurned: crystal, commanderId, sourceParcelId },
       {
         onSuccess: (data: any) => {
+          queueAttackAction(selectedParcel.plotId, troops, iron, fuel, crystal);
           const battleId = data?.id as string | undefined;
           toast({ title: "Attack Deployed", description: "Battle will resolve in 10 minutes." });
           setAttackModalOpen(false);
@@ -242,14 +277,18 @@ export function GameLayout() {
   };
 
   const handleBuild = (type: ImprovementType) => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log to chain (batched, fire-and-forget) — covers turrets, shield_gen,
-    // electricity, blockchain_node, data_centre, ai_lab, radar, fortress, etc.
-    queueBuildAction(selectedParcel.plotId, type);
     buildMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId, improvementType: type },
       {
-        onSuccess: () => toast({ title: "Construction Complete", description: `${type} has been built.` }),
+        onSuccess: () => {
+          queueBuildAction(selectedParcel.plotId, type);
+          toast({ title: "Construction Complete", description: `${type} has been built.` });
+        },
         onError: (error) => toast({ title: "Build Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -257,12 +296,21 @@ export function GameLayout() {
 
   const handlePurchase = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
-      const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
-      // "cancelled" = user explicitly rejected in wallet — abort entirely
-      if (result === "cancelled") return;
-      // null = blockchain/network error — toast already shown, still proceed in-game
+
+    if (!isWalletConnected) {
+      toast({
+        title: "Wallet Required",
+        description: "Connect your Algorand wallet to purchase territory.",
+        variant: "destructive",
+      });
+      return;
     }
+
+    if (selectedParcel.purchasePriceAlgo !== null) {
+      const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
+      if (result === "cancelled") return;
+    }
+
     purchaseMutation.mutate(
       { playerId: player.id, parcelId: selectedParcelId },
       {
@@ -276,10 +324,15 @@ export function GameLayout() {
   };
 
   const handleCollectAll = () => {
+    if (!isConnected) {
+      toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
+      return;
+    }
     if (!player) return;
     collectMutation.mutate(player.id, {
       onSuccess: (data: any) => {
         const c = data.collected;
+        queueMineAction(0, c);
         toast({ title: "Resources Collected", description: `+${c.iron} Iron, +${c.fuel} Fuel, +${c.crystal} Crystal` });
       },
       onError: (error) => toast({ title: "Collection Failed", description: error.message, variant: "destructive" }),
@@ -294,21 +347,118 @@ export function GameLayout() {
     }
     claimFrontierMutation.mutate(player.id, {
       onSuccess: (data: any) => {
+        if (!data.success && data.reason === "wallet_not_opted_in") {
+          toast({ title: "Opt-In Required", description: "Your wallet must opt into the FRONTIER ASA before tokens can be sent on-chain.", variant: "destructive" });
+          return;
+        }
         const amount = data.claimed?.amount || 0;
+        if (amount === 0) {
+          toast({ title: "Nothing to Claim", description: "Mine resources and own territory to earn FRONTIER tokens." });
+          return;
+        }
         const txId = data.txId;
         if (txId) {
           toast({ title: "FRONTIER Claimed On-Chain", description: `+${amount.toFixed(2)} FRONTIER tokens sent to your wallet. TX: ${txId.slice(0, 8)}...` });
         } else {
-          toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens` });
+          toast({ title: "FRONTIER Claimed", description: `+${amount.toFixed(2)} FRONTIER tokens credited` });
         }
       },
       onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" }),
     });
   };
 
+  // NFT delivery: query status of selected plot's NFT when player owns it
+  const ownedSelectedPlotId = selectedParcel && player && selectedParcel.ownerId === player.id
+    ? selectedParcel.plotId
+    : null;
+
+  const { data: nftData, refetch: refetchNft } = useQuery<{
+    plotId: number; assetId: number | null; mintedToAddress: string | null;
+  } | null>({
+    queryKey: ["nft-plot", ownedSelectedPlotId],
+    queryFn: async () => {
+      if (!ownedSelectedPlotId) return null;
+      const res = await fetch(`/api/nft/plot/${ownedSelectedPlotId}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to fetch NFT status");
+      return res.json();
+    },
+    enabled: !!ownedSelectedPlotId,
+    staleTime: 30_000,
+  });
+
+  const adminAddr = ""; // server-side check handles admin; client just knows custody = mintedToAddress !== player address
+  const nftInfo = (() => {
+    if (!nftData || !nftData.assetId) return null;
+    const inCustody = !!nftData.mintedToAddress && nftData.mintedToAddress !== wallet.address;
+    return { assetId: nftData.assetId, inCustody };
+  })();
+
+  const [isDeliveringNft, setIsDeliveringNft] = useState(false);
+
+  const handleDeliverNft = async () => {
+    if (!ownedSelectedPlotId || !wallet.address || !nftInfo) return;
+    setIsDeliveringNft(true);
+
+    const attemptDeliver = async (): Promise<void> => {
+      const res = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
+        return;
+      }
+
+      if (data.success) {
+        toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+        refetchNft();
+        return;
+      }
+
+      if (data.reason === "not_opted_in") {
+        const optedIn = await signOptInToPlotNft(nftInfo.assetId);
+        if (optedIn) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const retryRes = await fetch(`/api/nft/deliver/${ownedSelectedPlotId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: wallet.address }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.success) {
+            toast({ title: "NFT Delivered! 🎉", description: `Plot #${ownedSelectedPlotId} NFT is now in your wallet.` });
+            refetchNft();
+          } else {
+            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try claiming again in a moment.", variant: "destructive" });
+          }
+        }
+        return;
+      }
+
+      if (data.reason === "not_in_custody") {
+        toast({ title: "Already In Your Wallet", description: data.message || "NFT is already delivered." });
+        refetchNft();
+        return;
+      }
+
+      toast({ title: "Claim Issue", description: data.message || "Unexpected state — try again.", variant: "destructive" });
+    };
+
+    try {
+      await attemptDeliver();
+    } catch (err) {
+      toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsDeliveringNft(false);
+    }
+  };
+
   const handleMintAvatar = (tier: CommanderTier) => {
     if (!player) return;
-    // Log commander mint to chain (batched)
     queueMintAvatarAction(tier);
     mintAvatarMutation.mutate(
       { playerId: player.id, tier },
@@ -321,12 +471,11 @@ export function GameLayout() {
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
     if (!player || !selectedParcelId || !selectedParcel) return;
-    // Log special attack to chain with target plot + attack type (batched)
-    queueSpecialAttackAction(selectedParcel.plotId, attackType);
     specialAttackMutation.mutate(
       { playerId: player.id, attackType, targetParcelId: selectedParcelId },
       {
         onSuccess: (data: any) => {
+          queueSpecialAttackAction(selectedParcel.plotId, attackType);
           const result = data.result;
           toast({ title: "Special Attack Launched", description: `${result?.effect || "Attack successful"} - ${result?.damage || 0} damage dealt` });
         },
@@ -337,12 +486,13 @@ export function GameLayout() {
 
   const handleSwitchCommander = (index: number) => {
     if (!player) return;
-    // Log commander selection to chain (batched)
-    queueSwitchCommanderAction(index);
     switchCommanderMutation.mutate(
       { playerId: player.id, commanderIndex: index },
       {
-        onSuccess: () => toast({ title: "Commander Switched", description: "Active commander updated." }),
+        onSuccess: () => {
+          queueSwitchCommanderAction(index);
+          toast({ title: "Commander Switched", description: "Active commander updated." });
+        },
         onError: (error) => toast({ title: "Switch Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -350,15 +500,16 @@ export function GameLayout() {
 
   const handleDeployDrone = (targetParcelId?: string) => {
     if (!player) return;
-    // Log drone deployment to chain (batched) — targetParcelId resolved to plotId below
     const targetParcel = targetParcelId
       ? gameState?.parcels.find((p) => p.id === targetParcelId)
       : null;
-    queueDeployDroneAction(targetParcel?.plotId);
     deployDroneMutation.mutate(
       { playerId: player.id, targetParcelId },
       {
-        onSuccess: () => toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." }),
+        onSuccess: () => {
+          queueDeployDroneAction(targetParcel?.plotId);
+          toast({ title: "Drone Deployed", description: "Recon Drone is now scouting enemy territory." });
+        },
         onError: (error) => toast({ title: "Deploy Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -366,11 +517,13 @@ export function GameLayout() {
 
   const handleDeploySatellite = () => {
     if (!player) return;
-    queueDeploySatelliteAction();
     deploySatelliteMutation.mutate(
       { playerId: player.id },
       {
-        onSuccess: () => toast({ title: "Satellite Launched", description: "+25% mining yield on all your territories for 1 hour." }),
+        onSuccess: () => {
+          queueDeploySatelliteAction();
+          toast({ title: "Satellite Launched", description: "+25% mining yield on all your territories for 1 hour." });
+        },
         onError: (error) => toast({ title: "Launch Failed", description: error.message, variant: "destructive" }),
       }
     );
@@ -390,7 +543,6 @@ export function GameLayout() {
     if (!player || !gameState) return;
     const ownedPlots = gameState.parcels.filter(p => p.ownerId === player.id);
     if (ownedPlots.length > 0) {
-      // Pick a random plot that differs from the last one shown (if possible)
       let candidates = ownedPlots.filter(p => p.id !== lastLocatedOwnedId.current);
       if (candidates.length === 0) candidates = ownedPlots;
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
@@ -404,7 +556,6 @@ export function GameLayout() {
     if (!gameState) return;
     const enemyPlots = gameState.parcels.filter(p => p.ownerId && p.ownerId !== player?.id);
     if (enemyPlots.length > 0) {
-      // Pick a random enemy plot that differs from the last one shown (if possible)
       let candidates = enemyPlots.filter(p => p.id !== lastLocatedEnemyId.current);
       if (candidates.length === 0) candidates = enemyPlots;
       const randomEnemy = candidates[Math.floor(Math.random() * candidates.length)];
@@ -433,10 +584,6 @@ export function GameLayout() {
         </div>
       </div>
     );
-  }
-
-  if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
   }
 
   if (showGamerTag && newPlayerId) {
@@ -532,68 +679,33 @@ export function GameLayout() {
         </div>
       ) : gameState ? (
         <>
-          {mapMode === "2d" ? (
-            <>
-              <FlatMap
-                parcels={gameState.parcels}
-                selectedParcelId={selectedParcelId}
-                currentPlayerId={player?.id || null}
-                onParcelSelect={setSelectedParcelId}
-                className="absolute inset-0 w-full h-full"
-                onLocateTerritory={handleLocateTerritory}
-                onFindEnemyTarget={handleFindEnemyTarget}
-                hasOwnedPlots={playerHasOwnedPlots}
-                players={gameState.players}
-              />
-              <OrbitalCanvas events={orbitalEvents} />
-            </>
-          ) : (
-            <PlanetGlobe
-              parcels={gameState.parcels}
-              currentPlayerId={player?.id || null}
-              selectedParcelId={selectedParcelId}
-              onParcelSelect={setSelectedParcelId}
-              className="absolute inset-0 w-full h-full"
-            />
-          )}
-
-          {/* 2D / 3D map toggle — bottom-left corner, above bottom nav */}
-          {activeTab === "map" && (
-            <div className="absolute bottom-20 left-4 z-20 flex gap-1 bg-card/80 backdrop-blur border border-border rounded-lg p-1">
-              <button
-                onClick={() => setMapMode("2d")}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
-                  mapMode === "2d"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Map className="w-3.5 h-3.5" />
-                2D
-              </button>
-              <button
-                onClick={() => setMapMode("3d")}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-display uppercase tracking-wide transition-colors",
-                  mapMode === "3d"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                3D
-              </button>
-            </div>
-          )}
+          <PlanetGlobe
+            parcels={gameState.parcels}
+            players={gameState.players}
+            currentPlayerId={player?.id || null}
+            selectedParcelId={selectedParcelId}
+            onParcelSelect={setSelectedParcelId}
+            onAttack={handleAttackClick}
+            onMine={handleMine}
+            onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+            className="absolute inset-0 w-full h-full"
+            battles={gameState.battles}
+            livePulses={livePulses}
+            orbitalEvents={orbitalEvents}
+            replayEvents={replayEvents}
+            replayTime={replayTime}
+            replayVisibleTypes={replayVisibleTypes}
+          />
         </>
       ) : null}
 
       <div className="absolute top-0 left-0 right-0 z-40">
-        <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
+        <TopBar
+          isConnected={isConnected}
+          mobileMenuContent={mobileMenuContent}
+        />
       </div>
 
-      {/* Orbital impact event notifications */}
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 
       {isConnected && frontierAsaId && isOptedInToFrontier === false && (
@@ -609,34 +721,6 @@ export function GameLayout() {
         </div>
       )}
 
-      {player && (
-        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
-          <ResourceHUD
-            iron={player.iron}
-            fuel={player.fuel}
-            crystal={player.crystal}
-            frontier={player.frontier}
-            algoBalance={balance}
-            frontierDailyRate={
-              gameState
-                ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
-                    .reduce((s, p) => s + p.frontierPerDay, 0)
-                : undefined
-            }
-            frontierPending={
-              gameState
-                ? gameState.parcels
-                    .filter(p => p.ownerId === player.id)
-                    .reduce((s, p) => {
-                      const days = Math.max(0, (now - p.lastFrontierClaimTs) / (1000 * 60 * 60 * 24));
-                      return s + p.frontierAccumulated + days * p.frontierPerDay;
-                    }, 0)
-                : undefined
-            }
-          />
-        </div>
-      )}
 
       <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
         {isLoading ? (
@@ -661,8 +745,6 @@ export function GameLayout() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            {viewMode === "2d" ? <Globe className="w-4 h-4" /> : <Globe className="w-4 h-4 text-primary" />}
-            {viewMode === "2d" ? "Switch to 3D" : "Switch to 2D"}
             <Shield className="w-3.5 h-3.5" />
             War Room
           </button>
@@ -692,6 +774,7 @@ export function GameLayout() {
               players={gameState.players}
               onWatchBattle={setWatchingBattleId}
               onViewOnGlobe={handleViewOnGlobe}
+              onPlotSelect={setSelectedParcelId}
               className="flex-1 border-0 rounded-none overflow-auto"
             />
           ) : (
@@ -749,6 +832,22 @@ export function GameLayout() {
           {activeTab === "economics" && (
             <EconomicsPanel className="h-full" />
           )}
+          {activeTab === "trade" && (
+            <TradeStationPanel
+              currentPlayerId={player?.id ?? ""}
+              currentPlayerName={player?.name ?? ""}
+              className="h-full"
+            />
+          )}
+          <div
+            className={activeTab === "intel" ? "h-full" : "hidden"}
+            style={{ display: activeTab === "intel" ? undefined : "none" }}
+          >
+            <WorldIntelPanel
+              className="h-full"
+              onReplayStateChange={handleReplayStateChange}
+            />
+          </div>
         </div>
       )}
 
@@ -767,7 +866,11 @@ export function GameLayout() {
           isUpgrading={upgradeMutation.isPending}
           isBuilding={buildMutation.isPending}
           isPurchasing={purchaseMutation.isPending}
+          isWalletConnected={isWalletConnected}
           isSpecialAttacking={specialAttackMutation.isPending}
+          nftInfo={nftInfo}
+          onDeliverNft={handleDeliverNft}
+          isDeliveringNft={isDeliveringNft}
         />
       )}
 
@@ -778,6 +881,11 @@ export function GameLayout() {
         onOpenChange={setAttackModalOpen}
         targetParcel={selectedParcel}
         attacker={player}
+        ownedParcels={
+          gameState
+            ? gameState.parcels.filter((p) => player && p.ownerId === player.id)
+            : []
+        }
         onAttack={handleAttackConfirm}
         isAttacking={attackMutation.isPending}
       />
@@ -787,6 +895,13 @@ export function GameLayout() {
         onOpenChange={(o) => { if (!o) setWatchingBattleId(null); }}
         battle={watchingBattleId ? (gameState?.battles.find((b) => b.id === watchingBattleId) ?? null) : null}
         players={gameState?.players ?? []}
+        targetParcel={
+          watchingBattleId && gameState
+            ? (gameState.parcels.find(
+                (p) => p.id === gameState.battles.find((b) => b.id === watchingBattleId)?.targetParcelId
+              ) ?? null)
+            : null
+        }
       />
     </div>
   );

@@ -1,0 +1,100 @@
+FRONTIER — Attack Limits Pass (Prompt 5 of N)
+Project: FRONTIER MMO Strategy Game
+
+CONTEXT: Currently a player can launch unlimited simultaneous attacks with 
+no Commander. This prompt adds two guards to deployAttack only:
+  1. A Commander is required to initiate any attack
+  2. Concurrent outgoing attacks are capped by the player's highest Commander tier
+
+No client changes needed — existing error handling in GameLayout.tsx already 
+shows server error messages as toasts on attack failure.
+
+DO NOT:
+- Touch any client files
+- Touch resolveBattles, runAITurn, or any other method
+- Change the Commander minting flow
+- Add any new tables or columns
+- Touch routes.ts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 1 — shared/schema.ts
+Add concurrent attack limit to COMMANDER_INFO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In the COMMANDER_INFO Record definition, the type currently has these fields:
+  name, description, mintCostFrontier, baseAttackBonus, baseDefenseBonus, 
+  specialAbility, imageKey
+
+ADD one field to the type definition:
+  maxConcurrentAttacks: number;
+
+Then ADD the value to each tier entry:
+  sentinel:  maxConcurrentAttacks: 1
+  phantom:   maxConcurrentAttacks: 2
+  reaper:    maxConcurrentAttacks: 3
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 2 — server/storage.ts → DB deployAttack method
+Add two guards after the existing target/attacker validation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND this block in the DB deployAttack (around line 2420):
+
+      if (target.ownerId === attacker.id) throw new Error("Cannot attack your own territory");
+      if (target.activeBattleId) throw new Error("Territory is already under attack");
+
+AFTER those two lines, ADD:
+
+      // ── Commander gate ────────────────────────────────────────────────────
+      // A player must own at least one Commander to initiate any attack.
+      // AI players are exempt — they use pseudo-commanders seeded at world init.
+      const attackerCommanders = (attackerRow.commanders ?? []) as CommanderAvatar[];
+      if (!attackerRow.isAi && attackerCommanders.length === 0) {
+        throw new Error("A Commander is required to launch an attack. Mint one from the Commander panel.");
+      }
+
+      // ── Concurrent attack cap ─────────────────────────────────────────────
+      // Cap is determined by the player's highest-tier Commander.
+      // Tier order: sentinel=1, phantom=2, reaper=3
+      if (!attackerRow.isAi) {
+        const TIER_RANK: Record<string, number> = { sentinel: 1, phantom: 2, reaper: 3 };
+        const highestTier = attackerCommanders.reduce((best, c) => {
+          return (TIER_RANK[c.tier] ?? 0) > (TIER_RANK[best] ?? 0) ? c.tier : best;
+        }, "sentinel" as string);
+        const maxConcurrent = COMMANDER_INFO[highestTier as CommanderTier]?.maxConcurrentAttacks ?? 1;
+
+        // Count this player's currently pending outgoing battles
+        const [{ count }] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(battlesTable)
+          .where(
+            and(
+              eq(battlesTable.attackerId, attacker.id),
+              eq(battlesTable.status, "pending")
+            )
+          );
+
+        if (count >= maxConcurrent) {
+          throw new Error(
+            `Attack limit reached. Your ${highestTier} Commander allows ${maxConcurrent} simultaneous attack${maxConcurrent > 1 ? "s" : ""}. Wait for a battle to resolve.`
+          );
+        }
+      }
+
+Make sure COMMANDER_INFO and CommanderTier are imported at the top of 
+storage.ts. They are already imported from @shared/schema — just verify 
+CommanderTier is in that import list. If not, add it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. npx tsc --noEmit → zero errors
+2. No client files modified
+3. Test: attempt an attack with a player who has zero commanders → 
+   confirm toast shows "A Commander is required..."
+4. Test: with a Sentinel commander, launch one attack, then immediately 
+   try to launch a second → confirm toast shows "Attack limit reached..."
+5. Confirm AI factions are exempt — runAITurn should still work normally
+6. Confirm the existing attackCooldownUntil check is still in place 
+   and was not removed

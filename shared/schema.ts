@@ -13,15 +13,17 @@ export const biomeColors: Record<BiomeType, string> = {
   swamp: "#3a5a2a",
 };
 
-export const biomeBonuses: Record<BiomeType, { yieldMod: number; defenseMod: number }> = {
-  forest: { yieldMod: 1.2, defenseMod: 1.1 },
-  desert: { yieldMod: 0.8, defenseMod: 0.9 },
-  mountain: { yieldMod: 0.6, defenseMod: 1.3 },
-  plains: { yieldMod: 1.0, defenseMod: 1.0 },
-  water: { yieldMod: 0.5, defenseMod: 0.7 },
-  tundra: { yieldMod: 0.7, defenseMod: 1.2 },
-  volcanic: { yieldMod: 1.5, defenseMod: 0.8 },
-  swamp: { yieldMod: 0.9, defenseMod: 0.6 },
+export const biomeBonuses: Record<BiomeType, {
+  ironMod: number; fuelMod: number; crystalMod: number; defenseMod: number;
+}> = {
+  volcanic: { ironMod: 1.8, fuelMod: 0.6, crystalMod: 2.5, defenseMod: 0.8 },
+  mountain: { ironMod: 2.0, fuelMod: 0.4, crystalMod: 0.5, defenseMod: 1.3 },
+  desert:   { ironMod: 0.6, fuelMod: 2.5, crystalMod: 0.3, defenseMod: 0.9 },
+  forest:   { ironMod: 1.2, fuelMod: 1.0, crystalMod: 1.5, defenseMod: 1.1 },
+  plains:   { ironMod: 1.0, fuelMod: 1.0, crystalMod: 1.0, defenseMod: 1.0 },
+  tundra:   { ironMod: 0.8, fuelMod: 1.8, crystalMod: 0.8, defenseMod: 1.2 },
+  swamp:    { ironMod: 0.7, fuelMod: 0.9, crystalMod: 2.0, defenseMod: 0.6 },
+  water:    { ironMod: 0.3, fuelMod: 0.3, crystalMod: 3.0, defenseMod: 0.7 },
 };
 
 export type DefenseImprovementType = "turret" | "shield_gen" | "storage_depot" | "radar" | "fortress";
@@ -40,11 +42,11 @@ export const DEFENSE_IMPROVEMENT_INFO: Record<DefenseImprovementType, {
   maxLevel: number;
   effect: string;
 }> = {
-  turret: { name: "Turret", description: "Automated defense turret", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense per level" },
-  shield_gen: { name: "Shield Generator", description: "Energy shield for base", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense per level" },
-  storage_depot: { name: "Storage Depot", description: "Increases storage capacity", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+100 capacity per level" },
-  radar: { name: "Radar Array", description: "Early warning system", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "See incoming attacks" },
-  fortress: { name: "Fortress", description: "Heavy fortification", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 capacity" },
+  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 def · battle power/lvl" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield that reduces influence loss on attack.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 def · less influence dmg" },
+  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity/lvl" },
+  radar: { name: "Radar Array", description: "Detects incoming attacks. Reduces incoming attacker power by 10%.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attack power" },
+  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 def · +50 storage" },
 };
 
 export const FACILITY_INFO: Record<FacilityType, {
@@ -58,15 +60,15 @@ export const FACILITY_INFO: Record<FacilityType, {
 }> = {
   electricity: {
     name: "Electricity",
-    description: "Power grid enabling advanced facilities",
+    description: "Power grid required by all advanced facilities. Provides baseline token income.",
     costFrontier: [30],
     maxLevel: 1,
     frontierPerDay: [1],
-    effect: "+1 FRNTR/day",
+    effect: "+1 FRNTR/day. Unlocks advanced facilities.",
   },
   blockchain_node: {
     name: "Blockchain Node",
-    description: "Decentralized computing node generating tokens",
+    description: "Decentralized computing node. Pure passive FRONTIER token income.",
     costFrontier: [120, 270, 480],
     maxLevel: 3,
     frontierPerDay: [2, 3, 4],
@@ -75,20 +77,20 @@ export const FACILITY_INFO: Record<FacilityType, {
   },
   data_centre: {
     name: "Data Centre",
-    description: "High-performance data processing facility",
+    description: "High-performance processing that boosts all resource yields from this plot.",
     costFrontier: [120, 270, 480],
     maxLevel: 3,
-    frontierPerDay: [2, 3, 4],
-    effect: "+2/3/4 FRNTR/day per level",
+    frontierPerDay: [0, 0, 0],
+    effect: "+5/10/15% resource yield per level",
     prerequisite: "electricity",
   },
   ai_lab: {
     name: "AI Lab",
-    description: "Artificial intelligence research laboratory",
+    description: "AI-optimised mining routines that reduce the mine cooldown on this plot.",
     costFrontier: [120, 270, 480],
     maxLevel: 3,
-    frontierPerDay: [2, 3, 4],
-    effect: "+2/3/4 FRNTR/day per level",
+    frontierPerDay: [0, 0, 0],
+    effect: "-30s/-60s/-90s mine cooldown per level",
     prerequisite: "electricity",
   },
 };
@@ -103,8 +105,8 @@ export const IMPROVEMENT_INFO: Record<ImprovementType, {
   ...DEFENSE_IMPROVEMENT_INFO,
   electricity: { name: "Electricity", description: "Power grid", cost: { iron: 0, fuel: 0 }, maxLevel: 1, effect: "+1 FRNTR/day" },
   blockchain_node: { name: "Blockchain Node", description: "Computing node", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
-  data_centre: { name: "Data Centre", description: "Data processing", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
-  ai_lab: { name: "AI Lab", description: "AI research", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+2/3/4 FRNTR/day" },
+  data_centre: { name: "Data Centre", description: "High-performance processing that boosts all resource yields from this plot.", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "+5/10/15% resource yield per level" },
+  ai_lab: { name: "AI Lab", description: "AI-optimised mining routines that reduce the mine cooldown on this plot.", cost: { iron: 0, fuel: 0 }, maxLevel: 3, effect: "-30s/-60s/-90s mine cooldown per level" },
 };
 
 export interface LandParcel {
@@ -129,6 +131,12 @@ export interface LandParcel {
   frontierAccumulated: number;
   lastFrontierClaimTs: number;
   frontierPerDay: number;
+  influence: number;
+  influenceRepairRate: number;
+  // Reconquest tracking — set when human captures AI land
+  capturedFromFaction: string | null;
+  capturedAt:          number | null;
+  handoverCount:       number;
 }
 
 export interface Player {
@@ -182,8 +190,12 @@ export interface Battle {
   status: "pending" | "resolved";
   outcome?: "attacker_wins" | "defender_wins";
   randFactor?: number;
+  crystalBurned?: number;
+  influenceDamage?: number;
   /** ID of the commander deployed in this attack */
   commanderId?: string;
+  /** ID of the parcel the player chose to launch from (drives globe arc origin) */
+  sourceParcelId?: string;
 }
 
 export interface GameEvent {
@@ -287,6 +299,36 @@ export interface GameState {
   frontierCirculating: number;
 }
 
+/** Minimal parcel data broadcast to all clients for globe/map rendering. */
+export interface SlimParcel {
+  id: string;
+  plotId: number;
+  lat: number;
+  lng: number;
+  biome: BiomeType;
+  ownerId: string | null;
+  activeBattleId: string | null;
+}
+
+/** Minimal player data broadcast to all clients for color/name rendering. */
+export interface SlimPlayer {
+  id: string;
+  name: string;
+  address: string;
+  isAI: boolean;
+}
+
+/** Slim game state — broadcast to all clients on every dirty flush. */
+export interface SlimGameState {
+  parcels: SlimParcel[];
+  players: SlimPlayer[];
+  battles: Battle[];
+  leaderboard: LeaderboardEntry[];
+  claimedPlots: number;
+  frontierCirculating: number;
+  lastUpdateTs: number;
+}
+
 export const mineActionSchema = z.object({
   playerId: z.string(),
   parcelId: z.string(),
@@ -295,7 +337,7 @@ export const mineActionSchema = z.object({
 export const upgradeActionSchema = z.object({
   playerId: z.string(),
   parcelId: z.string(),
-  upgradeType: z.enum(["defense", "yield", "mine", "fortress"]),
+  upgradeType: z.enum(["defense", "yield", "mine", "bunker"]),
 });
 
 export const attackActionSchema = z.object({
@@ -306,7 +348,9 @@ export const attackActionSchema = z.object({
     iron: z.number().min(0),
     fuel: z.number().min(0),
   }),
+  crystalBurned: z.number().min(0).optional(),
   commanderId: z.string().optional(),
+  sourceParcelId: z.string().optional(),
 });
 
 export const buildActionSchema = z.object({
@@ -338,13 +382,13 @@ export type ClaimFrontierAction = z.infer<typeof claimFrontierActionSchema>;
 
 export const MINE_COOLDOWN_MS = 5 * 60 * 1000;
 export const BATTLE_DURATION_MS = 10 * 60 * 1000;
-export const BASE_YIELD = { iron: 10, fuel: 5, crystal: 1 };
-export const BASE_STORAGE_CAPACITY = 200;
-export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number }> = {
-  defense: { iron: 50, fuel: 25 },
-  yield: { iron: 75, fuel: 50 },
-  mine: { iron: 100, fuel: 75 },
-  fortress: { iron: 200, fuel: 150 },
+export const BASE_YIELD = { iron: 20, fuel: 12, crystal: 4 };
+export const BASE_STORAGE_CAPACITY = 800;
+export const UPGRADE_COSTS: Record<string, { iron: number; fuel: number; description: string; effect: string }> = {
+  defense: { iron: 50, fuel: 25, description: "Reinforces base defenses", effect: "+1 defense level → +15 battle power" },
+  yield:   { iron: 75, fuel: 50, description: "Improves extraction efficiency", effect: "+20% all resource yields permanently" },
+  mine:    { iron: 100, fuel: 75, description: "Restores depleted resource veins", effect: "+10 richness (recovers depletion)" },
+  bunker:  { iron: 150, fuel: 100, description: "Hardened shelter that accelerates influence repair", effect: "+5 influence repair rate/day" },
 };
 export const ATTACK_BASE_COST = { iron: 30, fuel: 20 };
 
@@ -388,6 +432,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
   baseDefenseBonus: number;
   specialAbility: string;
   imageKey: string;
+  maxConcurrentAttacks: number;
 }> = {
   sentinel: {
     name: "Sentinel",
@@ -397,6 +442,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 10,
     specialAbility: "Fortify",
     imageKey: "sentinel",
+    maxConcurrentAttacks: 1,
   },
   phantom: {
     name: "Phantom",
@@ -406,6 +452,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 6,
     specialAbility: "Cloak",
     imageKey: "phantom",
+    maxConcurrentAttacks: 2,
   },
   reaper: {
     name: "Reaper",
@@ -415,6 +462,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
     baseDefenseBonus: 5,
     specialAbility: "Annihilate",
     imageKey: "reaper",
+    maxConcurrentAttacks: 3,
   },
 };
 
@@ -533,6 +581,36 @@ export type MintAvatarAction = z.infer<typeof mintAvatarActionSchema>;
 export type SpecialAttackAction = z.infer<typeof specialAttackActionSchema>;
 export type DeployDroneAction = z.infer<typeof deployDroneActionSchema>;
 export type DeploySatelliteAction = z.infer<typeof deploySatelliteActionSchema>;
+
+// ─── Trade Station ────────────────────────────────────────────────────────────
+
+export type TradeResource = "iron" | "fuel" | "crystal" | "frontier";
+
+export interface TradeOrder {
+  id: string;
+  offererId: string;
+  offererName: string;
+  giveResource: TradeResource;
+  giveAmount: number;
+  wantResource: TradeResource;
+  wantAmount: number;
+  status: "open" | "filled" | "cancelled";
+  createdAt: number;
+  filledById: string | null;
+  filledByName: string | null;
+  filledAt: number | null;
+}
+
+export const createTradeOrderSchema = z.object({
+  giveResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  giveAmount: z.number().int().min(1).max(10000),
+  wantResource: z.enum(["iron", "fuel", "crystal", "frontier"]),
+  wantAmount: z.number().int().min(1).max(10000),
+}).refine(d => d.giveResource !== d.wantResource, {
+  message: "Cannot trade a resource for itself",
+});
+
+// ─── calculateFrontierPerDay ──────────────────────────────────────────────────
 
 export function calculateFrontierPerDay(improvements: Improvement[]): number {
   let perDay = 1;

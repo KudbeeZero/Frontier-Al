@@ -29,12 +29,19 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 5000,
-    allowedHosts: true,
-    fs: { strict: true, deny: ["**/.*"] },
+    port: 3000,
+    allowedHosts: ["localhost", ".replit.dev", ".picard.replit.dev"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:5001",
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+      "/nft": {
+        target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+      "/faction": {
+        target: "http://0.0.0.0:5000",
         changeOrigin: true,
       },
     },

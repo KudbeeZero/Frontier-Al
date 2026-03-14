@@ -1,0 +1,166 @@
+PASS: TRADE STATION — V2 (History + Leaderboard)
+
+CONTEXT:
+- V1 is live: trade_orders table exists, 4 routes exist, TradeStation.tsx exists (orders tab only)
+- filledByName column is MISSING from trade_orders — must be added via migration
+- getTradeHistory / getTradeLeaderboard do NOT exist yet on IStorage or DbStorage
+- broadcastRaw() is already exported from wsServer.ts
+- NavTab type and BottomNav OVERFLOW_TABS still need "trade" added
+- GameLayout.tsx still needs TradeStationPanel wired in
+- DO NOT TOUCH: battle, parcel, AI faction, globe, or any existing panel
+
+────────────────────────────────────────────────────────────
+EDIT 1 — server/db-schema.ts
+
+In the tradeOrders table definition, add filledByName AFTER filledById:
+
+  filledByName: varchar("filled_by_name", { length: 100 }),
+
+Then run:
+  npx drizzle-kit generate
+  npx drizzle-kit migrate
+
+────────────────────────────────────────────────────────────
+EDIT 2 — server/storage/db.ts — fillTradeOrder method
+
+Find the line inside fillTradeOrder's db.transaction() that sets filledById.
+Add filledByName to that same update so it gets persisted:
+
+  filledById: fillerId,
+  filledByName: fillerName,    // ADD THIS LINE
+  filledAt: Date.now(),
+
+────────────────────────────────────────────────────────────
+EDIT 3 — server/storage/interface.ts
+
+Add to IStorage interface (after existing trade method signatures):
+
+  getTradeHistory(limit?: number): Promise<TradeOrder[]>;
+  getTradeLeaderboard(): Promise<{
+    playerId: string;
+    name: string;
+    tradesPosted: number;
+    tradesFilled: number;
+  }[]>;
+
+────────────────────────────────────────────────────────────
+EDIT 4 — server/storage/db.ts — implement new methods
+
+getTradeHistory(limit = 50):
+  Return rows where status = "filled",
+  ordered by filledAt DESC, limited to `limit` rows.
+
+getTradeLeaderboard():
+  1. Fetch all tradeOrders rows (status any — posted counts all, filled only counts "filled")
+  2. Build a Map<playerId, { name, tradesPosted, tradesFilled }>:
+     - For each row: increment tradesPosted for offererId, set name from offererName
+     - For each row where status === "filled": increment tradesFilled for filledById,
+       set name from filledByName if not already set
+  3. Sort descending by (tradesPosted + tradesFilled)
+  4. Return top 20
+
+────────────────────────────────────────────────────────────
+EDIT 5 — server/storage/mem.ts — stubs
+
+Add stub implementations for the two new methods:
+
+  async getTradeHistory(_limit = 50) { return []; }
+  async getTradeLeaderboard() { return []; }
+
+────────────────────────────────────────────────────────────
+EDIT 6 — server/routes.ts
+
+Add TWO new GET routes BEFORE the catch-all, alongside the existing trade routes:
+
+GET /api/trade/history
+  const history = await storage.getTradeHistory(50);
+  return res.json(history);
+
+GET /api/trade/leaderboard
+  const board = await storage.getTradeLeaderboard();
+  return res.json(board);
+
+────────────────────────────────────────────────────────────
+EDIT 7 — client/src/components/game/TradeStation.tsx — REPLACE FILE
+
+Rewrite the component as a 3-tab panel. Preserve ALL existing order-book logic
+from V1 exactly — do not break create / cancel / accept flows.
+
+Rename export to TradeStationPanel (was TradeStation).
+
+Props: { currentPlayerId: string; currentPlayerName: string }
+
+Add imports:
+  Tabs, TabsList, TabsTrigger, TabsContent from @/components/ui/tabs
+
+─ TAB 1: "Orders" — carry over existing V1 order-book UI unchanged
+
+─ TAB 2: "History" — last 50 filled trades
+  useQuery({ queryKey: ["/api/trade/history"], refetchInterval: 15000 })
+  Each row:
+    "[offererName]  ⇄  [filledByName]"
+    "[giveAmount] ICON[giveResource]  →  [wantAmount] ICON[wantResource]"
+    Relative timestamp helper (inline):
+      function relTime(ms: number): string {
+        const s = Math.floor((Date.now() - ms) / 1000);
+        if (s < 60) return `${s}s ago`;
+        if (s < 3600) return `${Math.floor(s/60)}m ago`;
+        if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+        return `${Math.floor(s/86400)}d ago`;
+      }
+  Empty state: "No completed trades yet."
+
+─ TAB 3: "Rankings"
+  useQuery({ queryKey: ["/api/trade/leaderboard"], refetchInterval: 30000 })
+  Table: Rank | Commander | Filled | Posted | Total
+  Top 3 rows get prefix: 🥇 🥈 🥉
+  Empty state: "No trades yet — post the first order!"
+
+Resource icon map (keep from V1 or add if missing):
+  const RESOURCE_ICONS: Record<string, string> = {
+    iron: "⚙️", fuel: "⛽", crystal: "💎", frontier: "⚡"
+  }
+
+────────────────────────────────────────────────────────────
+EDIT 8 — client/src/components/game/BottomNav.tsx
+
+1. Find:
+   export type NavTab = "map" | "inventory" | "battles" | "commander" | "economics" | "intel";
+   Replace with:
+   export type NavTab = "map" | "inventory" | "battles" | "commander" | "economics" | "intel" | "trade";
+
+2. In OVERFLOW_TABS array, add:
+   { id: "trade", label: "Trade", icon: ArrowLeftRight }
+
+3. In the lucide-react import line, add ArrowLeftRight.
+
+────────────────────────────────────────────────────────────
+EDIT 9 — client/src/components/game/GameLayout.tsx
+
+1. Add import:
+   import { TradeStationPanel } from "./TradeStation";
+
+2. Find the block where other panels render conditionally (e.g. where LeaderboardPanel
+   or EconomicsPanel are rendered based on activeTab). Add alongside them:
+
+   {activeTab === "trade" && (
+     <TradeStationPanel
+       currentPlayerId={player?.id ?? ""}
+       currentPlayerName={player?.name ?? ""}
+     />
+   )}
+
+   DO NOT restructure surrounding render logic — one additive block only.
+
+────────────────────────────────────────────────────────────
+VERIFICATION CHECKLIST:
+[ ] npx tsc --noEmit — zero errors
+[ ] Migration applied — filled_by_name column exists in trade_orders
+[ ] GET /api/trade/history returns [] on fresh DB
+[ ] GET /api/trade/leaderboard returns []
+[ ] After a fill: GET /api/trade/history shows the trade with both player names
+[ ] GET /api/trade/leaderboard reflects the fill correctly
+[ ] "Trade" tab appears in overflow nav and renders TradeStationPanel
+[ ] All 3 tabs render without crash
+[ ] V1 order create / cancel / accept still works correctly
+[ ] No regressions to battle, parcel, globe, or AI faction code

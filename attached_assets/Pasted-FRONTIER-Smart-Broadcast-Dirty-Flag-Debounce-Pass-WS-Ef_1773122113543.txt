@@ -1,0 +1,295 @@
+FRONTIER — Smart Broadcast: Dirty Flag + Debounce
+Pass: WS-Efficiency
+
+Context:
+Currently broadcastGameState(await storage.getGameState()) is called after
+every single player action AND inside background intervals regardless of
+whether anything actually changed. This means 200 users each doing 1 action
+triggers 200 full DB reads of 21K parcels + 200 WebSocket blasts to all 200
+clients = 40,000 messages per round. Fix this with a dirty flag in wsServer.ts
+and a debounced flush loop.
+
+DO NOT TOUCH: storage.ts, db-schema.ts, shared/schema.ts, or any client files.
+
+Files to modify:
+- server/wsServer.ts
+- server/routes.ts
+
+---
+
+EDIT 1 — server/wsServer.ts
+
+Replace the entire file with the following:
+
+/**
+ * server/wsServer.ts
+ *
+ * FRONTIER WebSocket broadcast server.
+ *
+ * Dirty-flag + debounce design:
+ *   - Any part of the server calls markDirty() when game state changes.
+ *   - A flush loop runs every FLUSH_INTERVAL_MS. If dirty, it fetches
+ *     game state once and broadcasts to all clients. Then clears the flag.
+ *   - Player action handlers call markDirty() instead of the old pattern
+ *     of getGameState() + broadcastGameState() inline.
+ *   - Result: no matter how many actions fire in one flush window, exactly
+ *     one DB read and one broadcast round occurs per interval.
+ *
+ * Message envelope format:
+ *   { type: "game_state_update", payload: GameState }
+ *   { type: "ping" }
+ *
+ * Clients MUST respond to "ping" with "pong" within 30 seconds or they
+ * are terminated.
+ */
+
+import { WebSocketServer, WebSocket } from "ws";
+import type { Server } from "http";
+import type { IStorage } from "./storage";
+
+const FLUSH_INTERVAL_MS = 1_500;
+
+let _wss: WebSocketServer | null = null;
+let _storage: IStorage | null = null;
+let _dirty = false;
+let _flushTimer: ReturnType<typeof setInterval> | null = null;
+
+export function initWsServer(httpServer: Server, storage: IStorage): WebSocketServer {
+  _storage = storage;
+  _wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  _wss.on("connection", (ws) => {
+    let alive = true;
+
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "pong") alive = true;
+      } catch { /* ignore malformed */ }
+    });
+
+    ws.on("error", () => ws.terminate());
+
+    // Ping every 25 s to keep Replit proxy alive
+    const pingInterval = setInterval(() => {
+      if (!alive) { clearInterval(pingInterval); ws.terminate(); return; }
+      alive = false;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 25_000);
+
+    ws.on("close", () => clearInterval(pingInterval));
+
+    // Send current state immediately to the newly connected client
+    markDirty();
+  });
+
+  // Flush loop — one DB read + broadcast per interval when dirty
+  _flushTimer = setInterval(async () => {
+    if (!_dirty || !_storage || !_wss) return;
+    if (_wss.clients.size === 0) { _dirty = false; return; }
+    _dirty = false;
+    try {
+      const gameState = await _storage.getGameState();
+      _broadcastRaw({ type: "game_state_update", payload: gameState });
+    } catch (err) {
+      console.warn("[ws] flush error:", err instanceof Error ? err.message : err);
+      // Re-mark dirty so next tick retries
+      _dirty = true;
+    }
+  }, FLUSH_INTERVAL_MS);
+
+  console.log(`[ws] WebSocket server attached to /ws (flush every ${FLUSH_INTERVAL_MS}ms)`);
+  return _wss;
+}
+
+/** Mark game state as changed. Next flush tick will broadcast. */
+export function markDirty(): void {
+  _dirty = true;
+}
+
+/** Send a pre-serialized object to all open clients. Internal use only. */
+function _broadcastRaw(obj: unknown): void {
+  if (!_wss) return;
+  const msg = JSON.stringify(obj);
+  for (const client of _wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
+  }
+}
+
+/**
+ * broadcastGameState — kept for backward compatibility.
+ * Callers that already have a fresh gameState object can push it immediately
+ * without waiting for the flush tick. Used by routes that need instant feedback
+ * (e.g. purchase confirmation). Clears the dirty flag since state is now fresh.
+ */
+export function broadcastGameState(payload: unknown): void {
+  _dirty = false;
+  _broadcastRaw({ type: "game_state_update", payload });
+}
+
+---
+
+EDIT 2 — server/routes.ts
+
+A) Update the wsServer import to include markDirty:
+Find:
+import { broadcastGameState } from "./wsServer";
+Replace with:
+import { broadcastGameState, markDirty } from "./wsServer";
+
+B) Update the initWsServer call to pass storage.
+Find the line that calls initWsServer (it currently only passes httpServer).
+It will look like:
+  initWsServer(server)
+or:
+  initWsServer(httpServer)
+Replace it with:
+  initWsServer(server, storage)
+(use whichever variable name matches what's in the file)
+
+C) Replace the three background interval handlers.
+
+Find the resolveBattles interval:
+  setInterval(async () => {
+    try {
+      const resolved = await storage.resolveBattles();
+      for (const battle of resolved) {
+        try {
+          const parcel = await storage.getParcel(battle.targetParcelId);
+          if (parcel) {
+            appendWorldEvent({ type: "battle_resolved", timestamp: Date.now(), lat: parcel.lat, lng: parcel.lng, plotId: parcel.plotId, playerId: battle.attackerId, severity: "high", metadata: { battleId: battle.id, outcome: battle.outcome } });
+          }
+        } catch { /* non-critical */ }
+      }
+    } catch (error) {
+      console.error("Background task error (battles):", error);
+    }
+  }, 15000);
+
+Replace with:
+  setInterval(async () => {
+    try {
+      const resolved = await storage.resolveBattles();
+      if (resolved.length > 0) {
+        for (const battle of resolved) {
+          try {
+            const parcel = await storage.getParcel(battle.targetParcelId);
+            if (parcel) {
+              const resolvedAttacker = await storage.getPlayer(battle.attackerId).catch(() => undefined);
+              appendWorldEvent({
+                type: "battle_resolved",
+                timestamp: Date.now(),
+                lat: parcel.lat,
+                lng: parcel.lng,
+                plotId: parcel.plotId,
+                playerId: battle.attackerId,
+                severity: battle.outcome === "attacker_wins" ? "high" : "medium",
+                metadata: {
+                  battleId: battle.id,
+                  outcome: battle.outcome,
+                  attacker: resolvedAttacker?.name ?? "Unknown",
+                }
+              });
+            }
+          } catch { /* non-critical */ }
+        }
+        markDirty();
+      }
+    } catch (error) {
+      console.warn("Background task (battles):", error instanceof Error ? error.message : error);
+    }
+  }, 15000);
+
+Find the AI interval:
+  setInterval(async () => {
+    try {
+      if (process.env.AI_ENABLED !== "false") {
+        await storage.runAITurn();
+      }
+    } catch (error) {
+      console.error("Background task error (AI):", error);
+    }
+  }, 20000);
+
+Replace with:
+  setInterval(async () => {
+    try {
+      if (process.env.AI_ENABLED !== "false") {
+        const aiEvents = await storage.runAITurn();
+        if (aiEvents && aiEvents.length > 0) markDirty();
+      }
+    } catch (error) {
+      console.warn("Background task (AI):", error instanceof Error ? error.message : error);
+    }
+  }, 20000);
+
+Find the orbital interval:
+  setInterval(async () => {
+    try {
+      const event = await storage.triggerOrbitalCheck();
+      if (event) {
+        console.log(`[ORBITAL-DEBUG] Background orbital check | NEW IMPACT | id: ${event.id} | type: ${event.type}`);
+      }
+    } catch (error) {
+      console.error("[ORBITAL-DEBUG] Background orbital check error:", error);
+    }
+  }, 5 * 60 * 1000);
+
+Replace with:
+  setInterval(async () => {
+    try {
+      const event = await storage.triggerOrbitalCheck();
+      if (event) {
+        console.log(`[ORBITAL] new impact id=${event.id} type=${event.type}`);
+        markDirty();
+      }
+    } catch (error) {
+      console.warn("[ORBITAL] background check:", error instanceof Error ? error.message : error);
+    }
+  }, 5 * 60 * 1000);
+
+D) Replace all inline getGameState + broadcastGameState pairs in player action
+   handlers with markDirty().
+
+There are 11 occurrences of this pattern:
+      const gameState = await storage.getGameState();
+      broadcastGameState(gameState);
+
+Find and replace ALL 11 occurrences with:
+      markDirty();
+
+These are inside the following handlers (use this list to verify all 11 are
+replaced — do not miss any):
+- /api/actions/mine
+- /api/actions/upgrade
+- /api/actions/attack
+- /api/actions/build
+- /api/actions/collect
+- /api/actions/claim-frontier
+- /api/actions/mint-avatar
+- /api/actions/switch-commander
+- /api/actions/special-attack
+- /api/actions/deploy-drone
+- /api/actions/deploy-satellite
+
+EXCEPTION — /api/actions/purchase: this handler must keep its existing
+broadcastGameState call because it does the most user-visible state change
+(parcel ownership) and players expect instant globe feedback on purchase.
+Do NOT replace the getGameState + broadcastGameState pair in purchase.
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- initWsServer now accepts two parameters: httpServer and storage
+- markDirty is exported from wsServer.ts
+- broadcastGameState is still exported (backward compat — used by purchase)
+- The flush loop runs every 1500ms and only queries DB when _dirty is true
+- Background intervals only call markDirty() when they actually did work
+- All 11 action handlers use markDirty() instead of getGameState + broadcast
+- Purchase handler still uses broadcastGameState directly for instant feedback
+- No changes to storage.ts, db-schema.ts, or any client files

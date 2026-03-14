@@ -1,0 +1,66 @@
+PASS: Mobile Camera Controls — PlanetGlobe.tsx
+Context: client/src/components/PlanetGlobe.tsx uses @react-three/drei’s OrbitControls. Touch interaction on iPhone and Android is cluttered, zoom is imprecise, and vertical drift is uncontrolled. This pass tunes OrbitControls exclusively for mobile usability.
+DO NOT TOUCH: shader materials, hex mesh logic, StarField, AtmosphereGlow, fresnel shader, hover logic, prevHoveredRef, WebSocket hooks, tile click handlers, or any game state.
+
+EDIT 1 — Ensure useThree is imported
+Find:
+
+import { Canvas, useFrame } from '@react-three/fiber'
+
+
+Replace with:
+
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+
+
+If useThree is already present in that import line, skip this edit.
+
+EDIT 2 — Ensure THREE is imported
+If import * as THREE from 'three' is not already at the top of the file, add it after the React import line:
+
+import * as THREE from 'three'
+
+
+If it is already present, skip this edit.
+
+EDIT 3 — Add touchAction: 'none' to the Canvas element
+Find the opening <Canvas JSX tag and add the style prop if not already present:
+
+<Canvas
+  style={{ touchAction: 'none' }}
+  ...existingProps
+>
+
+
+This prevents iOS Safari’s native scroll and zoom from intercepting pointer events before React Three Fiber can capture them, which is the root cause of jumpy pinch-to-zoom on WebKit.
+
+EDIT 4 — Replace the OrbitControls JSX block
+Find the existing <OrbitControls element (however many props it currently has) and replace it entirely with:
+
+<OrbitControls
+  enablePan={false}
+  enableDamping={true}
+  dampingFactor={0.08}
+  rotateSpeed={0.45}
+  zoomSpeed={0.7}
+  minDistance={1.6}
+  maxDistance={4.2}
+  minPolarAngle={Math.PI * 0.18}
+  maxPolarAngle={Math.PI * 0.82}
+  touches={{
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_ROTATE,
+  }}
+  makeDefault
+/>
+
+
+Verification checklist:
+	∙	npx tsc --noEmit passes with zero new errors
+	∙	iPhone Safari: single-finger drag rotates the globe smoothly with no vertical flip
+	∙	iPhone Safari: two-finger pinch zooms within bounds, no geometry clipping
+	∙	Android Chrome: same behaviour as above
+	∙	Desktop: mouse wheel zoom and drag-rotate remain fully functional
+	∙	No regressions on tile hover, tile click, or any game state
+
+Tuning notes: If rotation still feels too fast on iPhone after testing, reduce rotateSpeed to 0.35. If pinch zoom feels sluggish, increase zoomSpeed to 0.9. The polar angle clamp (0.18π – 0.82π) allows ~115° of vertical travel, enough to view both hemispheres without reaching the poles.​​​​​​​​​​​​​​​​

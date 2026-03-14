@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Swords, Pickaxe, Fuel, AlertTriangle, ChevronUp, ChevronDown, Clock, Shield, Zap, Skull, Lock } from "lucide-react";
+import { Swords, Pickaxe, Fuel, AlertTriangle, ChevronUp, ChevronDown, Clock, Shield, Zap, Skull, Lock, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
@@ -14,7 +14,8 @@ interface AttackModalProps {
   onOpenChange: (open: boolean) => void;
   targetParcel: LandParcel | null;
   attacker: Player | null;
-  onAttack: (troops: number, iron: number, fuel: number, commanderId?: string) => void;
+  ownedParcels: LandParcel[];
+  onAttack: (troops: number, iron: number, fuel: number, crystal: number, commanderId?: string, sourceParcelId?: string) => void;
   isAttacking: boolean;
 }
 
@@ -54,13 +55,27 @@ export function AttackModal({
   onOpenChange,
   targetParcel,
   attacker,
+  ownedParcels,
   onAttack,
   isAttacking,
 }: AttackModalProps) {
   const [troops, setTroops] = useState(1);
   const [extraIron, setExtraIron] = useState(0);
   const [extraFuel, setExtraFuel] = useState(0);
-  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(null);
+  const [extraCrystal, setExtraCrystal] = useState(0);
+  const getDefaultCommanderId = (): string | null => {
+    if (!attacker) return null;
+    const cmds = attacker.commanders ?? [];
+    if (cmds.length === 0) return null;
+    const active = cmds[attacker.activeCommanderIndex ?? 0];
+    if (active && !(active.lockedUntil && Date.now() < active.lockedUntil)) return active.id;
+    const unlocked = cmds.find(c => !(c.lockedUntil && Date.now() < c.lockedUntil));
+    return unlocked?.id ?? null;
+  };
+  const [selectedCommanderId, setSelectedCommanderId] = useState<string | null>(getDefaultCommanderId);
+  const [sourceParcelId, setSourceParcelId] = useState<string | null>(
+    () => ownedParcels.length > 0 ? ownedParcels[0].id : null
+  );
 
   if (!targetParcel || !attacker) return null;
 
@@ -78,7 +93,7 @@ export function AttackModal({
     fuel: baseCost.fuel + extraFuel,
   };
 
-  const canAfford = attacker.iron >= totalCost.iron && attacker.fuel >= totalCost.fuel;
+  const canAfford = attacker.iron >= totalCost.iron && attacker.fuel >= totalCost.fuel && attacker.crystal >= extraCrystal;
   const maxTroops = Math.min(
     10,
     Math.floor(attacker.iron / ATTACK_BASE_COST.iron),
@@ -86,17 +101,30 @@ export function AttackModal({
   );
 
   const commanderBonus = selectedCommander?.attackBonus ?? 0;
-  const attackerPower = troops * 10 + extraIron * 0.5 + extraFuel * 0.8 + commanderBonus;
+  const attackerPower = troops * 10 + extraIron * 0.5 + extraFuel * 0.8 + extraCrystal * 1.2 + commanderBonus;
   const defenderPower = targetParcel.defenseLevel * 15 * biomeBonuses[targetParcel.biome].defenseMod;
   const winChance = Math.min(95, Math.max(5, (attackerPower / (attackerPower + defenderPower)) * 100));
 
+  const ironShort = Math.max(0, totalCost.iron - attacker.iron);
+  const fuelShort = Math.max(0, totalCost.fuel - attacker.fuel);
+  const crystalShort = Math.max(0, extraCrystal - attacker.crystal);
+  const cannotAffordReason = ironShort > 0 ? `Need ${ironShort} more iron` : fuelShort > 0 ? `Need ${fuelShort} more fuel` : `Need ${crystalShort} more crystal`;
+  
+  const isOnCooldown = attacker.attackCooldownUntil && Date.now() < attacker.attackCooldownUntil;
+  const cooldownMs = isOnCooldown ? (attacker.attackCooldownUntil ?? 0) - Date.now() : 0;
+  const cooldownMin = Math.ceil(cooldownMs / 60000);
+
+  const hasNoCommander = (attacker.commanders ?? []).length === 0;
+  const allCommandersLocked = (attacker.commanders ?? []).every(c => c.lockedUntil && Date.now() < c.lockedUntil);
+  const noCommanderSelected = !hasNoCommander && !allCommandersLocked && !selectedCommanderId;
+
   const handleSubmit = () => {
-    onAttack(troops, totalCost.iron, totalCost.fuel, selectedCommanderId ?? undefined);
+    onAttack(troops, totalCost.iron, totalCost.fuel, extraCrystal, selectedCommanderId ?? undefined, sourceParcelId ?? undefined);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg backdrop-blur-md max-h-[90vh] overflow-y-auto" data-testid="modal-attack">
+      <DialogContent className="w-full max-w-lg mx-auto max-h-[85vh] overflow-y-auto backdrop-blur-md" data-testid="modal-attack">
         <DialogHeader>
           <DialogTitle className="font-display text-xl uppercase tracking-wide flex items-center gap-2">
             <Swords className="w-5 h-5 text-destructive" />
@@ -120,6 +148,33 @@ export function AttackModal({
             </p>
           </div>
 
+          {/* Launch Origin */}
+          {ownedParcels.length > 1 && (
+            <div className="space-y-2">
+              <span className="text-sm font-display uppercase tracking-wide">Launch From</span>
+              <div className="overflow-x-auto pb-1">
+                <div className="flex gap-2 w-max">
+                  {ownedParcels.slice(0, 8).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSourceParcelId(p.id)}
+                      className={cn(
+                        "flex-shrink-0 w-16 h-16 rounded-md border-2 flex flex-col items-center justify-center gap-0.5 transition-colors px-1",
+                        sourceParcelId === p.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-muted/20 hover:border-muted-foreground"
+                      )}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-[9px] font-mono leading-tight text-center">#{p.plotId}</span>
+                      <span className="text-[8px] text-muted-foreground capitalize leading-tight">{p.biome}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Commander Selection */}
           {commanders.length > 0 && (
             <div className="space-y-2">
@@ -133,20 +188,6 @@ export function AttackModal({
               </div>
               <div className="overflow-x-auto pb-1">
                 <div className="flex gap-2 w-max">
-                  {/* No Commander */}
-                  <button
-                    onClick={() => setSelectedCommanderId(null)}
-                    className={cn(
-                      "flex-shrink-0 w-[72px] h-24 rounded-md border-2 flex flex-col items-center justify-center gap-1 transition-colors",
-                      !selectedCommanderId
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-muted/20 hover:border-muted-foreground"
-                    )}
-                  >
-                    <Swords className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[9px] font-display uppercase tracking-wide text-muted-foreground">No Cmd</span>
-                  </button>
-
                   {commanders.map((c) => {
                     const locked = isLocked(c);
                     const selected = selectedCommanderId === c.id;
@@ -157,7 +198,7 @@ export function AttackModal({
                         disabled={locked}
                         onClick={() => !locked && setSelectedCommanderId(selected ? null : c.id)}
                         className={cn(
-                          "flex-shrink-0 w-[72px] h-24 rounded-md border-2 flex flex-col items-center justify-center gap-0.5 transition-colors relative px-1",
+                          "flex-shrink-0 w-16 h-20 rounded-md border-2 flex flex-col items-center justify-center gap-0.5 transition-colors relative px-1",
                           selected
                             ? TIER_BORDER_SELECTED[c.tier]
                             : locked
@@ -188,7 +229,7 @@ export function AttackModal({
           {/* Troops */}
           <div className="space-y-4">
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 min-h-[1.75rem]">
                 <span className="text-sm font-display uppercase tracking-wide">Troops</span>
                 <div className="flex items-center gap-2">
                   <Button
@@ -201,7 +242,7 @@ export function AttackModal({
                   >
                     <ChevronDown className="w-3 h-3" />
                   </Button>
-                  <span className="font-mono text-lg w-8 text-center">{troops}</span>
+                  <span className="font-mono text-lg min-w-[2.5rem] text-center">{troops}</span>
                   <Button
                     variant="outline"
                     size="icon"
@@ -226,7 +267,7 @@ export function AttackModal({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 min-h-[1.75rem]">
                 <span className="text-sm font-display uppercase tracking-wide flex items-center gap-1">
                   <Pickaxe className="w-3 h-3 text-iron" /> Extra Iron
                 </span>
@@ -244,7 +285,7 @@ export function AttackModal({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 min-h-[1.75rem]">
                 <span className="text-sm font-display uppercase tracking-wide flex items-center gap-1">
                   <Fuel className="w-3 h-3 text-fuel" /> Extra Fuel
                 </span>
@@ -260,12 +301,35 @@ export function AttackModal({
                 data-testid="slider-extra-fuel"
               />
             </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2 min-h-[1.75rem]">
+                <span className="text-sm font-display uppercase tracking-wide flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-cyan-400 inline-block" />
+                  Crystal Boost
+                  <span className="text-[10px] text-muted-foreground normal-case font-normal">(×1.2 power)</span>
+                </span>
+                <span className="font-mono text-sm text-cyan-400">{extraCrystal}</span>
+              </div>
+              <Slider
+                value={[extraCrystal]}
+                onValueChange={([v]) => setExtraCrystal(v)}
+                min={0}
+                max={Math.max(0, attacker.crystal)}
+                step={1}
+                className="w-full"
+                data-testid="slider-extra-crystal"
+              />
+              {attacker.crystal === 0 && (
+                <p className="text-[10px] text-muted-foreground mt-1">Mine volcanic parcels to acquire crystal.</p>
+              )}
+            </div>
           </div>
 
           {/* Power Display */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-card border border-border rounded-md">
+          <div className="grid grid-cols-2 gap-4 p-4 bg-card border border-border rounded-md min-h-[5rem]">
             <div data-testid="display-attacker-power">
-              <p className="text-xs text-muted-foreground uppercase font-display tracking-wide mb-1">Your Power</p>
+              <p className="text-sm text-muted-foreground uppercase font-display tracking-wide mb-1">Your Power</p>
               <p className="font-mono text-2xl font-bold text-primary" data-testid="text-attacker-power">
                 {Math.round(attackerPower)}
               </p>
@@ -276,7 +340,7 @@ export function AttackModal({
               )}
             </div>
             <div data-testid="display-defender-power">
-              <p className="text-xs text-muted-foreground uppercase font-display tracking-wide mb-1">Defender Power</p>
+              <p className="text-sm text-muted-foreground uppercase font-display tracking-wide mb-1">Defender Power</p>
               <p className="font-mono text-2xl font-bold text-destructive" data-testid="text-defender-power">
                 {Math.round(defenderPower)}
               </p>
@@ -298,22 +362,62 @@ export function AttackModal({
           {/* Total Cost */}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground font-display uppercase tracking-wide">Total Cost</span>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap gap-2">
               <span className={cn("font-mono flex items-center gap-1", !canAfford && "text-destructive")}>
                 <Pickaxe className="w-3 h-3 text-iron" /> {totalCost.iron}
               </span>
               <span className={cn("font-mono flex items-center gap-1", !canAfford && "text-destructive")}>
                 <Fuel className="w-3 h-3 text-fuel" /> {totalCost.fuel}
               </span>
+              {extraCrystal > 0 && (
+                <span className="font-mono flex items-center gap-1 text-cyan-400">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block" /> {extraCrystal}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
+        {(isOnCooldown || !canAfford || hasNoCommander || allCommandersLocked || noCommanderSelected) && (
+          <div className="p-3 bg-yellow-400/10 border border-yellow-400/30 rounded-md space-y-1">
+            {isOnCooldown && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                Attack on cooldown for {cooldownMin} minute{cooldownMin > 1 ? 's' : ''}
+              </p>
+            )}
+            {!canAfford && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                {cannotAffordReason}
+              </p>
+            )}
+            {hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                Mint a Commander to attack (50+ FRONTIER)
+              </p>
+            )}
+            {allCommandersLocked && !hasNoCommander && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                All Commanders locked. Wait for cooldown to expire.
+              </p>
+            )}
+            {noCommanderSelected && (
+              <p className="text-xs text-yellow-400 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                Select a Commander to lead this attack.
+              </p>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="flex-col sm:flex-row gap-2">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="font-display uppercase tracking-wide"
+            className="font-display uppercase tracking-wide w-full sm:w-auto"
             data-testid="button-attack-cancel"
           >
             Cancel
@@ -321,8 +425,8 @@ export function AttackModal({
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={!canAfford || isAttacking}
-            className="font-display uppercase tracking-wide"
+            disabled={!canAfford || isAttacking || isOnCooldown || hasNoCommander || allCommandersLocked || noCommanderSelected}
+            className="font-display uppercase tracking-wide w-full sm:w-auto"
             data-testid="button-attack-confirm"
           >
             <Swords className="w-4 h-4 mr-2" />

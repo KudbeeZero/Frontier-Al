@@ -5,7 +5,7 @@ import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, P
 export function useGameState() {
   return useQuery<GameState>({
     queryKey: ["/api/game/state"],
-    refetchInterval: 5000,
+    refetchInterval: 30_000,  // fallback poll — WS push handles real-time updates
   });
 }
 

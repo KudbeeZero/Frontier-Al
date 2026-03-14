@@ -1,0 +1,113 @@
+You are editing FlatMap.tsx in the Frontier-Al repo.
+
+GOAL:
+Fix 2D map click offset, increase plot size, improve hit detection,
+and make the popup dynamically position (not always bottom-right).
+
+DO NOT touch backend.
+DO NOT modify API routes.
+Only edit FlatMap.tsx.
+
+-----------------------------------------
+TASK 1 — Fix click offset (CRITICAL)
+-----------------------------------------
+
+In findPlotAt(), convert viewport coordinates to local container space.
+
+Replace the top of findPlotAt() with:
+
+const rect = container.getBoundingClientRect();
+
+// Convert viewport coordinates to canvas-local space
+const localX = sx - rect.left;
+const localY = sy - rect.top;
+
+const w = rect.width;
+const h = rect.height;
+
+const latLng = screenToLatLng(localX, localY, w, h);
+if (!latLng) return null;
+
+Then replace distance math:
+
+Change:
+const dx = sx - s.x;
+const dy = sy - s.y;
+
+To:
+const dx = localX - s.x;
+const dy = localY - s.y;
+
+-----------------------------------------
+TASK 2 — Make plots visually bigger
+-----------------------------------------
+
+Find getPlotSize().
+
+Change:
+
+return Math.max(2, R / 78);
+
+To:
+
+return Math.max(3, R / 55);
+
+-----------------------------------------
+TASK 3 — Increase selection radius
+-----------------------------------------
+
+In findPlotAt(), change:
+
+const hitRadiusSq = Math.pow(Math.max(plotSize * 1.6, 12), 2);
+
+To:
+
+const hitRadiusSq = Math.pow(Math.max(plotSize * 2.2, 18), 2);
+
+-----------------------------------------
+TASK 4 — Smart popup positioning
+-----------------------------------------
+
+Replace popup positioning logic.
+
+Before rendering popup, compute:
+
+const rect = containerRef.current?.getBoundingClientRect();
+if (!rect) return null;
+
+const popupW = 160;
+const popupH = 110;
+const margin = 18;
+
+let px;
+let py;
+
+if (selectedScreenPos.x > rect.width / 2) {
+  px = selectedScreenPos.x - popupW - margin;
+} else {
+  px = selectedScreenPos.x + margin;
+}
+
+if (selectedScreenPos.y > rect.height / 2) {
+  py = selectedScreenPos.y - popupH - margin;
+} else {
+  py = selectedScreenPos.y + margin;
+}
+
+px = Math.max(10, Math.min(px, rect.width - popupW - 10));
+py = Math.max(10, Math.min(py, rect.height - popupH - 10));
+
+Then render popup using:
+
+style={{ left: px, top: py }}
+
+-----------------------------------------
+
+After edits:
+- Run npm run dev
+- Verify:
+  - Click matches exact plot
+  - Plots look bigger
+  - Selection easier
+  - Popup flips direction near edges
+  - No backend errors

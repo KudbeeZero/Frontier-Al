@@ -1,0 +1,222 @@
+FRONTIER — Slim Broadcast Pass A: Types + Server
+Pass: Slim-A
+
+Context:
+The game state broadcast sends 27 fields per parcel × 21,000 parcels = ~12MB
+per flush. Only 7 fields are needed for globe/map rendering. This pass adds a
+SlimParcel and SlimPlayer type, a new getSlimGameState() method on DbStorage,
+and a new /api/game/slim-state endpoint. The existing getGameState() and
+/api/game/state endpoint are untouched — they remain for on-demand full fetches.
+
+DO NOT modify getGameState(), rowToParcel(), rowToPlayer(), the GameState
+interface, or any client files. Additive changes only.
+
+Files to modify:
+- shared/schema.ts
+- server/storage.ts
+- server/routes.ts
+
+---
+
+EDIT 1 — shared/schema.ts
+
+Add these two interfaces and one new interface after the GameState interface.
+Find the line:
+export const mineActionSchema = z.object({
+
+Insert before it:
+
+/** Minimal parcel data broadcast to all clients for globe/map rendering. */
+export interface SlimParcel {
+  id: string;
+  plotId: number;
+  lat: number;
+  lng: number;
+  biome: BiomeType;
+  ownerId: string | null;
+  activeBattleId: string | null;
+}
+
+/** Minimal player data broadcast to all clients for color/name rendering. */
+export interface SlimPlayer {
+  id: string;
+  name: string;
+  address: string;
+  isAI: boolean;
+}
+
+/** Slim game state — broadcast to all clients on every dirty flush. */
+export interface SlimGameState {
+  parcels: SlimParcel[];
+  players: SlimPlayer[];
+  battles: Battle[];
+  leaderboard: LeaderboardEntry[];
+  claimedPlots: number;
+  frontierCirculating: number;
+  lastUpdateTs: number;
+}
+
+---
+
+EDIT 2 — server/storage.ts
+
+A) Add SlimParcel and SlimPlayer and SlimGameState to the import from @shared/schema.
+Find the import line that contains GameState and add the three new types:
+import type { ..., GameState, SlimGameState, SlimParcel, SlimPlayer } from "@shared/schema";
+
+(Keep all existing imports, just add the three new ones.)
+
+B) Add getSlimGameState() to the IStorage interface.
+Find:
+  getGameState(): Promise<GameState>;
+Add immediately after it:
+  getSlimGameState(): Promise<SlimGameState>;
+
+C) Add getSlimGameState() to DbStorage class.
+Find the getGameState() method in DbStorage (around line 2011).
+After the closing brace of getGameState(), add this new method:
+
+  async getSlimGameState(): Promise<SlimGameState> {
+    await this.initialize();
+
+    const [allParcels, allPlayers, pendingBattles, recentBattles, [meta]] = await Promise.all([
+      this.db
+        .select({
+          id:            parcelsTable.id,
+          plotId:        parcelsTable.plotId,
+          lat:           parcelsTable.lat,
+          lng:           parcelsTable.lng,
+          biome:         parcelsTable.biome,
+          ownerId:       parcelsTable.ownerId,
+          activeBattleId:parcelsTable.activeBattleId,
+        })
+        .from(parcelsTable),
+      this.db
+        .select({
+          id:      playersTable.id,
+          name:    playersTable.name,
+          address: playersTable.address,
+          isAi:    playersTable.isAi,
+        })
+        .from(playersTable),
+      this.db
+        .select()
+        .from(battlesTable)
+        .where(eq(battlesTable.status, "pending")),
+      this.db
+        .select()
+        .from(battlesTable)
+        .where(eq(battlesTable.status, "resolved"))
+        .orderBy(desc(battlesTable.resolveTs))
+        .limit(20),
+      this.db.select().from(gameMeta).where(eq(gameMeta.id, 1)),
+    ]);
+
+    const claimedPlots = allParcels.filter(p => p.ownerId !== null).length;
+    const allPlayersFull = await this.db.select().from(playersTable);
+    const frontierCirculating = allPlayersFull.reduce(
+      (sum, p) => sum + fromMicroFRNTR(p.frntrBalanceMicro), 0
+    );
+
+    const slimParcels: SlimParcel[] = allParcels.map(r => ({
+      id:            r.id,
+      plotId:        r.plotId,
+      lat:           r.lat,
+      lng:           r.lng,
+      biome:         r.biome as BiomeType,
+      ownerId:       r.ownerId ?? null,
+      activeBattleId:r.activeBattleId ?? null,
+    }));
+
+    const slimPlayers: SlimPlayer[] = allPlayers.map(r => ({
+      id:      r.id,
+      name:    r.name,
+      address: r.address,
+      isAI:    r.isAi,
+    }));
+
+    const battles = [...pendingBattles, ...recentBattles].map(rowToBattle);
+
+    const allParcelsFull = await this.db.select().from(parcelsTable);
+    const leaderboard = computeLeaderboard(allPlayersFull, allParcelsFull);
+
+    return {
+      parcels:            slimParcels,
+      players:            slimPlayers,
+      battles,
+      leaderboard,
+      claimedPlots,
+      frontierCirculating,
+      lastUpdateTs:       Number(meta?.lastUpdateTs ?? 0),
+    };
+  }
+
+D) Add getSlimGameState() stub to MemStorage.
+Find the getGameState() method in MemStorage (around line 358).
+After its closing brace, add:
+
+  async getSlimGameState(): Promise<SlimGameState> {
+    const full = await this.getGameState();
+    return {
+      parcels: full.parcels.map(p => ({
+        id: p.id,
+        plotId: p.plotId,
+        lat: p.lat,
+        lng: p.lng,
+        biome: p.biome,
+        ownerId: p.ownerId,
+        activeBattleId: p.activeBattleId,
+      })),
+      players: full.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        address: p.address,
+        isAI: p.isAI,
+      })),
+      battles: full.battles,
+      leaderboard: full.leaderboard,
+      claimedPlots: full.claimedPlots,
+      frontierCirculating: full.frontierCirculating,
+      lastUpdateTs: full.lastUpdateTs,
+    };
+  }
+
+---
+
+EDIT 3 — server/routes.ts
+
+A) Add SlimGameState to the import from @shared/schema:
+Find the schema import line and add SlimGameState to it.
+
+B) Add a new slim state endpoint after /api/game/state:
+Find:
+  app.get("/api/game/parcel/:id", async (req, res) => {
+
+Insert before it:
+
+  app.get("/api/game/slim-state", async (req, res) => {
+    try {
+      const slimState = await storage.getSlimGameState();
+      res.json(slimState);
+    } catch (error) {
+      console.error("Error fetching slim game state:", error);
+      res.status(500).json({ error: "Failed to fetch game state" });
+    }
+  });
+
+C) Update wsServer.ts import to include broadcastSlimState (we will define it
+   in Pass B — for now just note that initWsServer will need storage passed to it).
+   No change needed here for Pass A.
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- SlimParcel, SlimPlayer, SlimGameState are exported from shared/schema.ts
+- getSlimGameState() exists on IStorage interface
+- getSlimGameState() is implemented in DbStorage — queries only 7 parcel columns
+- getSlimGameState() stub exists in MemStorage
+- battles in slim state = pending (all) + resolved (last 20 only)
+- GET /api/game/slim-state returns valid JSON
+- Existing getGameState() and /api/game/state are completely unchanged
+- No client files modified

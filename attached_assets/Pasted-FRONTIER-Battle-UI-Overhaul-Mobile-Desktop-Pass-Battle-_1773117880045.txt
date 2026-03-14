@@ -1,0 +1,91 @@
+FRONTIER — Battle UI Overhaul (Mobile + Desktop)
+Pass: Battle UI Pass
+
+Context:
+Three battle UI components need fixing for both mobile and desktop:
+1. AttackModal — sliders overflow on mobile, commander cards too small, cost summary hard to read, dialog too tall on small screens
+2. BattlesPanel — battle cards cramped, player names truncate too aggressively, no crystal burn display, progress bar too thin to see
+3. BattleWatchModal — VS panel wraps badly on mobile, battle feed too short on desktop, outcome banner undersized on mobile
+
+DO NOT TOUCH: GameLayout.tsx, storage.ts, routes.ts, any server files, or any file not listed below. Only the three component files below are to be modified.
+
+Files to modify:
+- client/src/components/game/AttackModal.tsx
+- client/src/components/game/BattlesPanel.tsx
+- client/src/components/game/BattleWatchModal.tsx
+
+---
+
+ATTACKMODAL FIXES:
+
+1. Dialog sizing — replace the outer DialogContent className with:
+"w-full max-w-lg mx-auto max-h-[85vh] overflow-y-auto backdrop-blur-md"
+Remove the sm:max-w-lg prefix so it takes full width on mobile with consistent padding.
+
+2. Commander cards — change the card dimensions from w-[72px] h-24 to w-16 h-20 and reduce the horizontal scroll container padding. On mobile the "No Cmd" + commander row should scroll horizontally without clipping.
+
+3. Troop counter layout — the ChevronDown/ChevronUp buttons with the font-mono number between them should use a min-w-[2.5rem] on the number span so it doesn't shift layout when going from 1 to 10 troops.
+
+4. Slider labels — each slider row currently uses flex items-center justify-between. Add a min-h-[1.75rem] to each label row so they don't collapse on small screens.
+
+5. Power display grid — the grid-cols-2 gap-4 p-4 block showing Your Power / Defender Power: increase the font size of the labels from text-xs to text-sm and add a min-h-[5rem] to the grid container so it doesn't collapse on narrow screens.
+
+6. Cost summary row — the "Total Cost" row at the bottom uses flex items-center justify-between. Wrap the cost badges in a flex-wrap gap-2 container so they stack on very narrow screens instead of overflowing.
+
+7. Warning block — the yellow warning block above the footer uses space-y-1. Add p-3 rounded-md border to the outer div if not already present. Ensure each warning line has flex items-start gap-1.5 (not items-center) so long messages wrap cleanly.
+
+8. DialogFooter — add flex-col sm:flex-row gap-2 to the footer so Cancel and Deploy stack vertically on mobile and sit side by side on desktop. Both buttons should be w-full sm:w-auto.
+
+---
+
+BATTLESPANEL FIXES:
+
+1. BattleCard player names — change max-w-[80px] to max-w-[100px] on both attacker and defender name spans.
+
+2. BattleCard crystal burn — after the ATK/DEF power row, add a crystal burn display if battle.crystalBurned > 0:
+<div className="flex items-center gap-1 text-[10px] text-cyan-400">
+  <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+  <span className="font-mono">{battle.crystalBurned}</span>
+  <span className="text-muted-foreground">crystal burned</span>
+</div>
+
+3. Progress bar — change the Progress h-1 to h-1.5 for better visibility.
+
+4. Timer text — the "Resolves in" row uses text-[10px]. Change to text-xs for legibility.
+
+5. BattleCard action buttons — the two buttons (View Plot / Watch Battle) currently use flex gap-1.5. On mobile these can be too small. Change h-7 to h-8 on both buttons and text-[10px] to text-xs.
+
+6. Empty state — change the empty state icon from w-10 h-10 to w-12 h-12 and the title text from text-sm to text-base.
+
+7. Section headers (Active Battles / Recent Battles / Battle Log) — change text-[10px] to text-xs on all three h3 elements for consistency.
+
+---
+
+BATTLEWATCHMODAL FIXES:
+
+1. DialogContent sizing — replace the current className with:
+"w-full max-w-2xl max-h-[92vh] flex flex-col backdrop-blur-md p-0 gap-0 overflow-hidden"
+No change to logic, just ensure full-width on mobile.
+
+2. VS Panel — the grid-cols-3 items-center gap-3 layout: on very small screens the attacker and defender names overflow. Add min-w-0 to each of the two outer column divs (attacker side and defender side). Change truncate on both name paragraphs to truncate max-w-[90px] sm:max-w-full.
+
+3. VS Panel power numbers — change font-mono text-2xl to font-mono text-xl sm:text-2xl so they don't overflow on narrow screens.
+
+4. Battle feed — change max-h-64 on the scrollable feed container to max-h-48 sm:max-h-64 min-h-[140px] so it has a minimum visible height on mobile.
+
+5. Outcome banner — change the p-5 on the outcome div to p-4 sm:p-5. Change the Trophy icon from w-6 h-6 to w-5 h-5 sm:w-6 sm:h-6. Change the Victory/Defeat text from text-2xl to text-xl sm:text-2xl.
+
+6. Footer close button — change the bottom close button from px-6 pb-5 outer div to px-4 sm:px-6 pb-4 sm:pb-5 so it has consistent safe-area padding on mobile.
+
+7. Timer row — the flex items-center justify-between text-xs row: add flex-wrap gap-y-1 so the label and remaining time don't collide on narrow screens.
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- AttackModal renders without horizontal overflow on 375px wide screen
+- BattleWatchModal VS panel names don't clip on mobile
+- BattlesPanel shows crystal burn value when present
+- Commander card row scrolls horizontally without clipping
+- Footer buttons stack on mobile, side by side on desktop
+- Only the three listed component files were modified

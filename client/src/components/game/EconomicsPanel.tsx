@@ -7,12 +7,16 @@ import {
   RefreshCw,
   Lock,
   CircleDollarSign,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useBlockchainActions } from "@/hooks/useBlockchainActions";
+import { useWallet } from "@/hooks/useWallet";
 
 interface EconomicsData {
   asaId: number | null;
@@ -103,6 +107,9 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
     refetchInterval: 30_000,
   });
 
+  const { isConnected } = useWallet();
+  const { signOptInToFrontier, isOptedInToFrontier, isPending } = useBlockchainActions();
+
   const algoExplorerUrl = data?.asaId
     ? `https://testnet.explorer.perawallet.app/asset/${data.asaId}/`
     : null;
@@ -188,6 +195,47 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                   </div>
                 </div>
               </div>
+
+              {isConnected && data?.asaId && (
+                <div>
+                  <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Wallet Opt-In</p>
+                  <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2.5">
+                    {isOptedInToFrontier === true ? (
+                      <div className="flex items-center gap-2 text-emerald-400">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <div>
+                          <p className="text-xs font-bold font-display uppercase tracking-wide">Opted In</p>
+                          <p className="text-[10px] text-muted-foreground">Your wallet can receive FRONTIER tokens</p>
+                        </div>
+                      </div>
+                    ) : isOptedInToFrontier === false ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-yellow-400">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <div>
+                            <p className="text-xs font-bold font-display uppercase tracking-wide">Opt-In Required</p>
+                            <p className="text-[10px] text-muted-foreground">You must opt in to receive FRONTIER on-chain</p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-2 font-display uppercase tracking-wide text-xs"
+                          onClick={signOptInToFrontier}
+                          disabled={isPending}
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                          {isPending ? "Signing…" : `Opt-In to FRONTIER (ASA #${data.asaId})`}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        <p className="text-[10px]">Checking opt-in status…</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">On-Chain Supply</p>

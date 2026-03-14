@@ -1,0 +1,95 @@
+# FRONTIER — Fix MemStorage → DbStorage (Replit)
+
+## Context
+
+You are working inside the **Frontier-Al** Replit project. This is a production MMO strategy game running on Replit with a PostgreSQL database.
+
+**DO NOT** refactor, rename, restructure, or touch anything outside the files listed below. Make only the three precise changes described.
+
+-----
+
+## Problem
+
+The server always boots with `MemStorage` (in-memory, ephemeral storage) regardless of whether `DATABASE_URL` is set in the environment. This means **all game state is wiped on every restart**. `DbStorage` is fully implemented and working — it is simply never instantiated. The fix is surgical.
+
+-----
+
+## Fix 1 — `server/storage.ts`
+
+Find the **very last line** of the file:
+
+```typescript
+export const storage: IStorage = new MemStorage();
+```
+
+Replace it with:
+
+```typescript
+export const storage: IStorage = process.env.DATABASE_URL
+  ? new DbStorage()
+  : (() => {
+      console.warn("[STORAGE] No DATABASE_URL found — falling back to MemStorage. All game state is ephemeral and will reset on restart.");
+      return new MemStorage();
+    })();
+```
+
+-----
+
+## Fix 2 — `server/index.ts`
+
+Find this line inside the async IIFE:
+
+```typescript
+await registerRoutes(httpServer, app);
+```
+
+Add the following block **directly above** it:
+
+```typescript
+if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+  console.error("[FATAL] DATABASE_URL is required in production. Provision a PostgreSQL database in Replit and ensure the secret is set. Exiting.");
+  process.exit(1);
+}
+```
+
+-----
+
+## Fix 3 — Delete `railway.toml`
+
+Delete the file `railway.toml` from the project root. This project runs on Replit, not Railway. The file is unused and misleading.
+
+-----
+
+## After Making All Three Changes
+
+Run these commands in the Replit Shell in order:
+
+```bash
+npm run db:push
+```
+
+Then start the project normally. Confirm in the boot logs that you see `DbStorage` initializing — **not** the MemStorage warning.
+
+-----
+
+## Verification Checklist
+
+- [ ] `server/storage.ts` last line now conditionally instantiates `DbStorage` or `MemStorage`
+- [ ] `server/index.ts` has the production guard above `registerRoutes`
+- [ ] `railway.toml` is deleted
+- [ ] `npm run db:push` completed without errors
+- [ ] Boot logs show DB connection, not MemStorage warning
+
+-----
+
+## DO NOT Touch
+
+- `server/db.ts`
+- `server/db-schema.ts`
+- `DbStorage` or `MemStorage` class internals
+- Any frontend files
+- Any game logic
+- `drizzle.config.ts`
+- `.replit`
+
+These are the **only three changes** needed. Do not interpret this as an invitation to refactor anything else.

@@ -1,0 +1,67 @@
+Let me look at the purchase flow.​​​​​​​​​​​​​​​​
+
+Found it. The problem is clear and it’s one line. Here’s the breakdown:
+
+The bug — line 247 in GameLayout.tsx:
+
+if (isWalletConnected && selectedParcel.purchasePriceAlgo !== null) {
+  const result = await signPurchaseAction(...)  // wallet sign
+  if (result === "cancelled") return;
+}
+// ← falls through here whether wallet is connected or not
+purchaseMutation.mutate(...)  // purchase goes through regardless
+
+
+The wallet signing is optional — it only runs if (isWalletConnected). If no wallet is connected, it skips straight to purchaseMutation.mutate() and the purchase goes through anyway. The server has no guard either — it only checks that the parcel is for sale and the player exists, never that the player has a real wallet address.
+
+Here’s the Replit prompt to fix it:
+
+Block land purchases when no wallet is connected
+In client/src/components/game/GameLayout.tsx, find the handlePurchase function (around line 245).
+Change it so that if isWalletConnected is false, the purchase is blocked entirely with a toast message. The fix:
+
+const handlePurchase = async () => {
+  if (!player || !selectedParcelId || !selectedParcel) return;
+
+  // Wallet must be connected to purchase land
+  if (!isWalletConnected) {
+    toast({
+      title: "Wallet Required",
+      description: "Connect your Algorand wallet to purchase territory.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (selectedParcel.purchasePriceAlgo !== null) {
+    const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
+    if (result === "cancelled") return;
+  }
+
+  purchaseMutation.mutate(
+    { playerId: player.id, parcelId: selectedParcelId },
+    {
+      onSuccess: () => {
+        toast({ title: "Territory Acquired", description: "New land is now yours." });
+        setSelectedParcelId(null);
+      },
+      onError: (error) => toast({ title: "Purchase Failed", description: error.message, variant: "destructive" }),
+    }
+  );
+};
+
+
+Also in server/routes.ts, in the POST /api/actions/purchase handler, add a server-side guard after parsing the action:
+
+const player = await storage.getPlayer(action.playerId);
+if (!player) return res.status(404).json({ error: "Player not found" });
+
+// Reject purchases from placeholder/unconnected wallet addresses
+if (!player.address || player.address === "PLAYER_WALLET" || player.address.startsWith("AI_") || player.address.length !== 58) {
+  return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
+}
+
+
+Do not change any other logic.
+
+The server-side guard is important too — the client check can always be bypassed by a direct API call, so both layers need the validation.​​​​​​​​​​​​​​​​

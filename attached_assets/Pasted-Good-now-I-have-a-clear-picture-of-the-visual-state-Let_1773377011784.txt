@@ -1,0 +1,101 @@
+Good — now I have a clear picture of the visual state. Let me audit the globe rendering logic before writing the prompt.​​​​​​​​​​​​​​​​
+
+From memory I know exactly how the hex tile coloring and pulse logic works in PlanetGlobe.tsx. Here is the full condensed prompt.
+
+PASS: Hex Tile Ownership Colors + Land Ownership Pulse — PlanetGlobe.tsx
+Context: Hex tiles are rendering black regardless of ownership state. Two problems need fixing simultaneously: (1) unowned/unclaimed tiles should render a visible neutral color instead of black, and (2) owned tiles should display an animated ownership pulse (similar in structure to the existing resource pulse) that makes territorial control immediately legible at a glance. This is a visual-only pass — no game state, battle logic, or server code is modified.
+DO NOT TOUCH: shader materials on the globe sphere itself, AtmosphereGlow, StarField, fresnel rim shader, hover highlight logic, prevHoveredRef, WebSocket hooks, tile click handlers, or any backend logic.
+
+EDIT 1 — Define the tile color constants
+At the top of PlanetGlobe.tsx, locate the block where color constants are defined (look for HOVER_COLOR, or similar hex/RGB constants). Directly below that block, add or replace the tile color constants with the following complete set:
+
+const UNOWNED_COLOR   = new THREE.Color(0x1a2a3a)   // dark blue-grey — visible but neutral
+const OWNED_BASE      = new THREE.Color(0x00ff88)    // faction green base
+const PULSE_COLOR     = new THREE.Color(0x00ffcc)    // ownership pulse highlight
+const HOVER_COLOR     = new THREE.Color(0x4488ff)    // existing hover — keep unchanged
+const ENEMY_COLOR     = new THREE.Color(0xff4422)    // enemy-owned tiles
+const ALLY_COLOR      = new THREE.Color(0xffaa00)    // ally/AI faction tiles
+
+
+Adjust OWNED_BASE and ENEMY_COLOR to match your faction color scheme if you have defined faction colors elsewhere — the key requirement is that they are non-black and distinct.
+
+EDIT 2 — Fix tile base color assignment in the hex mesh loop
+Find the loop that assigns colors to hex tile meshes. It will look similar to:
+
+tiles.forEach((tile, i) => {
+  const mesh = hexMeshes[i]
+  if (!mesh) return
+  mesh.material.color.set(0x000000)  // or similar black assignment
+})
+
+
+Replace the color assignment logic inside that loop with ownership-aware coloring:
+
+tiles.forEach((tile, i) => {
+  const mesh = hexMeshes[i]
+  if (!mesh) return
+
+  if (!tile.ownerId) {
+    mesh.material.color.copy(UNOWNED_COLOR)
+    mesh.material.opacity = 0.55
+  } else if (tile.ownerId === currentPlayerId) {
+    mesh.material.color.copy(OWNED_BASE)
+    mesh.material.opacity = 0.85
+  } else if (isAlly(tile.ownerId)) {
+    mesh.material.color.copy(ALLY_COLOR)
+    mesh.material.opacity = 0.75
+  } else {
+    mesh.material.color.copy(ENEMY_COLOR)
+    mesh.material.opacity = 0.75
+  }
+  mesh.material.transparent = true
+  mesh.material.needsUpdate = true
+})
+
+
+Replace tile.ownerId, currentPlayerId, and isAlly() with whatever field names and helper functions your tile data model actually uses. If there is no ally concept yet, remove the isAlly branch and use only the owned/enemy/unowned three-way split.
+
+EDIT 3 — Add ownership pulse in the useFrame loop
+Locate the existing useFrame callback. It currently handles hover highlight updates. Add the ownership pulse animation after the hover logic, inside the same useFrame block:
+
+// Ownership pulse
+const pulseTime = state.clock.elapsedTime
+const pulseFactor = (Math.sin(pulseTime * 2.2) + 1) / 2  // 0→1→0, ~2.2Hz
+
+tiles.forEach((tile, i) => {
+  const mesh = hexMeshes[i]
+  if (!mesh) return
+  if (mesh === hoveredMesh) return  // don't override hover highlight
+
+  if (tile.ownerId === currentPlayerId) {
+    mesh.material.color.lerpColors(OWNED_BASE, PULSE_COLOR, pulseFactor * 0.4)
+    mesh.material.needsUpdate = true
+  }
+})
+
+
+The * 0.4 scalar keeps the pulse subtle — it breathes between OWNED_BASE and 40% toward PULSE_COLOR rather than fully flashing. Increase to 0.7 if you want a more dramatic pulse.
+
+EDIT 4 — Ensure tile materials are MeshStandardMaterial or MeshBasicMaterial with transparent: true
+Find where hex tile mesh materials are instantiated (the new THREE.Mesh or new THREE.MeshBasicMaterial call for tiles). Confirm the material is created with:
+
+new THREE.MeshStandardMaterial({
+  transparent: true,
+  opacity: 0.55,
+  depthWrite: false,
+})
+
+
+If depthWrite: false is missing, add it. Without this, semi-transparent tiles will cause z-fighting artifacts that make tiles look black or flickering from certain camera angles — this is likely a contributing cause of the current black tile problem.
+
+Verification checklist:
+	∙	npx tsc --noEmit passes with zero new errors
+	∙	Unowned tiles render as visible dark blue-grey, not black
+	∙	Your owned tiles render in green and visibly pulse at roughly 2-second intervals
+	∙	Enemy-owned tiles render in red/orange, distinct from yours
+	∙	Hover highlight still overrides pulse correctly — hovering a tile turns it blue
+	∙	No z-fighting or flickering on tile edges when rotating the globe
+	∙	Performance: no frame rate drop — useFrame pulse loop should cost less than 0.5ms per frame for 21,000 tiles if color lerp is the only operation
+	∙	No regressions on click, battle initiation, or WebSocket tile update handling
+
+Tuning note: If 21,000 tiles all pulsing simultaneously causes a visible CPU spike, stagger the pulse per tile by adding a per-tile phase offset: Math.sin(pulseTime * 2.2 + i * 0.01). This makes each tile pulse slightly out of phase with its neighbors, which also looks more organic and less like a strobe.​​​​​​​​​​​​​​​​

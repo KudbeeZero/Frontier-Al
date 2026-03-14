@@ -1,0 +1,149 @@
+FRONTIER — Mobile: Collapse ResourceHUD Into TopBar
+Pass: Mobile-ResourceHUD
+
+Context:
+On mobile the ResourceHUD floats below the TopBar eating ~48px of
+vertical globe space. On screens under 640px (Tailwind's sm breakpoint)
+the resources should display as icon+number pairs inline inside the
+TopBar right section. The standalone ResourceHUD floats only on sm+.
+
+DO NOT TOUCH any file except TopBar.tsx and GameLayout.tsx.
+
+Files to modify:
+- client/src/components/game/TopBar.tsx
+- client/src/components/game/GameLayout.tsx
+
+---
+
+EDIT 1 — TopBar.tsx: Add resource props
+
+Find the TopBarProps interface:
+interface TopBarProps {
+  isConnected: boolean;
+  className?: string;
+  mobileMenuContent?: React.ReactNode;
+}
+
+Replace with:
+interface TopBarProps {
+  isConnected: boolean;
+  className?: string;
+  mobileMenuContent?: React.ReactNode;
+  // Mobile inline resources (only shown on xs screens, hidden sm+)
+  mobileResources?: {
+    iron: number;
+    fuel: number;
+    crystal: number;
+    frontier: number;
+  } | null;
+}
+
+---
+
+EDIT 2 — TopBar.tsx: Add lucide icon imports for resources
+
+Find the existing import:
+import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical } from "lucide-react";
+
+Replace with:
+import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap } from "lucide-react";
+
+---
+
+EDIT 3 — TopBar.tsx: Render inline resources on mobile
+
+Add mobileResources to the TopBar function destructure:
+Find:
+export function TopBar({ isConnected, className, mobileMenuContent }: TopBarProps) {
+
+Replace with:
+export function TopBar({ isConnected, className, mobileMenuContent, mobileResources }: TopBarProps) {
+
+Then inside the TopBar return, find the outer flex container
+that wraps everything. Add the mobile resource strip between the
+logo section and the right-side buttons section.
+
+Find the closing </div> of the logo section (the div that contains
+the FRONTIER title and TESTNET badge). It ends with:
+          </div>
+        </div>
+      </div>
+
+Add the mobile resource strip immediately after the logo div
+closing tag, before the right-side buttons div:
+
+      {/* Mobile resource strip — visible only below sm breakpoint */}
+      {mobileResources && (
+        <div className="flex items-center gap-2.5 sm:hidden">
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Pickaxe className="w-3 h-3 text-iron" />
+            <span className="text-iron">{mobileResources.iron}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Fuel className="w-3 h-3 text-fuel" />
+            <span className="text-fuel">{mobileResources.fuel}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Gem className="w-3 h-3 text-crystal" />
+            <span className="text-crystal">{mobileResources.crystal}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs font-semibold tabular-nums">
+            <Zap className="w-3 h-3 text-primary" />
+            <span className="text-primary">{mobileResources.frontier.toFixed(1)}</span>
+          </span>
+        </div>
+      )}
+
+---
+
+EDIT 4 — TopBar.tsx: Hide Fuel icon import conflict
+
+NOTE: lucide-react exports "Fuel" which may conflict with game
+type names. The import above is for the icon component only and
+is scoped to this file. No conflict with schema types.
+
+---
+
+EDIT 5 — GameLayout.tsx: Pass mobileResources to TopBar
+
+Find the TopBar usage in GameLayout:
+        <TopBar isConnected={isConnected} mobileMenuContent={mobileMenuContent} />
+
+Replace with:
+        <TopBar
+          isConnected={isConnected}
+          mobileMenuContent={mobileMenuContent}
+          mobileResources={player ? {
+            iron:     player.iron,
+            fuel:     player.fuel,
+            crystal:  player.crystal,
+            frontier: player.frontier,
+          } : null}
+        />
+
+---
+
+EDIT 6 — GameLayout.tsx: Hide ResourceHUD on mobile
+
+The ResourceHUD currently renders at all screen sizes. Add sm:flex
+so it only appears on sm+ screens.
+
+Find the div wrapping ResourceHUD:
+      {player && (
+        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
+
+Replace with:
+      {player && (
+        <div className={cn("absolute left-1/2 -translate-x-1/2 z-20 hidden sm:block", isConnected && frontierAsaId && isOptedInToFrontier === false ? "top-28" : "top-16")}>
+
+---
+
+Verification checklist:
+- tsc passes with zero errors
+- On screens below 640px: iron/fuel/crystal/frontier show inline
+  in TopBar as icon+number pairs
+- On screens 640px+: TopBar shows no resources (hidden sm:hidden
+  via the sm:hidden on mobile strip)
+- On screens 640px+: ResourceHUD floating bar still visible as before
+- Resources update live (player state flows through)
+- No other files modified

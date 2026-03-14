@@ -1,0 +1,301 @@
+PASS: Battle Target Discovery — Attackable Parcels Endpoint + WarRoom Targets Tab
+
+Context: Players cannot identify parcels to attack. Add a query endpoint and
+surface it as a new "Targets" tab in WarRoomPanel. This is a purely additive
+pass — do not modify existing battle routes, storage methods, or any globe
+rendering logic.
+
+Verified file state this prompt is based on:
+  - server/routes.ts — imports: db, withDbRetry, parcelsTable, sql (all present)
+  - server/db-schema.ts — confirmed columns: ownerId, defenseLevel, ironStored,
+    fuelStored, crystalStored, activeBattleId, lat, lng, biome, plotId
+  - client/src/components/game/WarRoomPanel.tsx — has Tabs/TabsContent from
+    shadcn, existing props: battles, events, players, onWatchBattle,
+    onViewOnGlobe, className
+  - client/src/components/game/GameLayout.tsx — WarRoomPanel is rendered at
+    line ~770 with onViewOnGlobe={handleViewOnGlobe} already wired
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 1 — server/routes.ts: Add the attackable parcels endpoint
+────────────────────────────────────────────────────────────────────────────────
+
+Find the existing GET /api/battles route block. Directly after it, insert the
+following new route. Do not modify the battles route itself.
+
+// ── GET /api/parcels/attackable ───────────────────────────────────────────
+// Returns up to 50 parcels owned by other players, not under active battle,
+// sorted by total stored resources descending.
+// Optional query param: ?biome=forest
+app.get("/api/parcels/attackable", async (req, res) => {
+  try {
+    const { session } = req as any;
+    const playerId = (session?.playerId as string) ?? "";
+    const biomeFilter = req.query.biome as string | undefined;
+
+    const rows = await withDbRetry(
+      () =>
+        db
+          .select({
+            id:            parcelsTable.id,
+            plotId:        parcelsTable.plotId,
+            biome:         parcelsTable.biome,
+            ownerId:       parcelsTable.ownerId,
+            defenseLevel:  parcelsTable.defenseLevel,
+            lat:           parcelsTable.lat,
+            lng:           parcelsTable.lng,
+            ironStored:    parcelsTable.ironStored,
+            fuelStored:    parcelsTable.fuelStored,
+            crystalStored: parcelsTable.crystalStored,
+            activeBattleId: parcelsTable.activeBattleId,
+          })
+          .from(parcelsTable)
+          .where(
+            sql`
+              ${parcelsTable.ownerId} IS NOT NULL
+              AND ${parcelsTable.ownerId} != ${playerId}
+              AND ${parcelsTable.activeBattleId} IS NULL
+              ${biomeFilter ? sql`AND ${parcelsTable.biome} = ${biomeFilter}` : sql``}
+            `
+          )
+          .orderBy(
+            sql`(${parcelsTable.ironStored} + ${parcelsTable.fuelStored} + ${parcelsTable.crystalStored}) DESC`
+          )
+          .limit(50),
+      "getAttackableParcels"
+    );
+
+    res.json({ parcels: rows });
+  } catch (err) {
+    console.error("[/api/parcels/attackable]", err);
+    res.status(500).json({ error: "Failed to fetch attackable parcels" });
+  }
+});
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 2 — client/src/components/game/GameLayout.tsx: Thread onPlotSelect
+         into WarRoomPanel
+────────────────────────────────────────────────────────────────────────────────
+
+WarRoomPanel currently receives onViewOnGlobe which flies the globe camera to
+a parcel but does not open the LandSheet. For the Targets tab, we need
+onPlotSelect which selects the parcel AND opens the panel.
+
+Find the WarRoomPanel JSX block (around line 770). It currently reads:
+
+  <WarRoomPanel
+    battles={gameState.battles}
+    events={gameState.events}
+    players={gameState.players}
+    onWatchBattle={setWatchingBattleId}
+    onViewOnGlobe={handleViewOnGlobe}
+    className="flex-1 border-0 rounded-none overflow-auto"
+  />
+
+Change it to:
+
+  <WarRoomPanel
+    battles={gameState.battles}
+    events={gameState.events}
+    players={gameState.players}
+    onWatchBattle={setWatchingBattleId}
+    onViewOnGlobe={handleViewOnGlobe}
+    onPlotSelect={setSelectedPlotId}
+    className="flex-1 border-0 rounded-none overflow-auto"
+  />
+
+(setSelectedPlotId is the existing state setter used throughout GameLayout —
+do not rename or move it.)
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 3 — client/src/components/game/WarRoomPanel.tsx: Add Targets tab
+────────────────────────────────────────────────────────────────────────────────
+
+3a. Add the new import at the top of the file, alongside the existing imports:
+
+  import { useQuery } from "@tanstack/react-query";
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+  import { useState } from "react";
+
+3b. Add onPlotSelect to the WarRoomPanelProps interface:
+
+  interface WarRoomPanelProps {
+    battles: Battle[];
+    events: GameEvent[];
+    players: Player[];
+    onWatchBattle?: (battleId: string) => void;
+    onViewOnGlobe?: (parcelId: string) => void;
+    onPlotSelect?: (parcelId: string) => void;   // ← ADD THIS
+    className?: string;
+  }
+
+3c. Destructure the new prop at the top of the WarRoomPanel function:
+
+  export function WarRoomPanel({
+    battles,
+    events,
+    players,
+    onWatchBattle,
+    onViewOnGlobe,
+    onPlotSelect,                                // ← ADD THIS
+    className,
+  }: WarRoomPanelProps) {
+
+3d. Add the biome filter state and data-fetch hook inside the WarRoomPanel
+    function body, before the return statement:
+
+  const [biomeFilter, setBiomeFilter] = useState<string>("all");
+
+  const { data: targetsData, isLoading: targetsLoading } = useQuery<{
+    parcels: Array<{
+      id: string;
+      plotId: number;
+      biome: string;
+      ownerId: string | null;
+      defenseLevel: number;
+      lat: number;
+      lng: number;
+      ironStored: number;
+      fuelStored: number;
+      crystalStored: number;
+    }>;
+  }>({
+    queryKey: ["attackable-parcels", biomeFilter],
+    queryFn: async () => {
+      const url =
+        biomeFilter === "all"
+          ? "/api/parcels/attackable"
+          : `/api/parcels/attackable?biome=${biomeFilter}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch targets");
+      return res.json();
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  const BIOMES = [
+    "all", "forest", "desert", "mountain", "plains",
+    "water", "tundra", "volcanic", "swamp",
+  ];
+
+3e. In the existing Tabs JSX (the component already uses <Tabs> with
+    TabsList/TabsTrigger/TabsContent), add a new "Targets" tab.
+
+Find the existing <TabsList> element. Add a new trigger for the targets tab:
+
+  <TabsTrigger value="targets">Targets</TabsTrigger>
+
+Then add the corresponding TabsContent alongside the existing tab content blocks:
+
+  <TabsContent value="targets" className="mt-0">
+    <div className="p-2 border-b border-border">
+      <Select value={biomeFilter} onValueChange={setBiomeFilter}>
+        <SelectTrigger className="h-7 text-xs">
+          <SelectValue placeholder="Filter by biome" />
+        </SelectTrigger>
+        <SelectContent>
+          {BIOMES.map((b) => (
+            <SelectItem key={b} value={b} className="text-xs capitalize">
+              {b === "all" ? "All Biomes" : b.charAt(0).toUpperCase() + b.slice(1)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+
+    <ScrollArea className="h-[calc(100%-2.5rem)]">
+      {targetsLoading ? (
+        <div className="p-4 text-xs text-muted-foreground text-center">
+          Scanning for targets…
+        </div>
+      ) : !targetsData?.parcels?.length ? (
+        <div className="p-4 text-xs text-muted-foreground text-center">
+          No attackable parcels found.
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {targetsData.parcels.map((parcel) => {
+            const totalResources = Math.floor(
+              parcel.ironStored + parcel.fuelStored + parcel.crystalStored
+            );
+            const owner = players.find((p) => p.id === parcel.ownerId);
+            return (
+              <div
+                key={parcel.id}
+                className="flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      #{parcel.plotId}
+                    </span>
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 capitalize">
+                      {parcel.biome}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      DEF {parcel.defenseLevel}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {owner?.name ?? owner?.id?.slice(0, 8) ?? "Unknown"}
+                    {" · "}
+                    <span className="text-amber-400/80">{totalResources} res</span>
+                  </div>
+                </div>
+                <div className="flex gap-1 shrink-0 ml-2">
+                  {onViewOnGlobe && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => onViewOnGlobe(parcel.id)}
+                    >
+                      <Globe className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onPlotSelect && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => onPlotSelect(parcel.id)}
+                    >
+                      <Swords className="h-3 w-3 mr-1" />
+                      Attack
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ScrollArea>
+  </TabsContent>
+
+────────────────────────────────────────────────────────────────────────────────
+DO NOT TOUCH
+────────────────────────────────────────────────────────────────────────────────
+- Existing battles tab content in WarRoomPanel
+- Existing events tab content in WarRoomPanel
+- Any battle resolution logic in routes.ts
+- Any storage methods (deployAttack, resolveBattles)
+- PlanetGlobe.tsx
+- BattlesPanel.tsx
+- AttackModal.tsx
+
+────────────────────────────────────────────────────────────────────────────────
+Verification checklist
+────────────────────────────────────────────────────────────────────────────────
+□ npx tsc --noEmit passes with zero new errors
+□ GET /api/parcels/attackable returns { parcels: [...] } with correct shape
+□ GET /api/parcels/attackable?biome=desert filters correctly
+□ GET /api/parcels/attackable returns { parcels: [] } (not 500) when no
+  session exists
+□ WarRoom panel shows a "Targets" tab alongside existing tabs
+□ Targets list renders parcel rows sorted by total resources descending
+□ Biome filter dropdown changes the list contents
+□ Clicking the Globe icon on a target row flies the camera to that parcel
+□ Clicking "Attack" on a target row selects the parcel and opens the
+  LandSheet/AttackModal on that tile
+□ Refresh interval keeps the list current (refetches every 30 seconds)

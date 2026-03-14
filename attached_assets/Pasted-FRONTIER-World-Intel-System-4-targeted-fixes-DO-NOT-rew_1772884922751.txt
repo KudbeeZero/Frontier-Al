@@ -1,0 +1,138 @@
+FRONTIER — World Intel System: 4 targeted fixes.
+DO NOT rewrite any file. Apply surgical changes only.
+DO NOT touch storage.ts, routes.ts, db-schema.ts, or server files.
+The game must keep working throughout.
+
+────────────────────────────────────────────────────────────
+FIX 1 — Keep WorldIntelPanel mounted when not on Intel tab
+────────────────────────────────────────────────────────────
+The panel currently unmounts when the user switches away from the
+Intel tab, resetting replayVisibleEvents to [] and clearing all
+globe overlays.
+
+In client/src/components/game/GameLayout.tsx:
+
+Find the fullscreen panel block:
+  {activeTab === "intel" && (
+    <WorldIntelPanel
+      onVisibleEventsChange={setReplayVisibleEvents}
+      className="h-full"
+    />
+  )}
+
+Replace it with:
+  <div
+    className={activeTab === "intel" ? "h-full" : "hidden"}
+    style={{ display: activeTab === "intel" ? undefined : "none" }}
+  >
+    <WorldIntelPanel
+      onVisibleEventsChange={setReplayVisibleEvents}
+      className="h-full"
+    />
+  </div>
+
+Do the same for the desktop sidebar WorldIntelPanel instance.
+Find:
+  desktopRightTab === "intel" ? (
+    <WorldIntelPanel
+      onVisibleEventsChange={setReplayVisibleEvents}
+      className="flex-1 border-0 rounded-none"
+    />
+  )
+
+Replace with:
+  <div
+    className={desktopRightTab === "intel" ? "flex-1 flex flex-col" : "hidden"}
+  >
+    <WorldIntelPanel
+      onVisibleEventsChange={setReplayVisibleEvents}
+      className="flex-1 border-0 rounded-none"
+    />
+  </div>
+
+────────────────────────────────────────────────────────────
+FIX 2 — Live mode: show recent events when scrubber is at "now"
+────────────────────────────────────────────────────────────
+In client/src/lib/worldReplay.ts:
+
+Find the getVisibleEvents function. Replace the entire function body:
+
+  export function getVisibleEvents(
+    events: WorldEvent[],
+    state: ReplayState
+  ): WorldEvent[] {
+    const { currentTs, activeLayers, rangeEnd } = state;
+
+    // Live mode: scrubber within 10s of rangeEnd → show all events in window
+    const isLive = rangeEnd - currentTs < 10_000;
+
+    return events.filter((e) => {
+      const layer = EVENT_LAYER_MAP[e.type];
+      if (!activeLayers.has(layer)) return false;
+
+      if (isLive) {
+        // Show all events in the loaded window
+        return e.timestamp >= state.rangeStart && e.timestamp <= rangeEnd;
+      }
+
+      // Scrubbing mode: time-window filter
+      if (e.endTimestamp !== undefined) {
+        return e.timestamp <= currentTs && currentTs <= e.endTimestamp;
+      }
+      // Point-in-time: 30s window while scrubbing (wide enough to be visible)
+      return Math.abs(e.timestamp - currentTs) <= 30_000;
+    });
+  }
+
+────────────────────────────────────────────────────────────
+FIX 3 — Prevent cascade re-renders from onVisibleEventsChange
+────────────────────────────────────────────────────────────
+In client/src/components/game/WorldIntelPanel.tsx:
+
+Find the useEffect that calls onVisibleEventsChange:
+  useEffect(() => {
+    onVisibleEventsChange(visibleEvents);
+  }, [visibleEvents, onVisibleEventsChange]);
+
+Replace it with a ref-guarded version that only fires when the
+event IDs actually change (not on every array recreation):
+
+  const prevIdsRef = useRef<string>("");
+  useEffect(() => {
+    const ids = visibleEvents.map(e => e.id).join(",");
+    if (ids === prevIdsRef.current) return;
+    prevIdsRef.current = ids;
+    onVisibleEventsChange(visibleEvents);
+  }, [visibleEvents, onVisibleEventsChange]);
+
+Make sure useRef is imported — it already is, no change needed.
+
+────────────────────────────────────────────────────────────
+FIX 4 — Default scrubber position to live (rangeEnd), not start
+────────────────────────────────────────────────────────────
+In client/src/lib/worldReplay.ts:
+
+Find defaultReplayState():
+  currentTs:    now - RANGE_PRESET_MS["1h"],
+
+Change to:
+  currentTs:    now,
+
+This means on first open the panel shows live events immediately
+instead of starting at the beginning of the 1h window.
+
+────────────────────────────────────────────────────────────
+VERIFICATION
+────────────────────────────────────────────────────────────
+After these changes confirm:
+1. Open the Intel tab — event list loads and shows recent events
+2. Click "Seed Demo Data" if empty (dev only)
+3. Switch to Map tab — globe overlays stay visible if events existed
+4. Switch back to Intel tab — panel state is preserved (scrubber
+   position, layer toggles, playing state all intact)
+5. Press play — scrubber advances and globe overlays animate
+6. Toggle a layer off (e.g. Battles) — those markers disappear
+   from the globe immediately
+7. No console errors. No performance degradation on globe.
+
+DO NOT touch server files, storage.ts, routes.ts, or shared/worldEvents.ts.

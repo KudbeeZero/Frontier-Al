@@ -1,0 +1,229 @@
+FRONTIER — Battle Wiring Pass (Prompt 2 of N)
+Project: FRONTIER MMO Strategy Game
+
+CONTEXT: Foundation Pass (Prompt 1) already added:
+  - influence + influenceRepairRate columns to parcels (default 100 / 2.0)
+  - crystalBurned + influenceDamage columns to battles (default 0)
+  - CRYSTAL_POWER_FACTOR, BASE_INFLUENCE_DAMAGE, etc. to tuning.ts
+  - influence/influenceRepairRate fields to LandParcel interface
+  - crystalBurned?/influenceDamage? fields to Battle interface
+
+GOAL: Wire these new fields into the live battle flow — three precise surgical 
+edits only. Everything else stays exactly as it is.
+
+DO NOT:
+- Remove troopsCommitted from anywhere — leave it in the schema, types, and 
+  the attack payload. It stays. We are not removing it.
+- Change the ownership transfer logic in resolveBattles (ownerId still changes 
+  on attacker win — that stays)
+- Touch the in-memory storage class (MemStorage) — DB class only
+- Touch any file in client/src/ — UI stays exactly as it is
+- Touch routes.ts, index.ts, db.ts, vite.ts
+- Modify the AI turn logic
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 1 — server/storage.ts → rowToParcel function
+Line ~1369: Add the two new fields to the return object
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND the rowToParcel function. At the end of its return object, after 
+handoverCount, ADD these two lines:
+
+    influence:           (row as any).influence         ?? 100,
+    influenceRepairRate: (row as any).influenceRepairRate ?? 2.0,
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 2 — server/storage.ts → rowToBattle function
+Line ~1433: Add the two new fields to the return object
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND the rowToBattle function. At the end of its return object, after 
+commanderId, ADD:
+
+    crystalBurned:   (row as any).crystalBurned   ?? 0,
+    influenceDamage: (row as any).influenceDamage  ?? 0,
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 3 — server/storage.ts → DB deployAttack method
+Line ~2411: Add crystal burn to the power formula and battle record
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND the DB deployAttack method (the second deployAttack in the file, 
+inside the DB storage class, around line 2411).
+
+Step A — Add crystal validation after the iron/fuel check:
+
+FIND:
+  const { iron, fuel } = action.resourcesBurned;
+  if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
+
+REPLACE WITH:
+  const { iron, fuel } = action.resourcesBurned;
+  const crystal = action.crystalBurned ?? 0;
+  if (attacker.iron < iron || attacker.fuel < fuel) throw new Error("Insufficient resources for attack");
+  if (attacker.crystal < crystal) throw new Error("Insufficient crystal for attack");
+
+Step B — Update the power formula:
+
+FIND:
+  const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + commanderBonus;
+
+REPLACE WITH:
+  const rawAttackerPower = action.troopsCommitted * 10 + iron * 0.5 + fuel * 0.8 + crystal * 1.2 + commanderBonus;
+
+Step C — Add crystal to the player deduction in playerUpdates:
+
+FIND:
+  const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel };
+
+REPLACE WITH:
+  const playerUpdates: Record<string, any> = { iron: attackerRow.iron - iron, fuel: attackerRow.fuel - fuel, crystal: attackerRow.crystal - crystal };
+
+Step D — Add crystalBurned to the battleValues object:
+
+FIND:
+  const battleValues = {
+    id:               battleId,
+    attackerId:       attacker.id,
+    defenderId:       target.ownerId ?? null,
+    targetParcelId:   target.id,
+    attackerPower,
+    defenderPower,
+    troopsCommitted:  action.troopsCommitted,
+    resourcesBurned:  { iron, fuel },
+    startTs:          now,
+    resolveTs:        now + BATTLE_DURATION_MS,
+    status:           "pending" as const,
+    commanderId:      commanderId ?? null,
+  };
+
+REPLACE WITH (add crystalBurned and influenceDamage, leave everything else identical):
+  const battleValues = {
+    id:               battleId,
+    attackerId:       attacker.id,
+    defenderId:       target.ownerId ?? null,
+    targetParcelId:   target.id,
+    attackerPower,
+    defenderPower,
+    troopsCommitted:  action.troopsCommitted,
+    resourcesBurned:  { iron, fuel },
+    crystalBurned:    crystal,
+    influenceDamage:  0,
+    startTs:          now,
+    resolveTs:        now + BATTLE_DURATION_MS,
+    status:           "pending" as const,
+    commanderId:      commanderId ?? null,
+  };
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDIT 4 — server/storage.ts → DB resolveBattles method
+Line ~2783: Apply influence damage on attacker win, write it to the battle row
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIND the DB resolveBattles method (around line 2783).
+
+Step A — After the line that reads targetRow and attackerRow, add influence 
+damage calculation. 
+
+FIND this block (inside the per-battle transaction, after fetching targetRow 
+and attackerRow):
+
+  if (!targetRow || !attackerRow) return;
+
+  await tx.update(parcelsTable)
+    .set({ activeBattleId: null })
+    .where(eq(parcelsTable.id, targetRow.id));
+
+REPLACE WITH:
+  if (!targetRow || !attackerRow) return;
+
+  // ── Influence damage calculation ──────────────────────────────────────
+  const totalDefenseLevels = ((targetRow.improvements ?? []) as any[])
+    .filter((i: any) => ["turret", "shield_gen", "fortress"].includes(i.type))
+    .reduce((sum: number, i: any) => sum + (i.level ?? 1), 0);
+  const rawInfluenceDamage = attackerWins
+    ? Math.max(
+        MIN_INFLUENCE_DAMAGE,
+        Math.round(BASE_INFLUENCE_DAMAGE * (1 - totalDefenseLevels * INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL))
+      )
+    : 0;
+  const currentInfluence = (targetRow as any).influence ?? 100;
+  const newInfluence = attackerWins
+    ? Math.max(0, currentInfluence - rawInfluenceDamage)
+    : currentInfluence;
+
+  await tx.update(parcelsTable)
+    .set({ activeBattleId: null })
+    .where(eq(parcelsTable.id, targetRow.id));
+
+Step B — Add the import for the new tuning constants at the top of the 
+resolveBattles method's scope. These are already exported from tuning.ts, 
+so just add them to the existing import from tuning in storage.ts.
+
+FIND the existing import line in storage.ts that pulls from battle/tuning 
+(or battle/resolve). It will look something like:
+  import { PILLAGE_RATE, ... } from "./engine/battle/tuning.js";
+  or similar
+
+ADD to that same import:
+  BASE_INFLUENCE_DAMAGE,
+  INFLUENCE_DAMAGE_REDUCTION_PER_LEVEL,
+  MIN_INFLUENCE_DAMAGE,
+
+Step C — On attacker win, add influence update to the existing parcel update.
+
+FIND this line inside the attackerWins block in resolveBattles 
+(it's inside the Promise.all, in the tx.update for parcelsTable):
+
+    .set({
+      ownerId:              attackerRow.id,
+      ownerType:            attackerRow.isAi ? "ai" : "player",
+      defenseLevel:         Math.max(1, Math.floor(targetRow.defenseLevel / 2)),
+      ironStored:           targetRow.ironStored    - pillagedIron,
+      fuelStored:           targetRow.fuelStored    - pillagedFuel,
+      crystalStored:        targetRow.crystalStored - pillagedCrystal,
+      purchasePriceAlgo:    null,
+      lastFrontierClaimTs:  now,
+      ...reconquestUpdates,
+    })
+
+REPLACE WITH (add influence: newInfluence — leave every other field identical):
+    .set({
+      ownerId:              attackerRow.id,
+      ownerType:            attackerRow.isAi ? "ai" : "player",
+      defenseLevel:         Math.max(1, Math.floor(targetRow.defenseLevel / 2)),
+      ironStored:           targetRow.ironStored    - pillagedIron,
+      fuelStored:           targetRow.fuelStored    - pillagedFuel,
+      crystalStored:        targetRow.crystalStored - pillagedCrystal,
+      influence:            newInfluence,
+      purchasePriceAlgo:    null,
+      lastFrontierClaimTs:  now,
+      ...reconquestUpdates,
+    })
+
+Step D — Write influenceDamage back to the battle record.
+
+FIND the line that updates the battle status:
+  await tx.update(battlesTable)
+    .set({ status: "resolved", outcome, randFactor })
+    .where(eq(battlesTable.id, battleRow.id));
+
+REPLACE WITH:
+  await tx.update(battlesTable)
+    .set({ status: "resolved", outcome, randFactor, influenceDamage: rawInfluenceDamage })
+    .where(eq(battlesTable.id, battleRow.id));
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. npx tsc --noEmit → zero errors
+2. troopsCommitted still exists in battleValues, the schema, and the 
+   attackMutation payload in GameLayout.tsx — confirm untouched
+3. Ownership transfer (ownerId change) still happens on attacker win — confirm
+4. Pillage logic (pillagedIron/fuel/crystal) still intact — confirm
+5. Morale debuff + cascade penalty still intact — confirm
+6. No files in client/src/ were modified
+7. Test: fire a real attack in the game and confirm it resolves. After 
+   resolution, check the target parcel's influence value in the DB — it 
+   should be less than 100 if the attacker won.

@@ -30,6 +30,37 @@ export const plotNfts = pgTable("plot_nfts", {
   mintedAt:        bigint("minted_at", { mode: "number" }),          // Unix ms timestamp of mint
 });
 
+// ─── mint_idempotency ──────────────────────────────────────────────────────────
+// Prevents double-minting when a player clicks "purchase" twice in rapid succession.
+// Key format: "mint:{playerId}:{plotId}"
+// Status lifecycle: pending → confirmed | failed
+// Routes MUST check for an existing "pending" or "confirmed" row before submitting
+// a new on-chain transaction.
+
+export const mintIdempotency = pgTable("mint_idempotency", {
+  key:       text("key").primaryKey(),                                   // "mint:{playerId}:{plotId}"
+  status:    varchar("status", { length: 10 }).notNull().default("pending"), // pending|confirmed|failed
+  assetId:   bigint("asset_id",  { mode: "number" }),                    // filled on confirmed
+  txId:      text("tx_id"),                                              // on-chain txId on confirmed
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+
+// ─── ai_faction_identities ────────────────────────────────────────────────────
+// One row per AI faction. Records the on-chain Algorand ASA that serves as
+// that faction's permanent identity token. Minted once at world init.
+// assetId is NULL until the ASA is confirmed on-chain.
+// This table is append-only after world seed — never deleted, never updated
+// except to record the confirmed assetId and txId.
+
+export const aiFactionIdentities = pgTable("ai_faction_identities", {
+  factionName:  varchar("faction_name", { length: 20 }).primaryKey(), // "NEXUS-7" etc.
+  assetId:      bigint("asset_id",  { mode: "number" }),              // NULL until minted
+  mintTxId:     text("mint_tx_id"),                                   // Algorand txId of create
+  mintedAt:     bigint("minted_at", { mode: "number" }),              // Unix ms
+  explorerUrl:  text("explorer_url"),                                 // e.g. https://allo.info/asset/X
+});
+
 // ─── game_meta ────────────────────────────────────────────────────────────────
 // Singleton row (id=1) that records whether the world has been seeded and
 // stores the current turn counter / last-update timestamp.
@@ -115,6 +146,15 @@ export const parcels = pgTable(
     frontierAccumulated:  real("frontier_accumulated").notNull().default(0),
     lastFrontierClaimTs:  bigint("last_frontier_claim_ts", { mode: "number" }).notNull().default(0),
     frontierPerDay:       real("frontier_per_day").notNull().default(1),
+
+    // ── Reconquest Tracking ────────────────────────────────────────────────
+    // Set when a human player captures a plot previously owned by an AI faction.
+    // Drives the AI reconquest engine decision logic.
+    capturedFromFaction:  varchar("captured_from_faction", { length: 20 }),  // e.g. "NEXUS-7"
+    capturedAt:           bigint("captured_at",  { mode: "number" }),         // Unix ms of capture
+    handoverCount:        integer("handover_count").notNull().default(0),     // exchanges between same player+faction
+    influence:            integer("influence").notNull().default(100),
+    influenceRepairRate:  real("influence_repair_rate").notNull().default(2.0),
   },
   (t) => ({
     /** Fast lookup of all plots owned by a given player. */
@@ -136,6 +176,8 @@ export const battles = pgTable(
     attackerPower:    real("attacker_power").notNull(),
     defenderPower:    real("defender_power").notNull(),
     troopsCommitted:  integer("troops_committed").notNull(),
+    crystalBurned:    integer("crystal_burned").notNull().default(0),
+    influenceDamage:  integer("influence_damage").notNull().default(0),
     resourcesBurned:  jsonb("resources_burned").$type<{ iron: number; fuel: number }>().notNull(),
     startTs:          bigint("start_ts", { mode: "number" }).notNull(),
     resolveTs:        bigint("resolve_ts", { mode: "number" }).notNull(),
@@ -143,6 +185,7 @@ export const battles = pgTable(
     outcome:          varchar("outcome", { length: 20 }),
     randFactor:       real("rand_factor"),
     commanderId:      varchar("commander_id", { length: 36 }),
+    sourceParcelId:   varchar("source_parcel_id", { length: 36 }),
   },
   (t) => ({
     /** Used by resolveBattles() to efficiently find pending battles past their resolveTs. */
@@ -175,6 +218,28 @@ export const orbitalEvents = pgTable(
     activeIdx: index("orbital_events_active_idx").on(t.resolved, t.endAt),
   })
 );
+
+// ─── trade_orders ─────────────────────────────────────────────────────────────
+// Peer-to-peer resource exchange orders.
+// Status lifecycle: open → filled | cancelled
+
+export const tradeOrders = pgTable("trade_orders", {
+  id:           varchar("id", { length: 36 }).primaryKey(),
+  offererId:    varchar("offerer_id", { length: 36 }).notNull(),
+  offererName:  varchar("offerer_name", { length: 100 }).notNull(),
+  giveResource: varchar("give_resource", { length: 20 }).notNull(),
+  giveAmount:   integer("give_amount").notNull(),
+  wantResource: varchar("want_resource", { length: 20 }).notNull(),
+  wantAmount:   integer("want_amount").notNull(),
+  status:       varchar("status", { length: 20 }).notNull().default("open"),
+  createdAt:    bigint("created_at", { mode: "number" }).notNull(),
+  filledById:   varchar("filled_by_id", { length: 36 }),
+  filledByName: varchar("filled_by_name", { length: 100 }),
+  filledAt:     bigint("filled_at", { mode: "number" }),
+});
+
+export type TradeOrder = typeof tradeOrders.$inferSelect;
+export type InsertTradeOrder = typeof tradeOrders.$inferInsert;
 
 // ─── game_events ──────────────────────────────────────────────────────────────
 

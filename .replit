@@ -1,19 +1,18 @@
-modules = ["nodejs-20", "web"]
+modules = ["nodejs-20", "python-3.11", "web", "postgresql-16"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["nano", "emacsclient-commands", "lsof", "gt"]
+packages = ["emacsclient-commands", "gt", "lsof", "nano", "psmisc", "run"]
 
 [env]
 PORT = "5000"
 
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "cloudrun"
 build = ["npm", "run", "build"]
-run = ["npm", "run", "start"]
-publicDir = "dist/public"
+run = ["node", "./dist/index.cjs"]
 
 [workflows]
 
@@ -37,16 +36,33 @@ args = "npm run dev"
 waitForPort = 5000
 
 [[ports]]
-localPort = 5000
-externalPort = 8080
-
-[[ports]]
-localPort = 5001
+localPort = 3000
 externalPort = 80
 
 [[ports]]
-localPort = 5002
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 4321
 externalPort = 3000
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
+localPort = 5001
+
+[[ports]]
+localPort = 5002
+externalPort = 9000
 
 [agent]
 expertMode = true
+
+[userenv]
+
+[userenv.production]
+PORT = "3000"
+NODE_ENV = "production"

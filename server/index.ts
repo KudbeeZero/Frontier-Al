@@ -1,7 +1,13 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { hydrateWorldEventsFromRedis } from "./worldEventStore";
+import { warmUpDb } from "./db";
+import { assertChainConfig } from "./services/chain/client";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import path from "path";
+import fs from "fs";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,6 +66,34 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // 1. Healthcheck route (Task 1 & 2)
+  // Respond 200 to "/" and "/health" for Replit production healthchecks
+  app.get("/health", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
+  app.get("/", (req, res, next) => {
+    // Return a plain text response for healthcheck requests to "/"
+    // but only if it's not a browser request for the HTML app
+    if (process.env.NODE_ENV === "production") {
+      const isHtmlRequest = req.headers.accept?.includes("text/html");
+      const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+      const isReplitHealthcheck = !userAgent || userAgent.includes("replit") || userAgent.includes("healthcheck") || userAgent.includes("uptimerobot");
+
+      if (!isHtmlRequest || isReplitHealthcheck) {
+        return res.status(200).send("Frontier server running");
+      }
+    }
+    next();
+  });
+
+  assertChainConfig();
+  const { initWsServer } = await import("./wsServer");
+  initWsServer(httpServer, storage);
+  // Wake up Neon DB before accepting traffic (handles cold-start timeouts)
+  await warmUpDb();
+  // Hydrate world event feed from Redis (no-op if Redis unavailable)
+  await hydrateWorldEventsFromRedis();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -82,7 +116,7 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
   httpServer.listen(
     {
       port,
@@ -91,13 +125,6 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
-      if (process.env.NODE_ENV === "production") {
-        if (!process.env.PUBLIC_BASE_URL) {
-          log("WARNING: PUBLIC_BASE_URL is not set — NFT image/metadata URLs will use the request host as a per-request fallback. Set PUBLIC_BASE_URL to the canonical public URL of this deployment.");
-        } else {
-          log(`PUBLIC_BASE_URL = ${process.env.PUBLIC_BASE_URL}`);
-        }
-      }
     },
   );
 })();

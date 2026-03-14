@@ -1,0 +1,162 @@
+PASS: Mobile Layout Fix — Effect Text, Biome Row, Facility Card Display
+SCOPE: client/src/components/game/LandSheet.tsx and shared/schema.ts only
+DO NOT TOUCH: any backend file, storage, routes, WebSocket, or schema migrations.
+
+════════════════════════════════════════
+CONTEXT
+════════════════════════════════════════
+Three mobile layout bugs visible after the last prompt:
+
+1. Effect strings on defense improvement cards are too long (41-47 chars)
+   and overflow the 2-column card grid on mobile screens.
+
+2. The biome yield profile row tries to show 3 multipliers in a single
+   ml-auto span — too wide for 375px screens, causes overflow or wrapping.
+
+3. Facility cards for Data Centre and AI Lab now have frontierPerDay=[0,0,0]
+   but the card still renders the perDay value as "+0/day". These facilities
+   need to show their actual new effects instead.
+
+════════════════════════════════════════
+EDIT 1 — shared/schema.ts
+Shorten effect strings to fit ~28 chars max (mobile card width)
+════════════════════════════════════════
+
+FIND:
+  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 defense + bonus battle power per level" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield that absorbs attack damage and reduces influence loss.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 defense + reduces influence damage per level" },
+  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity per level" },
+  radar: { name: "Radar Array", description: "Detects incoming attacks early. Attacker power is reduced by 10% against radar-equipped plots.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attacker power" },
+  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 defense, +50 storage capacity" },
+
+REPLACE WITH:
+  turret: { name: "Turret", description: "Automated defense turret. Each level adds power to battle defense.", cost: { iron: 40, fuel: 20 }, maxLevel: 3, effect: "+3 def · battle power/lvl" },
+  shield_gen: { name: "Shield Generator", description: "Energy shield that reduces influence loss on attack.", cost: { iron: 60, fuel: 40 }, maxLevel: 2, effect: "+5 def · less influence dmg" },
+  storage_depot: { name: "Storage Depot", description: "Expands resource storage so mining runs longer before capping.", cost: { iron: 35, fuel: 15 }, maxLevel: 3, effect: "+200 storage capacity/lvl" },
+  radar: { name: "Radar Array", description: "Detects incoming attacks. Reduces incoming attacker power by 10%.", cost: { iron: 45, fuel: 35 }, maxLevel: 1, effect: "-10% incoming attack power" },
+  fortress: { name: "Fortress", description: "Massive fortification providing maximum defense and storage.", cost: { iron: 200, fuel: 150 }, maxLevel: 1, effect: "+8 def · +50 storage" },
+
+════════════════════════════════════════
+EDIT 2 — client/src/components/game/LandSheet.tsx
+Fix biome yield row to wrap gracefully on mobile
+════════════════════════════════════════
+
+FIND:
+          {/* Biome yield profile */}
+          <div className="mb-2 px-1 flex items-center gap-2 text-[10px] text-muted-foreground font-display uppercase tracking-wide">
+            <span style={{ color: biomeColors[parcel.biome] }}>■</span>
+            <span>{parcel.biome} zone</span>
+            <span className="ml-auto font-mono text-[9px]">
+              ⛏ ×{biomeBonus.ironMod.toFixed(1)} iron &nbsp;
+              ⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel &nbsp;
+              💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal
+            </span>
+          </div>
+
+REPLACE WITH:
+          {/* Biome yield profile */}
+          <div className="mb-2 px-1">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-display uppercase tracking-wide mb-1">
+              <span style={{ color: biomeColors[parcel.biome] }}>■</span>
+              <span>{parcel.biome} zone</span>
+            </div>
+            <div className="flex gap-3 font-mono text-[9px] text-muted-foreground">
+              <span className="text-iron">⛏ ×{biomeBonus.ironMod.toFixed(1)} iron</span>
+              <span className="text-fuel">⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel</span>
+              <span className="text-purple-400">💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal</span>
+            </div>
+          </div>
+
+════════════════════════════════════════
+EDIT 3 — client/src/components/game/LandSheet.tsx
+Fix facility cards to show correct effect for Data Centre and AI Lab
+════════════════════════════════════════
+
+FIND the facility card rendering block (inside the FACILITY_INFO map):
+                    const existing = parcel.improvements.find(i => i.type === type);
+                    const atMax = existing && existing.level >= info.maxLevel;
+                    const level = existing ? existing.level + 1 : 1;
+                    const cost = atMax ? 0 : info.costFrontier[level - 1];
+                    const canAfford = player && player.frontier >= cost;
+                    const hasPrereq = !info.prerequisite || parcel.improvements.find(i => i.type === info.prerequisite);
+                    const perDay = atMax ? info.frontierPerDay[info.maxLevel - 1] : info.frontierPerDay[level - 1];
+
+                    return (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBuild(type)}
+                        disabled={isBuilding || !!atMax || !canAfford || !hasPrereq}
+                        className={cn("flex-col items-start h-auto py-2 px-2.5 text-left", !hasPrereq && "opacity-50")}
+                        data-testid={`button-build-${type}`}
+                      >
+                        <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
+                        {existing && <span className="text-[9px] text-primary font-mono">Lv{existing.level}</span>}
+                        <span className="text-[9px] text-muted-foreground font-mono">
+                          {atMax ? "MAX" : `${cost} FRNTR`}
+                        </span>
+                        <span className="text-[9px] text-primary/70 font-mono">+{perDay}/day</span>
+                        {!hasPrereq && <span className="text-[8px] text-destructive">Needs Electricity</span>}
+                      </Button>
+                    );
+
+REPLACE WITH:
+                    const existing = parcel.improvements.find(i => i.type === type);
+                    const atMax = existing && existing.level >= info.maxLevel;
+                    const level = existing ? existing.level + 1 : 1;
+                    const cost = atMax ? 0 : info.costFrontier[level - 1];
+                    const canAfford = player && player.frontier >= cost;
+                    const hasPrereq = !info.prerequisite || parcel.improvements.find(i => i.type === info.prerequisite);
+                    const perDay = info.frontierPerDay[Math.min(level - 1, info.frontierPerDay.length - 1)];
+                    const showsIncome = perDay > 0;
+
+                    return (
+                      <Button
+                        key={type}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onBuild(type)}
+                        disabled={isBuilding || !!atMax || !canAfford || !hasPrereq}
+                        className={cn("flex-col items-start h-auto py-2 px-2.5 text-left", !hasPrereq && "opacity-50")}
+                        data-testid={`button-build-${type}`}
+                      >
+                        <span className="text-[10px] font-display uppercase tracking-wide">{info.name}</span>
+                        {existing && (
+                          <span className="text-[9px] text-primary font-mono">
+                            Lv{existing.level}{existing.level < info.maxLevel ? ` → Lv${existing.level + 1}` : " MAX"}
+                          </span>
+                        )}
+                        <span className="text-[9px] text-muted-foreground font-mono">
+                          {atMax ? "✓ MAX" : `${cost} FRNTR`}
+                        </span>
+                        {showsIncome
+                          ? <span className="text-[9px] text-primary/70 font-mono">+{perDay} FRNTR/day</span>
+                          : <span className="text-[9px] text-primary/70 font-mono">{info.effect}</span>
+                        }
+                        {!hasPrereq && (
+                          <span className="text-[8px] text-destructive flex items-center gap-0.5">
+                            🔒 Needs Electricity
+                          </span>
+                        )}
+                      </Button>
+                    );
+
+════════════════════════════════════════
+VERIFICATION CHECKLIST
+════════════════════════════════════════
+1. Run: npx tsc --noEmit — expect zero errors
+
+2. All defense improvement effect strings are under 28 characters
+
+3. Biome yield row is two lines: biome name on top, three resource
+   multipliers below in a flex row — no ml-auto single-line overflow
+
+4. Facility cards for Data Centre and AI Lab show info.effect text
+   (e.g. "+5/10/15% resource yield") instead of "+0/day"
+
+5. Blockchain Node and Electricity still show "+X FRNTR/day" (perDay > 0)
+
+6. Facility cards show "Lv1 → Lv2" upgrade path when already built
+
+DO NOT touch any backend file, schema migrations, or any other component.
