@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { saveBattleReplay, type BattleReplayRecord } from "../services/redis";
+import { saveBattleReplay, type BattleReplayRecord, getParcelAnimations, setParcelAnimation } from "../services/redis";
 import type {
   LandParcel,
   Player,
@@ -494,15 +494,24 @@ export class DbStorage implements IStorage {
       (sum, p) => sum + fromMicroFRNTR(p.frntrBalanceMicro), 0
     );
 
-    const slimParcels: SlimParcel[] = allParcels.map(r => ({
-      id:             r.id,
-      plotId:         r.plotId,
-      lat:            r.lat,
-      lng:            r.lng,
-      biome:          r.biome as BiomeType,
-      ownerId:        r.ownerId ?? null,
-      activeBattleId: r.activeBattleId ?? null,
-    }));
+    const ownedPlotIds = allParcels.filter(p => p.ownerId).map(p => p.plotId);
+    const animationMap = await getParcelAnimations(ownedPlotIds);
+
+    const now = Date.now();
+    const slimParcels: SlimParcel[] = allParcels.map(r => {
+      const anim = animationMap[r.plotId];
+      const activeAnim = anim && (!anim.endTs || now < anim.endTs) ? anim : undefined;
+      return {
+        id:             r.id,
+        plotId:         r.plotId,
+        lat:            r.lat,
+        lng:            r.lng,
+        biome:          r.biome as BiomeType,
+        ownerId:        r.ownerId ?? null,
+        activeBattleId: r.activeBattleId ?? null,
+        ...(activeAnim ? { animation: activeAnim } : {}),
+      };
+    });
 
     const slimPlayers: SlimPlayer[] = allPlayers.map(r => ({
       id:      r.id,
@@ -975,6 +984,15 @@ export class DbStorage implements IStorage {
         timestamp:   now,
       }, tx);
       await this.bumpLastTs(now, tx);
+
+      // Fire a 24-hour gold pulse animation on the newly purchased plot.
+      void setParcelAnimation(parcelRow.plotId, {
+        type:      "pulse_gold",
+        colorHex:  "#ffd700",
+        intensity: 0.85,
+        startTs:   now,
+        endTs:     now + 86_400_000,
+      }, 86_400);
 
       return rowToParcel({ ...parcelRow, ownerId: playerRow.id, ownerType, purchasePriceAlgo: null, lastFrontierClaimTs: now });
     });

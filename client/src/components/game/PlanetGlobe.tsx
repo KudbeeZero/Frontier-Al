@@ -1096,6 +1096,25 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else {
         // Tile is in toProcess but no special state — restore ownership colour.
         fillColor = getPlotColor(parcel, currentPlayerId);
+
+        // Apply Redis-driven parcel animation if active.
+        const anim = (parcel as SlimParcel)?.animation;
+        if (isOwned && anim && anim.type !== "none") {
+          const animExpired = anim.endTs !== null && Date.now() > anim.endTs;
+          if (!animExpired) {
+            const animColor = new THREE.Color(anim.colorHex);
+            if (anim.type === "pulse_gold" || anim.type === "glow_cyan") {
+              const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.15;
+              fillColor = animColor.multiplyScalar(pulse * anim.intensity);
+            } else if (anim.type === "shimmer_blue") {
+              const shimmer = 0.7 + Math.sin(pulseRef.current * 4 + coord.plotId) * 0.3;
+              fillColor = animColor.multiplyScalar(shimmer * anim.intensity);
+            } else if (anim.type === "strobe_red") {
+              const strobe = Math.sin(pulseRef.current * 8) > 0 ? 1.0 : 0.2;
+              fillColor = animColor.multiplyScalar(strobe * anim.intensity);
+            }
+          }
+        }
       }
 
       const borderColor = isSelected || isHovered
@@ -1104,9 +1123,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
 
-      // Unowned tiles: hide fill so terrain shows through; keep border visible for the land grid.
+      // Unowned tiles: hide fill and border so globe terrain shows through.
       const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.0;
-      const borderScale = 1.0;
+      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.0;
 
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
@@ -1124,17 +1143,6 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
     }
 
-    // Land color pulse — slow breathing on all unowned tile borders.
-    if (unownedIndices.length > 0) {
-      const landPulse = 0.45 + Math.sin(pulseRef.current * 0.6) * 0.25;
-      const landColor = COLOR_BORDER_UNOWNED.clone().multiplyScalar(landPulse);
-      for (const i of unownedIndices) {
-        borderMeshRef.current.setColorAt(i, landColor);
-      }
-      if (borderMeshRef.current.instanceColor) {
-        borderMeshRef.current.instanceColor.needsUpdate = true;
-      }
-    }
   });
 
   useEffect(() => {
@@ -1168,9 +1176,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : COLOR_BORDER_UNOWNED.clone();
 
-      // Unowned tiles: hide fill so terrain shows through; keep border visible for land grid.
+      // Unowned tiles: hide fill and border so globe terrain shows through.
       const fillScale   = isOwned || isSelected ? 1.0 : 0.0;
-      const borderScale = 1.0;
+      const borderScale = isOwned || isSelected ? 1.0 : 0.0;
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
     }
