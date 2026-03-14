@@ -1129,9 +1129,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
 
-      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.88;
-      // Unowned tiles: border scale=0 — eliminates the dark ring that protrudes
-      // beyond the fill circle and causes the "black hex grid" overlay.
+      // Unowned tiles: scale=0 hides both fill and border so the terrain texture
+      // shows through cleanly — no dark hex grid overlay on unowned plots.
+      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.0;
       const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.0;
 
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
@@ -1185,7 +1185,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
 
-      const fillScale   = isOwned || isSelected ? 1.0 : 0.88;
+      // Unowned tiles: scale=0 hides fill entirely so terrain shows through.
+      const fillScale   = isOwned || isSelected ? 1.0 : 0.0;
       const borderScale = isOwned || isSelected ? 1.0 : 0.0;
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
