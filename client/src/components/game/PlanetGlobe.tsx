@@ -34,7 +34,7 @@ const FACTION_COLORS: Record<string, {
 };
 
 // Tile fill palette — flat, always-on, no per-frame multiplication needed.
-const COLOR_PLAYER   = new THREE.Color("#00e676"); // bright green — your territory
+const COLOR_PLAYER   = new THREE.Color("#00ff88"); // vivid neon-green — your territory
 const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy player territory
 const COLOR_AI       = new THREE.Color("#ff6d00"); // same orange — AI faction territory
 const COLOR_BATTLE   = new THREE.Color("#ff1744"); // red — active battle
@@ -46,6 +46,8 @@ const COLOR_UNOWNED  = new THREE.Color("#1a3a5c");
 // Border colors
 const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
 const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue grid
+// Unowned hover/select: soft transparent-white (0.70 * 0.82 opacity ≈ 57% white visually)
+const COLOR_UNOWNED_HOVER  = new THREE.Color(0.70, 0.70, 0.70);
 
 // ── Biome color palette ───────────────────────────────────────────────────────
 // Vibrant, distinct colours used as the BASE for every plot tile.
@@ -1016,8 +1018,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const fillSize   = GLOBE_RADIUS * 0.022;
-  const borderSize = GLOBE_RADIUS * 0.025;
+  const fillSize   = GLOBE_RADIUS * 0.026;
+  const borderSize = GLOBE_RADIUS * 0.030;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -1086,10 +1088,12 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       let fillColor: THREE.Color;
 
       if (isHovered) {
-        fillColor = COLOR_HOVER.clone();
+        fillColor = isOwned ? COLOR_HOVER.clone() : COLOR_UNOWNED_HOVER.clone();
       } else if (isSelected) {
         const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.08;
-        fillColor = COLOR_SELECTED.clone().multiplyScalar(pulse);
+        fillColor = isOwned
+          ? COLOR_SELECTED.clone().multiplyScalar(pulse)
+          : COLOR_UNOWNED_HOVER.clone().multiplyScalar(pulse);
       } else if (parcel?.activeBattleId) {
         const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
         fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
@@ -1162,7 +1166,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const isSelected = parcel?.id === selectedPlotId;
 
       if (isSelected) {
-        fillColor = COLOR_SELECTED.clone();
+        fillColor = isOwned ? COLOR_SELECTED.clone() : COLOR_UNOWNED_HOVER.clone();
       } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else {
@@ -1253,7 +1257,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.25}
+          opacity={0.82}
           depthWrite={true}
           side={THREE.DoubleSide}
           toneMapped={false}
