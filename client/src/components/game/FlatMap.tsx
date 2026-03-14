@@ -1,6 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import type { LandParcel, BiomeType } from "@shared/schema";
-import { biomeColors } from "@shared/schema";
 
 const SECTOR_NAMES: Record<string, string> = {
   "NW": "Arctic Command",
@@ -54,19 +53,12 @@ const COLORS = {
   playerGlow: "#00ff88",
   enemy: "#ff2222",
   enemyGlow: "#ff6644",
-  unclaimed: "#1a1a1a",
-  selected: "#00e5ff",     // cyan
-  selectedGlow: "#00b8cc", // darker cyan for shadow glow
-  hover: "#6699bb",        // muted blue-grey
+  unclaimed: "#00ff44",    // green — visible but dim
+  selected: "#00ff44",     // green when selected (owned or not)
+  selectedGlow: "#00ff88",
+  hover: "#00cc33",        // dim green hover
   background: "#050508",
   grid: "#111115",
-};
-
-const FACTION_COLORS = {
-  "NEXUS-7":  { hex: "#00e5ff", glow: "#00b8d4" },
-  "KRONOS":   { hex: "#ffb300", glow: "#e65100" },
-  "VANGUARD": { hex: "#ff1744", glow: "#b71c1c" },
-  "SPECTRE":  { hex: "#d500f9", glow: "#6a0080" },
 };
 
 export function FlatMap({
@@ -417,28 +409,17 @@ export function FlatMap({
         else if (isEnemyOwned) size = plotSize * 1.2;
 
         let color = COLORS.unclaimed;
-        let plotAlpha = 0.45;
-
-        // Faction color resolution
-        const owner = p.ownerId ? players?.find(pl => pl.id === p.ownerId) : null;
-        const factionColor = owner?.name && (owner as any).isAi ? FACTION_COLORS[owner.name as keyof typeof FACTION_COLORS] : null;
+        let plotAlpha = 0.25;  // unclaimed: dim but visible green
 
         if (isSelected) {
-          color = COLORS.selected;
+          // Always show green when selected — same whether owned or not
+          color = COLORS.player;
           size = plotSize * 1.8;
           plotAlpha = 0.9;
         } else if (isHovered) {
-          if (isPlayerOwned) color = COLORS.playerGlow;
-          else if (factionColor) color = factionColor.glow;
-          else if (isEnemyOwned) color = COLORS.enemyGlow;
-          else {
-            const r = Math.min(255, Math.round(102 * 1.2));
-            const g = Math.min(255, Math.round(153 * 1.2));
-            const b = Math.min(255, Math.round(187 * 1.2));
-            color = `rgb(${r},${g},${b})`;
-          }
+          color = COLORS.hover;
           size = plotSize * 1.5;
-          plotAlpha = 0.85;
+          plotAlpha = 0.75;
         } else if (isPlayerOwned) {
           const r = parseInt(COLORS.player.slice(1, 3), 16);
           const g = parseInt(COLORS.player.slice(3, 5), 16);
@@ -447,9 +428,6 @@ export function FlatMap({
           const pg = Math.min(255, Math.round(g * (playerPulse + 0.15)));
           const pb = Math.min(255, Math.round(b * (playerPulse + 0.15)));
           color = `rgb(${pr},${pg},${pb})`;
-          plotAlpha = 0.7;
-        } else if (factionColor) {
-          color = factionColor.hex;
           plotAlpha = 0.7;
         } else if (isEnemyOwned) {
           color = COLORS.enemy;
@@ -466,7 +444,7 @@ export function FlatMap({
 
         ctx.globalAlpha = plotAlpha;
         if (isSelected) {
-          ctx.strokeStyle = "#00e5ff";
+          ctx.strokeStyle = COLORS.player;
           ctx.lineWidth = 2.5;
           ctx.beginPath();
           ctx.arc(x, y, size / 2, 0, Math.PI * 2);
@@ -485,12 +463,12 @@ export function FlatMap({
         if (screenPos) {
           const { x, y } = screenPos;
           const ringSize = plotSize * 2.6;
-          ctx.strokeStyle = `rgba(0,229,255,0.85)`;
+          ctx.strokeStyle = `rgba(0,255,68,0.85)`;
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(x, y, ringSize, 0, Math.PI * 2);
           ctx.stroke();
-          ctx.strokeStyle = `rgba(0,184,204,0.25)`;
+          ctx.strokeStyle = `rgba(0,255,68,0.25)`;
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.arc(x, y, ringSize * 1.45, 0, Math.PI * 2);
@@ -653,7 +631,6 @@ export function FlatMap({
             {getPlotName(selectedPlot.plotId, selectedPlot.biome)}
           </div>
           <div className="flex items-center gap-1.5 mt-2">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: biomeColors[selectedPlot.biome] }} />
             <span className="text-[10px] uppercase text-muted-foreground">{selectedPlot.biome}</span>
           </div>
         </div>

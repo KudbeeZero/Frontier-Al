@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { saveBattleReplay, type BattleReplayRecord, getParcelAnimations, setParcelAnimation } from "../services/redis";
+import { saveBattleReplay, type BattleReplayRecord, getParcelAnimations } from "../services/redis";
 import type {
   LandParcel,
   Player,
@@ -984,15 +984,6 @@ export class DbStorage implements IStorage {
         timestamp:   now,
       }, tx);
       await this.bumpLastTs(now, tx);
-
-      // Fire a 24-hour gold pulse animation on the newly purchased plot.
-      void setParcelAnimation(parcelRow.plotId, {
-        type:      "pulse_gold",
-        colorHex:  "#ffd700",
-        intensity: 1.0,
-        startTs:   now,
-        endTs:     now + 86_400_000,
-      }, 86_400);
 
       return rowToParcel({ ...parcelRow, ownerId: playerRow.id, ownerType, purchasePriceAlgo: null, lastFrontierClaimTs: now });
     });
