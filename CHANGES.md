@@ -1,5 +1,72 @@
 # FRONTIER — Change Log & Status
 
+## Session: cleanup-and-docs-ZnHtp
+**Date:** 2026-03-14
+**Branch:** `claude/cleanup-and-docs-ZnHtp`
+
+---
+
+## What Was Done
+
+### 1. Repository Artifact Cleanup
+
+**Problem:** Several artifact files had accumulated in the root directory that were not part of the project and should not be tracked in version control.
+
+**Files Removed:**
+- `__out.txt` — Debug artifact containing a stale `git status` dump from a previous automated session. Never needed in the repo.
+- `_ais*=s*false|players.findFirst|from(players)" server` — Malformed filename artifact containing a PostgreSQL `players` table definition dump. Likely produced by a failed shell command substitution in a previous automated task.
+- `CODE_ANALYSIS_REPORT.txt` — 80 KB auto-generated Python-focused code analysis report produced by `code_analyzer.py`. Mostly noise from npm/node-gyp internals; not relevant to project health.
+- `code_analyzer.py` — One-off Python script used to generate the above report. Not a maintained project tool; removed to reduce clutter.
+
+### 2. README.md Deduplication & Consolidation
+
+**Problem:** The README (965 lines) contained two merged/concatenated versions of the documentation — a newer v1.4.0 intro prepended onto an older v3.0-labelled body. This caused:
+- Duplicate **Tech Stack** tables (two different tables, different detail levels)
+- Duplicate **Project Structure** sections
+- Duplicate **API Reference** sections (both a table format and a grouped format)
+- Duplicate **Database Schema** sections (one detailed, one summary)
+- Duplicate **Getting Started** / **Install & Run** blocks
+- Duplicate **Plot NFT** sections
+- Conflicting version branding ("v1.4.0" vs "VERSION 3.0")
+- Duplicate AI Factions table (slightly different content in each copy)
+- Redundant `## Recon Drones & Orbital Satellites` section immediately after a more detailed equivalent
+
+**Changes Made:**
+- Rewrote README.md as a single clean document under the **v1.4.0** version label (matching the actual latest release)
+- Merged the best content from both versions — retained the detailed per-column DB schema, the full API reference table with body params, the complete feature descriptions with stat tables, and the full changelog
+- Added the `server/engine/`, `server/services/chain/`, `server/wsServer.ts`, and `shared/worldEvents.ts` entries to the Project Structure tree (these files existed but were missing from all prior versions)
+- Removed the "Migration Audit — Replit → Production" section (migration is complete; the section is no longer actionable)
+- Consolidated the two "Plot NFT Verification" sections into one canonical "Plot NFTs (ARC-3)" section
+- Removed version numbering inconsistency ("VERSION 3.0" heading) — unified on v1.4.0
+
+---
+
+## File Status
+
+| File | Status | What Changed |
+|------|--------|-------------|
+| `README.md` | **Rewritten** | Removed ~400 lines of duplicate content; unified as clean v1.4.0 doc |
+| `__out.txt` | **Deleted** | Stale git-status debug artifact |
+| `_ais*=s*false\|...` | **Deleted** | Malformed filename / DB schema dump artifact |
+| `CODE_ANALYSIS_REPORT.txt` | **Deleted** | Auto-generated Python analysis noise |
+| `code_analyzer.py` | **Deleted** | One-off analysis script; not a project tool |
+| `CHANGES.md` | **Updated** | Added this session entry |
+
+---
+
+## Live Status
+
+| Layer | Status |
+|-------|--------|
+| **Algorand TestNet** | Live — FRONTIER ASA deployed at asset ID `755818217` on TestNet |
+| **Backend API** | Live — Express server serves all endpoints; blockchain init runs on startup |
+| **Frontend** | Live — React/Vite client served from same server |
+| **Database** | In-memory (`MemStorage`) — persists only for server lifetime; DB schema (`db-schema.ts`) defines the Drizzle/Postgres schema for when a Postgres instance is wired in |
+| **Wallet Support** | Pera Wallet + LUTE Wallet on Algorand TestNet |
+| **Token Minting** | Server-side batched ASA transfers (up to 16 per atomic group) run when player claims FRONTIER |
+
+---
+
 ## Session: organize-mining-transactions-eKu3t
 **Date:** 2026-02-21
 **Branch:** `claude/organize-mining-transactions-eKu3t`
