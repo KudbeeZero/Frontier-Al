@@ -831,47 +831,14 @@ const BIOME_DISPLAY_COLORS: Record<string, string> = {
   swamp:    "#66BB6A",
 };
 
-/**
- * Per-instance fill colour = biome base + ownership overlay.
- *
- * Why biome is the base (not a separate layer):
- *   Three.js InstancedMesh setColorAt() writes directly into the
- *   instanceColor BufferAttribute that the material reads.  If we only
- *   set ownership flat-colours (green / orange / dark-blue) the biome
- *   information is completely absent from the mesh — which is the root
- *   cause of the "colours underneath" visual bug.  By baking biome into
- *   every instance colour we guarantee the correct colour is ON the
- *   surface hex, not behind it.
- *
- * Ownership tinting rules:
- *   • Unowned   → biome at 80 % brightness (terrain visible but distinct)
- *   • Player    → biome lerped 55 % toward lime-green, boosted ×1.15
- *   • Enemy/AI  → biome lerped 45 % toward orange-red
- *
- * fallbackLat is used before server parcel data arrives so tiles already
- * show an approximate biome colour instead of defaulting to black.
- */
+/** Per-instance fill colour — pure ownership flat-colours, no biome blending. */
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
-  fallbackLat?: number,
 ): THREE.Color {
-  const biome = parcel?.biome ?? approxBiomeFromLat(fallbackLat ?? 0);
-  const base  = (BIOME_THREE_COLORS[biome] ?? BIOME_THREE_COLORS.plains).clone();
-
-  if (!parcel?.ownerId) {
-    // Unowned: biome at full brightness — toneMapped=false on the material means
-    // ACES no longer darkens these, so we don't need to pre-compensate.
-    return base.multiplyScalar(0.95);
-  }
-
-  if (currentPlayerId && parcel.ownerId === currentPlayerId) {
-    // Player territory: vibrant lime-green tint over biome colour.
-    return base.lerp(COLOR_PLAYER, 0.55).multiplyScalar(1.15);
-  }
-
-  // Enemy / AI territory: orange-red tint over biome colour.
-  return base.lerp(COLOR_ENEMY, 0.45);
+  if (!parcel?.ownerId) return new THREE.Color(0, 0, 0); // scale=0 anyway
+  if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER.clone();
+  return COLOR_ENEMY.clone();
 }
 
 function StarField() {
@@ -1119,8 +1086,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
         fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
       } else {
-        // Tile is in toProcess but no special state — restore its biome colour.
-        fillColor = getPlotColor(parcel, currentPlayerId, coord.lat);
+        // Tile is in toProcess but no special state — restore ownership colour.
+        fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
       const borderColor = isSelected || isHovered
@@ -1162,7 +1129,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const fillPos   = fillPositions3D[i];
       const borderPos = borderPositions3D[i];
 
-      // Determine fill color — biome base + ownership overlay.
+      // Determine fill color — ownership flat-colour only.
       let fillColor: THREE.Color;
       const isOwned    = !!parcel?.ownerId;
       const isSelected = parcel?.id === selectedPlotId;
@@ -1172,9 +1139,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else {
-        // Pass coord.lat as fallback so approximate biome colours render
-        // immediately even before full parcel data arrives from the server.
-        fillColor = getPlotColor(parcel, currentPlayerId, coord.lat);
+        fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
       // Border: white ring on owned, hidden on unowned (scale=0 removes the dark
@@ -1183,7 +1148,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         ? COLOR_SELECTED.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : fillColor.clone().multiplyScalar(0.55);
+          : new THREE.Color(0, 0, 0);
 
       // Unowned tiles: scale=0 hides fill entirely so terrain shows through.
       const fillScale   = isOwned || isSelected ? 1.0 : 0.0;
@@ -1249,22 +1214,20 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={1.0}
+          opacity={0.5}
           depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
         />
       </instancedMesh>
 
-      {/* Fill layer — depthWrite=true so biome colours sit ON the surface.
-          toneMapped=false bypasses ACESFilmic compression so colours appear
-          at their exact sRGB values — vibrant and unmuddied. */}
+      {/* Fill layer — toneMapped=false so colours appear at exact sRGB values. */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={1.0}
+          opacity={0.25}
           depthWrite={true}
           side={THREE.DoubleSide}
           toneMapped={false}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,8 +36,21 @@ interface LandSheetProps {
 }
 
 function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
-  const now = Date.now();
-  const remaining = Math.max(0, MINE_COOLDOWN_MS - (now - lastMineTs));
+  const [remaining, setRemaining] = useState(() =>
+    Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs))
+  );
+
+  useEffect(() => {
+    setRemaining(Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs)));
+    if (remaining === 0) return;
+    const id = setInterval(() => {
+      const r = Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs));
+      setRemaining(r);
+      if (r === 0) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lastMineTs]);
+
   const progress = ((MINE_COOLDOWN_MS - remaining) / MINE_COOLDOWN_MS) * 100;
   const canMine = remaining === 0;
 
