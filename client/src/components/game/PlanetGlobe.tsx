@@ -45,7 +45,7 @@ const COLOR_HOVER    = new THREE.Color("#1a6fff"); // blue — hovered
 const COLOR_UNOWNED  = new THREE.Color("#1a3a5c");
 // Border colors
 const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
-const COLOR_BORDER_UNOWNED = new THREE.Color("#0d2a40"); // very dim outline grid
+const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue grid
 
 // ── Biome color palette ───────────────────────────────────────────────────────
 // Vibrant, distinct colours used as the BASE for every plot tile.
@@ -1005,6 +1005,16 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     return indices;
   }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
 
+  const unownedIndices = useMemo(() => {
+    const indices: number[] = [];
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord = plotCoords[i];
+      const parcel = plotIdToParcel.get(coord.plotId);
+      if (!parcel?.ownerId) indices.push(i);
+    }
+    return indices;
+  }, [plotCoords, plotIdToParcel]);
+
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const fillSize   = GLOBE_RADIUS * 0.022;
   const borderSize = GLOBE_RADIUS * 0.025;
@@ -1058,8 +1068,6 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     if (currentHovered !== null) toProcess.add(currentHovered);
     if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
 
-    if (toProcess.size === 0) return;
-
     let colorDirty  = false;
     let matrixDirty = false;
 
@@ -1096,10 +1104,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
 
-      // Unowned tiles: scale=0 hides both fill and border so the terrain texture
-      // shows through cleanly — no dark hex grid overlay on unowned plots.
+      // Unowned tiles: hide fill so terrain shows through; keep border visible for the land grid.
       const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.0;
-      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.0;
+      const borderScale = 1.0;
 
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
@@ -1115,6 +1122,18 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     if (colorDirty) {
       if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
       if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+    }
+
+    // Land color pulse — slow breathing on all unowned tile borders.
+    if (unownedIndices.length > 0) {
+      const landPulse = 0.45 + Math.sin(pulseRef.current * 0.6) * 0.25;
+      const landColor = COLOR_BORDER_UNOWNED.clone().multiplyScalar(landPulse);
+      for (const i of unownedIndices) {
+        borderMeshRef.current.setColorAt(i, landColor);
+      }
+      if (borderMeshRef.current.instanceColor) {
+        borderMeshRef.current.instanceColor.needsUpdate = true;
+      }
     }
   });
 
@@ -1142,17 +1161,16 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      // Border: white ring on owned, hidden on unowned (scale=0 removes the dark
-      // ring that was larger than the fill circle and caused the black hex grid).
+      // Border: white ring on owned, teal-blue on unowned (land grid pulse colour).
       const borderColor = isSelected
         ? COLOR_SELECTED.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : new THREE.Color(0, 0, 0);
+          : COLOR_BORDER_UNOWNED.clone();
 
-      // Unowned tiles: scale=0 hides fill entirely so terrain shows through.
+      // Unowned tiles: hide fill so terrain shows through; keep border visible for land grid.
       const fillScale   = isOwned || isSelected ? 1.0 : 0.0;
-      const borderScale = isOwned || isSelected ? 1.0 : 0.0;
+      const borderScale = 1.0;
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
     }
@@ -1208,13 +1226,13 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
 
-      {/* Border ring — white outline on owned tiles only (unowned are scale=0). */}
+      {/* Border ring — white on owned tiles, teal-blue pulse on unowned land grid. */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.5}
+          opacity={0.75}
           depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
