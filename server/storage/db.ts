@@ -989,7 +989,7 @@ export class DbStorage implements IStorage {
       void setParcelAnimation(parcelRow.plotId, {
         type:      "pulse_gold",
         colorHex:  "#ffd700",
-        intensity: 0.85,
+        intensity: 1.0,
         startTs:   now,
         endTs:     now + 86_400_000,
       }, 86_400);
