@@ -8,7 +8,7 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useLoader, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent, OrbitalEventType } from "@shared/schema";
+import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent, OrbitalEventType, OrbitalSatellite } from "@shared/schema";
 import type { WorldEvent } from "@shared/worldEvents";
 import { GlobeEventOverlays } from "./GlobeEventOverlays";
 import { biomeColors } from "@shared/schema";
@@ -620,6 +620,129 @@ function OrbitalZoneLayer({ events }: OrbitalZoneLayerProps) {
         <CosmeticStreak key={event.id} event={event} />
       ))}
     </>
+  );
+}
+
+// ── SatelliteOrbitLayer ───────────────────────────────────────────────────────
+// Renders active player-deployed OrbitalSatellites as small glowing spheres
+// orbiting at a fixed altitude above the globe. Each satellite gets a
+// deterministic inclination and starting angle derived from its id, so the
+// layout is stable across re-renders but visually varied.
+//
+// Design constraints (mobile-safe):
+//  - Primitive sphereGeometry only — no GLTF loading
+//  - Mesh refs array + useFrame: no React state mutations per frame
+//  - Orbit state stored in a Map ref so it survives player-list changes
+//  - Capped to MAX_SATELLITES * MAX_PLAYERS, which is small enough to be free
+
+const SAT_ORBIT_RADIUS = GLOBE_RADIUS + 0.45; // altitude above surface
+const SAT_ORBIT_SPEED  = 0.003;               // radians per second (visual)
+const SAT_SPHERE_RADIUS = 0.035;
+
+/** Deterministic float in [0,1] from a string id and a numeric offset. */
+function satHashFloat(id: string, offset: number): number {
+  let h = (offset + 1) * 2654435761;
+  for (let i = 0; i < id.length; i++) {
+    h = Math.imul(h ^ id.charCodeAt(i), 2654435761);
+  }
+  return (h >>> 0) / 0xffffffff;
+}
+
+interface SatOrbitState {
+  angle: number;
+  inclination: number;
+}
+
+interface ActiveSatInfo {
+  id: string;
+  color: THREE.Color;
+}
+
+function SatelliteOrbitLayer({ players }: { players: Player[] }) {
+  const now = Date.now();
+
+  // Collect all non-expired active satellites across all players
+  const activeSats = useMemo<ActiveSatInfo[]>(() => {
+    const result: ActiveSatInfo[] = [];
+    for (const player of players) {
+      if (!player.satellites) continue;
+      for (const sat of player.satellites) {
+        if (sat.status !== "active" || sat.expiresAt <= now) continue;
+        // AI players: use their faction color; human players: use player green
+        const color = player.isAI
+          ? (FACTION_COLORS[player.name]?.three.clone() ?? new THREE.Color("#44ccff"))
+          : COLOR_PLAYER.clone();
+        result.push({ id: sat.id, color });
+      }
+    }
+    return result;
+  }, [players]);
+
+  // Persistent orbit state per satellite id (angle advances each frame)
+  const orbitsRef = useRef<Map<string, SatOrbitState>>(new Map());
+
+  // Individual mesh refs (re-allocated if satellite count changes)
+  const meshesRef = useRef<(THREE.Mesh | null)[]>([]);
+
+  // Initialise / prune orbit states when satellite list changes
+  useEffect(() => {
+    const next = new Map<string, SatOrbitState>();
+    for (const sat of activeSats) {
+      const existing = orbitsRef.current.get(sat.id);
+      next.set(sat.id, existing ?? {
+        angle:       satHashFloat(sat.id, 1) * Math.PI * 2,
+        inclination: (satHashFloat(sat.id, 2) - 0.5) * (Math.PI / 2),
+      });
+    }
+    orbitsRef.current = next;
+    // Resize mesh ref array to match
+    meshesRef.current = meshesRef.current.slice(0, activeSats.length);
+  }, [activeSats]);
+
+  // Advance orbit angles and update mesh positions each frame
+  useFrame((_, delta) => {
+    activeSats.forEach((sat, i) => {
+      const orb  = orbitsRef.current.get(sat.id);
+      const mesh = meshesRef.current[i];
+      if (!orb || !mesh) return;
+
+      orb.angle += SAT_ORBIT_SPEED * delta * 60;
+      if (orb.angle > Math.PI * 2) orb.angle -= Math.PI * 2;
+
+      const cosI = Math.cos(orb.inclination);
+      const sinI = Math.sin(orb.inclination);
+      const cosA = Math.cos(orb.angle);
+      const sinA = Math.sin(orb.angle);
+
+      mesh.position.set(
+        SAT_ORBIT_RADIUS * cosA * cosI,
+        SAT_ORBIT_RADIUS * sinI,
+        SAT_ORBIT_RADIUS * sinA * cosI,
+      );
+    });
+  });
+
+  if (activeSats.length === 0) return null;
+
+  return (
+    <group name="satellite-orbit-layer">
+      {activeSats.map((sat, i) => (
+        <mesh
+          key={sat.id}
+          ref={(el) => { meshesRef.current[i] = el; }}
+          position={[SAT_ORBIT_RADIUS, 0, 0]}
+        >
+          <sphereGeometry args={[SAT_SPHERE_RADIUS, 12, 12]} />
+          <meshStandardMaterial
+            color={sat.color}
+            emissive={sat.color}
+            emissiveIntensity={0.7}
+            metalness={0.6}
+            roughness={0.4}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -1384,6 +1507,7 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
       />
       <MiningPulseLayer pulses={livePulses} />
       <OrbitalZoneLayer events={orbitalEvents} />
+      <SatelliteOrbitLayer players={players} />
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
