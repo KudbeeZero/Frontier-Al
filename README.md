@@ -90,6 +90,8 @@ Mint unique on-chain Commanders by burning FRONTIER tokens. Up to one active Com
 | Phantom | 150 FRNTR | +18% | +6% | Cloak |
 | Reaper | 400 FRNTR | +30% | +5% | Annihilate |
 
+Commanders are locked for **12 hours** after deployment. Multiple can be collected; only one is active at a time.
+
 ### Special Attacks (Requires Commander)
 | Attack | Cost | Cooldown | Damage | Effect | Required Tier |
 |--------|------|----------|--------|--------|---------------|
@@ -106,7 +108,9 @@ Mint unique on-chain Commanders by burning FRONTIER tokens. Up to one active Com
 
 ### Orbital Satellites
 - Cost: **50 FRNTR** to deploy
-- Boosts mining yield on all owned parcels while active
+- Maximum: **2** satellites per player
+- Duration: **1 hour** per orbit
+- Boost: **+25% mining yield** on all owned parcels while active
 - Tracked per-player in the DB; visible in the Commander panel
 
 ### Combat System
@@ -130,6 +134,8 @@ Four AI commanders compete alongside human players using adaptive behavior:
 | SPECTRE | Economic | Focuses on FRONTIER generation and token accumulation |
 
 AI turns run on a server-side interval (every 2 minutes). When suppressed, AI factions escalate attack posture.
+
+**Adaptive Dominance Regulation (ADR):** If any single AI faction exceeds ~2,000 plots (~10% of the map), the remaining factions automatically increase aggression to prevent runaway dominance. This keeps the balance competitive without manual intervention.
 
 ---
 
@@ -176,17 +182,18 @@ All Algorand transactions carry structured `FRNTR:{…}` JSON notes for indexer 
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, TypeScript, Vite 5, TailwindCSS |
-| 3D Rendering | Three.js, @react-three/fiber, @react-three/drei |
-| 2D Map | Custom canvas with Fibonacci plot projection |
-| State Management | TanStack Query (server state), React context (wallet) |
-| UI Components | Radix UI primitives + shadcn/ui, Lucide icons |
-| Backend | Node.js 20, Express |
-| Database | PostgreSQL via Drizzle ORM |
-| Blockchain | Algorand TestNet (algosdk v2, Pera Wallet, LUTE Wallet) |
-| Fonts | Rajdhani (display), Inter (body) — cyberpunk/military theme |
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Frontend | React, TypeScript, Vite, TailwindCSS | React 18.3, Vite 7.3 |
+| 3D Rendering | Three.js, @react-three/fiber, @react-three/drei | Three.js 0.170 |
+| 2D Map | Pixi.js (InstancedMesh-backed flat tile renderer) | 8.15 |
+| Animations | Framer Motion | 11.13 |
+| State Management | TanStack Query (server state), React context (wallet) | RQ 5.60 |
+| UI Components | Radix UI primitives + shadcn/ui, Lucide icons | — |
+| Backend | Node.js 20, Express | Express 5.0 |
+| Database | PostgreSQL via Drizzle ORM | Drizzle 0.39 |
+| Blockchain | Algorand TestNet — algosdk, Pera Wallet, LUTE Wallet | algosdk 3.5 |
+| Fonts | Rajdhani (display), Inter (body) — cyberpunk/military theme | — |
 
 ---
 
