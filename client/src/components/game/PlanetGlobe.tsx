@@ -860,8 +860,9 @@ function getPlotColor(
   const base  = (BIOME_THREE_COLORS[biome] ?? BIOME_THREE_COLORS.plains).clone();
 
   if (!parcel?.ownerId) {
-    // Unowned: biome at 80 % so the terrain texture beneath is still readable.
-    return base.multiplyScalar(0.8);
+    // Unowned: biome at full brightness — toneMapped=false on the material means
+    // ACES no longer darkens these, so we don't need to pre-compensate.
+    return base.multiplyScalar(0.95);
   }
 
   if (currentPlayerId && parcel.ownerId === currentPlayerId) {
@@ -1126,12 +1127,15 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         ? COLOR_SELECTED.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
+          : fillColor.clone().multiplyScalar(0.55);
 
-      const scale = isOwned || isSelected || isHovered ? 1.0 : 0.85;
+      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.88;
+      // Unowned tiles: border scale=0 — eliminates the dark ring that protrudes
+      // beyond the fill circle and causes the "black hex grid" overlay.
+      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.0;
 
-      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * scale, fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * scale, borderColor);
+      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
 
       colorDirty  = true;
       matrixDirty = true;
@@ -1173,17 +1177,18 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId, coord.lat);
       }
 
-      // Border: white ring on owned, very dim grid line on unowned.
+      // Border: white ring on owned, hidden on unowned (scale=0 removes the dark
+      // ring that was larger than the fill circle and caused the black hex grid).
       const borderColor = isSelected
         ? COLOR_SELECTED.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
+          : fillColor.clone().multiplyScalar(0.55);
 
-      // All tiles rendered at the same base scale — no size penalty for unowned.
-      const scale = isOwned || isSelected ? 1.0 : 0.85;
-      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * scale, fillColor);
-      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * scale, borderColor);
+      const fillScale   = isOwned || isSelected ? 1.0 : 0.88;
+      const borderScale = isOwned || isSelected ? 1.0 : 0.0;
+      applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
+      applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
     }
 
     fillMeshRef.current.instanceMatrix.needsUpdate   = true;
@@ -1237,29 +1242,31 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
 
-      {/* Border ring — thin outline. Normal blending so dark colors are visible. */}
+      {/* Border ring — white outline on owned tiles only (unowned are scale=0). */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.9}
+          opacity={1.0}
           depthWrite={false}
           side={THREE.DoubleSide}
+          toneMapped={false}
         />
       </instancedMesh>
 
-      {/* Fill layer — depthWrite=true so biome colours sit ON the surface,
-          not underneath it. Opacity 0.92 lets just a hint of terrain
-          texture through while ensuring biome colours fully dominate. */}
+      {/* Fill layer — depthWrite=true so biome colours sit ON the surface.
+          toneMapped=false bypasses ACESFilmic compression so colours appear
+          at their exact sRGB values — vibrant and unmuddied. */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
         <circleGeometry args={[0.5, 6]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.92}
+          opacity={1.0}
           depthWrite={true}
           side={THREE.DoubleSide}
+          toneMapped={false}
         />
       </instancedMesh>
     </>
