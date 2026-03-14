@@ -300,6 +300,16 @@ export interface GameState {
 }
 
 /** Minimal parcel data broadcast to all clients for globe/map rendering. */
+export type ParcelAnimationType = "pulse_gold" | "shimmer_blue" | "strobe_red" | "glow_cyan" | "none";
+
+export interface ParcelAnimation {
+  type: ParcelAnimationType;
+  colorHex: string;
+  intensity: number;   // 0.0 – 1.0
+  startTs: number;
+  endTs: number | null; // null = permanent until cleared
+}
+
 export interface SlimParcel {
   id: string;
   plotId: number;
@@ -308,6 +318,7 @@ export interface SlimParcel {
   biome: BiomeType;
   ownerId: string | null;
   activeBattleId: string | null;
+  animation?: ParcelAnimation;
 }
 
 /** Minimal player data broadcast to all clients for color/name rendering. */

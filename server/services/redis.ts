@@ -5,12 +5,14 @@
  * Used for:
  *   - World event persistence (survives server restarts)
  *   - Battle replay log storage (24-hour TTL)
+ *   - Per-parcel plot animations (optional TTL)
  *
  * All exports fail silently if UPSTASH_REDIS_REST_URL is not set.
  * The game never depends on Redis being available — it is an enhancement layer only.
  */
 
 import { Redis } from "@upstash/redis";
+import type { ParcelAnimation } from "../../shared/schema";
 
 const BATTLE_REPLAY_TTL_S  = 86_400;
 const WORLD_EVENT_TTL_S    = 86_400;
@@ -116,5 +118,72 @@ export async function redisGetWorldEvents(
     }).filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+// ── Parcel Animations ─────────────────────────────────────────────────────────
+
+function parcelAnimKey(plotId: number): string {
+  return `frontier:parcel:anim:${plotId}`;
+}
+
+export async function setParcelAnimation(
+  plotId: number,
+  anim: ParcelAnimation,
+  ttlSeconds?: number
+): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    const opts = ttlSeconds ? { ex: ttlSeconds } : undefined;
+    await r.set(parcelAnimKey(plotId), JSON.stringify(anim), opts);
+  } catch {
+    // Non-fatal
+  }
+}
+
+export async function getParcelAnimation(plotId: number): Promise<ParcelAnimation | null> {
+  const r = getRedis();
+  if (!r) return null;
+  try {
+    const raw = await r.get<string>(parcelAnimKey(plotId));
+    if (!raw) return null;
+    return typeof raw === "string" ? JSON.parse(raw) : raw as ParcelAnimation;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearParcelAnimation(plotId: number): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  try {
+    await r.del(parcelAnimKey(plotId));
+  } catch {
+    // Non-fatal
+  }
+}
+
+export async function getParcelAnimations(
+  plotIds: number[]
+): Promise<Record<number, ParcelAnimation>> {
+  const r = getRedis();
+  if (!r || plotIds.length === 0) return {};
+  try {
+    const keys = plotIds.map(parcelAnimKey);
+    const values = await r.mget<string[]>(...keys);
+    const result: Record<number, ParcelAnimation> = {};
+    for (let i = 0; i < plotIds.length; i++) {
+      const raw = values[i];
+      if (!raw) continue;
+      try {
+        result[plotIds[i]] = typeof raw === "string" ? JSON.parse(raw) : raw as ParcelAnimation;
+      } catch {
+        // skip malformed entry
+      }
+    }
+    return result;
+  } catch {
+    return {};
   }
 }
