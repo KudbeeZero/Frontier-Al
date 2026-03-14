@@ -8,10 +8,9 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useLoader, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent, OrbitalEventType, OrbitalSatellite } from "@shared/schema";
+import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent } from "@shared/schema";
 import type { WorldEvent } from "@shared/worldEvents";
 import { GlobeEventOverlays } from "./GlobeEventOverlays";
-import { biomeColors } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Sword, HardHat, Pickaxe, Shield, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,64 +19,14 @@ const GLOBE_RADIUS = 2;
 const PLOT_COUNT = 21000;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-// Faction colors kept for LandSheet label display only — NOT used for tile fill.
-const FACTION_COLORS: Record<string, {
-  three: THREE.Color;
-  hex: string;
-  glow: string;
-  label: string;
-}> = {
-  "NEXUS-7":  { three: new THREE.Color("#00e5ff"), hex: "#00e5ff", glow: "#00b8d4", label: "NEXUS-7"  },
-  "KRONOS":   { three: new THREE.Color("#ffb300"), hex: "#ffb300", glow: "#e65100", label: "KRONOS"   },
-  "VANGUARD": { three: new THREE.Color("#ff1744"), hex: "#ff1744", glow: "#b71c1c", label: "VANGUARD" },
-  "SPECTRE":  { three: new THREE.Color("#d500f9"), hex: "#d500f9", glow: "#6a0080", label: "SPECTRE"  },
-};
-
-// Tile fill palette — flat, always-on, no per-frame multiplication needed.
+// Tile fill palette
 const COLOR_PLAYER   = new THREE.Color("#00ff88"); // vivid neon-green — your territory
-const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy player territory
-const COLOR_AI       = new THREE.Color("#ff6d00"); // same orange — AI faction territory
+const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy/AI territory
 const COLOR_BATTLE   = new THREE.Color("#ff1744"); // red — active battle
-const COLOR_SELECTED = new THREE.Color("#ffffff"); // white — selected
-const COLOR_HOVER    = new THREE.Color("#1a6fff"); // blue — hovered
-// Unowned: visible slate-blue grid — bright enough to see, dim enough not to
-// dominate the terrain texture underneath.
-const COLOR_UNOWNED  = new THREE.Color("#1a3a5c");
 // Border colors
 const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
 const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue grid
-// Unowned hover/select: soft transparent-white (0.70 * 0.82 opacity ≈ 57% white visually)
-const COLOR_UNOWNED_HOVER  = new THREE.Color(0.70, 0.70, 0.70);
 
-// ── Biome color palette ───────────────────────────────────────────────────────
-// Vibrant, distinct colours used as the BASE for every plot tile.
-// Ownership overlays (player/enemy) are BLENDED on top of this base so
-// biome identity is always visible even on captured territory.
-const BIOME_THREE_COLORS: Record<string, THREE.Color> = {
-  forest:   new THREE.Color("#2E7D32"), // rich green
-  plains:   new THREE.Color("#C9B458"), // golden grass
-  swamp:    new THREE.Color("#4A7043"), // dark murky green
-  desert:   new THREE.Color("#E0C070"), // sandy beige
-  tundra:   new THREE.Color("#DDEEFF"), // icy blue-white
-  mountain: new THREE.Color("#808080"), // rock grey
-  volcanic: new THREE.Color("#B71C1C"), // lava red
-  water:    new THREE.Color("#1565C0"), // deep ocean blue
-};
-
-/**
- * Approximate biome from latitude only — used before server parcel data
- * arrives so every tile already has a plausible colour on first render,
- * eliminating the "all black / all dark-blue" flash.
- */
-function approxBiomeFromLat(lat: number): string {
-  const a = Math.abs(lat);
-  if (a > 70) return "tundra";
-  if (a > 55) return "mountain";
-  if (a > 40) return "forest";
-  if (a > 25) return "plains";
-  if (a > 15) return "desert";
-  return "swamp";
-}
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
 
@@ -507,35 +456,38 @@ function ImpactZone({ event }: ImpactZoneProps) {
 
   return (
     <group position={pos}>
-      <mesh ref={discRef} onUpdate={self => self.lookAt(lookAt)}>
+      <mesh ref={discRef} renderOrder={20} onUpdate={self => self.lookAt(lookAt)}>
         <circleGeometry args={[radius, 48]} />
         <meshBasicMaterial
           color={color}
           transparent
           opacity={0.22}
           depthWrite={false}
+          depthTest={false}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      <mesh ref={ringRef} onUpdate={self => self.lookAt(lookAt)}>
+      <mesh ref={ringRef} renderOrder={20} onUpdate={self => self.lookAt(lookAt)}>
         <ringGeometry args={[radius * 0.85, radius * 1.05, 64]} />
         <meshBasicMaterial
           color={color}
           transparent
           opacity={0.55}
           depthWrite={false}
+          depthTest={false}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      <mesh onUpdate={self => self.lookAt(lookAt)}>
+      <mesh renderOrder={20} onUpdate={self => self.lookAt(lookAt)}>
         <circleGeometry args={[radius * 0.08, 16]} />
         <meshBasicMaterial
           color={color}
           transparent
           opacity={0.9}
           depthWrite={false}
+          depthTest={false}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -670,10 +622,8 @@ function SatelliteOrbitLayer({ players }: { players: Player[] }) {
       if (!player.satellites) continue;
       for (const sat of player.satellites) {
         if (sat.status !== "active" || sat.expiresAt <= now) continue;
-        // AI players: use their faction color; human players: use player green
-        const color = player.isAI
-          ? (FACTION_COLORS[player.name]?.three.clone() ?? new THREE.Color("#44ccff"))
-          : COLOR_PLAYER.clone();
+        // All satellites use the same cyan color
+        const color = COLOR_PLAYER.clone();
         result.push({ id: sat.id, color });
       }
     }
@@ -820,18 +770,6 @@ function AtmosphereGlow() {
   );
 }
 
-// Display color map used by the LandSheet tooltip (UI hex strings, not Three).
-// Kept slightly more saturated than the 3D palette for legibility on dark UI.
-const BIOME_DISPLAY_COLORS: Record<string, string> = {
-  forest:   "#43A047",
-  desert:   "#F9A825",
-  mountain: "#9E9E9E",
-  plains:   "#D4AC0D",
-  water:    "#1E88E5",
-  tundra:   "#B3E5FC",
-  volcanic: "#E53935",
-  swamp:    "#66BB6A",
-};
 
 /** Per-instance fill colour — pure ownership flat-colours, no biome blending. */
 function getPlotColor(
@@ -1088,41 +1026,23 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       let fillColor: THREE.Color;
 
       if (isHovered) {
-        fillColor = isOwned ? COLOR_HOVER.clone() : COLOR_UNOWNED_HOVER.clone();
+        // Any hovered tile shows dim green — owned or not
+        fillColor = COLOR_PLAYER.clone().multiplyScalar(0.6);
       } else if (isSelected) {
         const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.08;
+        // Selected tile always shows green — owned tiles pulse brighter
         fillColor = isOwned
-          ? COLOR_SELECTED.clone().multiplyScalar(pulse)
-          : COLOR_UNOWNED_HOVER.clone().multiplyScalar(pulse);
+          ? COLOR_PLAYER.clone().multiplyScalar(pulse)
+          : COLOR_PLAYER.clone().multiplyScalar(pulse * 0.75);
       } else if (parcel?.activeBattleId) {
         const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
         fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
       } else {
-        // Tile is in toProcess but no special state — restore ownership colour.
         fillColor = getPlotColor(parcel, currentPlayerId);
-
-        // Apply Redis-driven parcel animation if active.
-        const anim = (parcel as SlimParcel)?.animation;
-        if (isOwned && anim && anim.type !== "none") {
-          const animExpired = anim.endTs !== null && Date.now() > anim.endTs;
-          if (!animExpired) {
-            const animColor = new THREE.Color(anim.colorHex);
-            if (anim.type === "pulse_gold" || anim.type === "glow_cyan") {
-              const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.15;
-              fillColor = animColor.multiplyScalar(pulse * anim.intensity);
-            } else if (anim.type === "shimmer_blue") {
-              const shimmer = 0.7 + Math.sin(pulseRef.current * 4 + coord.plotId) * 0.3;
-              fillColor = animColor.multiplyScalar(shimmer * anim.intensity);
-            } else if (anim.type === "strobe_red") {
-              const strobe = Math.sin(pulseRef.current * 8) > 0 ? 1.0 : 0.2;
-              fillColor = animColor.multiplyScalar(strobe * anim.intensity);
-            }
-          }
-        }
       }
 
       const borderColor = isSelected || isHovered
-        ? COLOR_SELECTED.clone()
+        ? COLOR_PLAYER.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
@@ -1166,16 +1086,17 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       const isSelected = parcel?.id === selectedPlotId;
 
       if (isSelected) {
-        fillColor = isOwned ? COLOR_SELECTED.clone() : COLOR_UNOWNED_HOVER.clone();
+        // Always show green when selected — owned tiles brighter, unowned slightly dimmer
+        fillColor = isOwned ? COLOR_PLAYER.clone() : COLOR_PLAYER.clone().multiplyScalar(0.75);
       } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      // Border: white ring on owned, teal-blue on unowned (land grid pulse colour).
+      // Border: green on selected, white on owned, teal-blue on unowned.
       const borderColor = isSelected
-        ? COLOR_SELECTED.clone()
+        ? COLOR_PLAYER.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
           : COLOR_BORDER_UNOWNED.clone();
@@ -1317,26 +1238,10 @@ function GlobeTerrain() {
   );
 }
 
-function FactionLegend({ players }: { players: Player[] }) {
-  const factionStats = useMemo(() => {
-    return Object.entries(FACTION_COLORS).map(([name, cfg]) => {
-      const player = players.find(p => p.isAI && p.name === name);
-      return { name, cfg, player };
-    });
-  }, [players]);
-
+function PlayerLegend() {
   return (
     <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5">
-      {factionStats.map(({ name, cfg }) => (
-        <div key={name} className="flex items-center gap-2 px-2.5 py-1 rounded-md backdrop-blur-md"
-          style={{ background: `${cfg.hex}12`, border: `1px solid ${cfg.hex}30` }}>
-          <div className="w-2 h-2 rounded-full" style={{ background: cfg.hex, boxShadow: `0 0 6px ${cfg.hex}` }} />
-          <span className="text-[10px] font-mono tracking-widest uppercase" style={{ color: cfg.hex }}>
-            {name}
-          </span>
-        </div>
-      ))}
-      <div className="flex items-center gap-2 px-2.5 py-1 rounded-md backdrop-blur-md mt-1"
+      <div className="flex items-center gap-2 px-2.5 py-1 rounded-md backdrop-blur-md"
         style={{ background: "#00ff6a12", border: "1px solid #00ff6a30" }}>
         <div className="w-2 h-2 rounded-full" style={{ background: "#00ff6a", boxShadow: "0 0 6px #00ff6a" }} />
         <span className="text-[10px] font-mono tracking-widest uppercase text-green-400">YOU</span>
@@ -1356,17 +1261,13 @@ interface ParcelHUDProps {
 }
 
 function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine, onBuild, onParcelSelect }: ParcelHUDProps) {
-  const owner = parcel.ownerId ? playerMap.get(parcel.ownerId) : null;
   const isPlayer = parcel.ownerId === currentPlayerId;
-  const factionData = owner?.isAI && owner.name ? FACTION_COLORS[owner.name] : null;
 
   const accentColor = isPlayer ? "#00ff6a"
-    : factionData ? factionData.hex
     : parcel.ownerId ? "#ff6e40"
     : "#4fc3f7";
 
   const statusLabel = isPlayer ? "SECURED"
-    : factionData ? factionData.label
     : parcel.ownerId ? "HOSTILE"
     : "UNCLAIMED";
 
@@ -1669,7 +1570,7 @@ export default function PlanetGlobe({
 
       <GlobeHUD activeBattleCount={activeBattleCount} replayTime={replayTime} />
 
-      <FactionLegend players={players} />
+      <PlayerLegend />
 
       {selectedParcel && (
         <ParcelHUD
