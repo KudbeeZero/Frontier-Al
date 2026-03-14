@@ -70,6 +70,28 @@ export async function seedDatabase(db: DB): Promise<void> {
       ON orbital_events (resolved, end_at)
   `);
 
+  // Trade Station orders table — peer-to-peer resource exchange.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS trade_orders (
+      id             VARCHAR(36) PRIMARY KEY,
+      offerer_id     VARCHAR(36) NOT NULL,
+      offerer_name   VARCHAR(100) NOT NULL,
+      give_resource  VARCHAR(20) NOT NULL,
+      give_amount    INT NOT NULL,
+      want_resource  VARCHAR(20) NOT NULL,
+      want_amount    INT NOT NULL,
+      status         VARCHAR(20) NOT NULL DEFAULT 'open',
+      created_at     BIGINT NOT NULL,
+      filled_by_id   VARCHAR(36),
+      filled_by_name VARCHAR(100),
+      filled_at      BIGINT
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS trade_orders_status_idx
+      ON trade_orders (status, created_at DESC)
+  `);
+
   await db.execute(
     sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_crystal_mined REAL NOT NULL DEFAULT 0`
   );
