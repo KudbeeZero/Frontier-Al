@@ -56,7 +56,7 @@ export async function registerRoutes(
   let blockchainReady = false;
   (async () => {
     try {
-      const forceNew = process.env.FORCE_NEW_ASA === "false";
+      const forceNew = process.env.FORCE_NEW_ASA === "true";
       const asaId    = await getOrCreateFrontierAsa({ forceNew });
       setFrontierAsaId(asaId);
       blockchainReady = true;
@@ -80,7 +80,7 @@ export async function registerRoutes(
       const asaId      = getFrontierAsaId();
       const adminAddress = getAdminAddress();
       const balance    = await getAdminBalance();
-      const forceNew   = process.env.FORCE_NEW_ASA === "false";
+      const forceNew   = process.env.FORCE_NEW_ASA === "true";
       const network    = process.env.ALGORAND_NETWORK ?? "testnet";
       const factionAsaIds = getAllFactionAsaIds();
       res.json({
@@ -246,6 +246,8 @@ export async function registerRoutes(
       // Without it, NFT image links in metadata JSON will be broken for anyone
       // not running the server locally.
       const rawBaseUrl = process.env.PUBLIC_BASE_URL || null;
+      const baseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, "") : null;
+      if (!baseUrl) {
         // Metadata would contain localhost URLs — log and return a 503 so the
         // caller knows the data is unreliable rather than silently serving bad URLs.
         console.error("[/nft/metadata] PUBLIC_BASE_URL is not set and request is from localhost. Set PUBLIC_BASE_URL for NFT metadata to work correctly.");
