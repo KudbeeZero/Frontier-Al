@@ -1161,7 +1161,20 @@ export async function registerRoutes(
     }
   });
 
+  // ── Admin key guard (used for internal/admin endpoints) ───────────────────
+  function requireAdminKey(req: any, res: any): boolean {
+    const adminKey = process.env.ADMIN_KEY;
+    if (!adminKey) return true; // No key configured → allow (dev mode)
+    const provided = (req.headers["x-admin-key"] as string) ?? (req.query.adminKey as string);
+    if (provided !== adminKey) {
+      res.status(403).json({ error: "Forbidden: invalid admin key" });
+      return false;
+    }
+    return true;
+  }
+
   app.post("/api/game/resolve-battles", async (req, res) => {
+    if (!requireAdminKey(req, res)) return;
     try {
       const resolved = await storage.resolveBattles();
       res.json({ success: true, resolved });
@@ -1171,6 +1184,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/game/ai-turn", async (req, res) => {
+    if (!requireAdminKey(req, res)) return;
     try {
       const events = await storage.runAITurn();
       res.json({ success: true, events });
@@ -1182,6 +1196,7 @@ export async function registerRoutes(
   // ── Testnet Reset ─────────────────────────────────────────────────────────
   // Wipe all game data and re-seed from scratch. Testnet only.
   app.post("/api/game/reset", async (_req, res) => {
+    if (!requireAdminKey(_req, res)) return;
     try {
       console.log("[RESET] Wiping game data for testnet reset…");
       // Clear all tables in dependency order
@@ -1585,6 +1600,7 @@ export async function registerRoutes(
 
   /** POST /api/admin/season/start — start a new season (admin only) */
   app.post("/api/admin/season/start", async (req, res) => {
+    if (!requireAdminKey(req, res)) return;
     const { name, daysLen } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     try {
@@ -1599,6 +1615,7 @@ export async function registerRoutes(
 
   /** POST /api/admin/season/settle — settle the current season */
   app.post("/api/admin/season/settle", async (_req, res) => {
+    if (!requireAdminKey(_req, res)) return;
     try {
       const season = await storage.settleCurrentSeason();
       if (!season) return res.status(404).json({ error: "No active season to settle" });

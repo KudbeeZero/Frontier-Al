@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD } from "@shared/schema";
 
 // ── SubParcelGrid ─────────────────────────────────────────────────────────────
 // Shows the 3×3 sub-parcel ownership grid for subdivided plots.
@@ -85,7 +85,7 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
         </div>
         <div className="grid grid-cols-3 gap-1">
           {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} className="h-10 rounded bg-muted/40 animate-pulse" />
+            <div key={i} className="h-8 sm:h-10 rounded bg-muted/40 animate-pulse" />
           ))}
         </div>
       </div>
@@ -254,7 +254,7 @@ export function LandSheet({
   return (
     <div
       className={cn(
-        "fixed bottom-16 lg:bottom-0 left-0 right-0 lg:left-72 lg:right-72 z-40 transition-all duration-300 ease-out",
+        "fixed bottom-0 left-0 right-0 md:left-60 md:right-60 lg:left-72 lg:right-72 z-40 transition-all duration-300 ease-out",
         expanded ? "max-h-[75vh]" : "max-h-[280px]"
       )}
       data-testid="land-sheet"
@@ -368,6 +368,36 @@ export function LandSheet({
               <span className="font-mono text-sm font-bold text-purple-400">{parcel.crystalStored}</span>
             </div>
           </div>
+
+          {/* 24h Resource Yield Forecast */}
+          {(() => {
+            const richMult = parcel.richness / 100;
+            const influenceMult = Math.min(1, Math.max(0, (parcel.influence ?? 100) / 100));
+            const yieldMult = parcel.yieldMultiplier ?? 1.0;
+            const ironPerMine    = Math.floor(BASE_YIELD.iron    * biomeBonus.ironMod    * richMult * influenceMult * yieldMult);
+            const fuelPerMine    = Math.floor(BASE_YIELD.fuel    * biomeBonus.fuelMod    * richMult * influenceMult * yieldMult);
+            const crystalPerMine = Math.floor(BASE_YIELD.crystal * biomeBonus.crystalMod * richMult * influenceMult * yieldMult);
+            const minesPerDay = Math.floor((24 * 60 * 60 * 1000) / MINE_COOLDOWN_MS);
+            return (
+              <div className="mb-2 px-1 py-1.5 rounded-md bg-primary/5 border border-primary/10">
+                <div className="flex items-center gap-1.5 text-[9px] text-primary/70 font-display uppercase tracking-wide mb-1">
+                  <Pickaxe className="w-2.5 h-2.5" />
+                  <span>Per-Mine Yield</span>
+                  {yieldMult !== 1.0 && (
+                    <span className="text-amber-400">×{yieldMult.toFixed(1)} orbital</span>
+                  )}
+                </div>
+                <div className="flex gap-3 font-mono text-[10px]">
+                  <span className="text-iron">⛏ +{ironPerMine} iron</span>
+                  <span className="text-fuel">⛽ +{fuelPerMine} fuel</span>
+                  <span className="text-purple-400">💎 +{crystalPerMine} xtal</span>
+                </div>
+                <div className="text-[9px] text-muted-foreground mt-0.5 font-mono">
+                  ~{minesPerDay}× daily capacity · {(ironPerMine * minesPerDay).toLocaleString()} iron/day max
+                </div>
+              </div>
+            );
+          })()}
 
           {isOwned && (
             <div className="space-y-2 mb-3">

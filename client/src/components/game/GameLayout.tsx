@@ -29,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Trophy, ArrowLeftRight } from "lucide-react";
+import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -762,6 +762,51 @@ export function GameLayout() {
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
 
+      {/* Morale debuff warning badge */}
+      {player?.moraleDebuffUntil && player.moraleDebuffUntil > Date.now() && (
+        <div
+          className="absolute top-16 right-4 mt-1 z-40 flex items-center gap-1.5 px-3 py-1 rounded-full pointer-events-none select-none"
+          style={{
+            background: "rgba(20,4,4,0.88)",
+            border: "1px solid rgba(255,60,60,0.4)",
+            backdropFilter: "blur(8px)",
+            fontFamily: "monospace",
+            fontSize: 10,
+            letterSpacing: "0.15em",
+            color: "rgba(255,100,100,0.9)",
+          }}
+          data-testid="morale-debuff-badge"
+        >
+          <AlertTriangle style={{ width: 10, height: 10 }} />
+          MORALE LOW · {Math.ceil((player.moraleDebuffUntil - Date.now()) / 60000)}m
+          {(player.consecutiveLosses ?? 0) > 1 && (
+            <span style={{ color: "rgba(255,60,60,0.7)", marginLeft: 4 }}>
+              ×{player.consecutiveLosses} LOSSES
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Attack cooldown warning badge */}
+      {player?.attackCooldownUntil && player.attackCooldownUntil > Date.now() && (
+        <div
+          className="absolute top-16 right-4 mt-8 z-40 flex items-center gap-1.5 px-3 py-1 rounded-full pointer-events-none select-none"
+          style={{
+            background: "rgba(8,8,20,0.88)",
+            border: "1px solid rgba(255,165,0,0.4)",
+            backdropFilter: "blur(8px)",
+            fontFamily: "monospace",
+            fontSize: 10,
+            letterSpacing: "0.15em",
+            color: "rgba(255,180,80,0.9)",
+          }}
+          data-testid="attack-cooldown-badge"
+        >
+          <Clock style={{ width: 10, height: 10 }} />
+          ATK COOLDOWN · {Math.ceil((player.attackCooldownUntil - Date.now()) / 60000)}m
+        </div>
+      )}
+
       {isConnected && frontierAsaId && isOptedInToFrontier === false && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30" data-testid="opt-in-banner">
           <Button
@@ -776,7 +821,7 @@ export function GameLayout() {
       )}
 
 
-      <aside className="hidden lg:flex flex-col w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
+      <aside className="hidden md:flex flex-col w-60 lg:w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
         {isLoading ? (
           <div className="p-4 space-y-3">
             <Skeleton className="h-24 w-full" />
@@ -788,7 +833,7 @@ export function GameLayout() {
         )}
       </aside>
 
-      <aside className="hidden lg:flex flex-col w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-hidden">
+      <aside className="hidden md:flex flex-col w-60 lg:w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-hidden">
         <div className="flex border-b border-border shrink-0">
           <button
             onClick={() => setDesktopRightTab("warroom")}
@@ -860,7 +905,7 @@ export function GameLayout() {
       </aside>
 
       {showFullscreenPanel && (
-        <div className="lg:hidden absolute inset-0 z-30 bg-background pt-16" data-testid="fullscreen-panel">
+        <div className="md:hidden absolute inset-0 z-30 bg-background pt-16" data-testid="fullscreen-panel">
           {activeTab === "inventory" && gameState && (
             <InventoryPanel
               player={player}

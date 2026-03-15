@@ -70,7 +70,7 @@ export function BottomNav({ activeTab, onTabChange, battleCount }: BottomNavProp
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 backdrop-blur-xl bg-card/95 border-t border-border"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-50 backdrop-blur-xl bg-card/95 border-t border-border"
       data-testid="bottom-nav"
     >
       <div className="flex items-center h-16">

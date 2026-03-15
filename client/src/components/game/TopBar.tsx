@@ -35,7 +35,7 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
         {mobileMenuContent && (
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" data-testid="button-mobile-menu">
+              <Button variant="ghost" size="icon" className="md:hidden" data-testid="button-mobile-menu">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
