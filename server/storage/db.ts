@@ -118,6 +118,8 @@ import {
 } from "@shared/schema";
 import { seedDatabase } from "./seeder";
 import { runAITurn as runAITurnFn } from "./ai-engine";
+import { buildBattleNote } from "../services/chain/battleNotes";
+import { buildNarrative, detectMilestone } from "../engine/narrative/commentator";
 import type { IStorage } from "./interface";
 
 type DB = typeof db;
@@ -1046,6 +1048,23 @@ export class DbStorage implements IStorage {
         description: `${playerRow.name} purchased plot #${parcelRow.plotId} for ${LAND_PURCHASE_ALGO[parcelRow.biome as BiomeType]} ALGO`,
         timestamp:   now,
       }, tx);
+
+      // ── Milestone detection (logging only) ──────────────────────────────
+      try {
+        const prev = playerRow.territoriesCaptured ?? 0;
+        const next  = prev + 1;
+        const milestone = detectMilestone(prev, next);
+        if (milestone) {
+          const milestoneNarrative = buildNarrative({
+            type: "player_milestone",
+            actorName: playerRow.name,
+            territoriesHeld: milestone,
+            worldPercent: (milestone / 21000) * 100,
+          });
+          if (milestoneNarrative) console.log("[narrative]", milestoneNarrative);
+        }
+      } catch { /* non-blocking */ }
+
       await this.bumpLastTs(now, tx);
 
       return rowToParcel({ ...parcelRow, ownerId: playerRow.id, ownerType, purchasePriceAlgo: null, lastFrontierClaimTs: now });
@@ -1655,6 +1674,43 @@ export class DbStorage implements IStorage {
           }, tx);
         }
 
+        // ── Battle note (non-blocking, AI battle contexts only) ──────────
+        try {
+          const isAiBattle = attackerRow.isAi || (targetRow.ownerType === "ai");
+          if (isAiBattle) {
+            const humanAddr = !attackerRow.isAi ? (attackerRow as any).address ?? "" : "";
+            const aiFactionName = attackerRow.isAi
+              ? attackerRow.name
+              : (allAiPlayers.find((ai: any) => ai.id === battleRow.defenderId)?.name ?? "Unknown");
+            const battleNote = buildBattleNote({
+              type: "battle_reward",
+              plotId: targetRow.plotId,
+              biome: targetRow.biome,
+              outcome,
+              humanAddr,
+              factionName: aiFactionName,
+              amount: 0,
+            });
+            console.log("[chain/battle] note:", new TextDecoder().decode(battleNote));
+          }
+        } catch { /* non-blocking */ }
+
+        // ── Narrative commentary (logging only) ──────────────────────────
+        try {
+          const defName = battleRow.defenderId
+            ? (allAiPlayers.find((p: any) => p.id === battleRow.defenderId)?.name ?? "Defender")
+            : "Unowned";
+          const narrativeText = buildNarrative({
+            type: attackerWins ? "battle_won" : "battle_lost",
+            actorName: attackerRow.name,
+            targetName: defName,
+            plotId: targetRow.plotId,
+            biome: targetRow.biome as BiomeType,
+            territoriesHeld: attackerRow.territoriesCaptured ?? 0,
+          });
+          if (narrativeText) console.log("[narrative]", narrativeText);
+        } catch { /* non-blocking */ }
+
         // ── Save replay to Redis (fire-and-forget, 24-hour TTL) ──────────
         const replayRecord: BattleReplayRecord = {
           battleId:       battleRow.id,
@@ -1693,6 +1749,7 @@ export class DbStorage implements IStorage {
   }
 
   async runAITurn(): Promise<GameEvent[]> {
+    if (process.env.AI_ENABLED !== 'true') return [];
     await this.initialize();
     return runAITurnFn(this.db, {
       mineResources:  (a) => this.mineResources(a),

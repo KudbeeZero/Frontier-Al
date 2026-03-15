@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { getBattleReplay } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
@@ -75,6 +75,30 @@ export async function registerRoutes(
       console.error("[routes] Blockchain init failed:", err);
     }
   })();
+
+  /**
+   * Asserts that the authenticated session player owns the playerId in req.body.
+   * Throws 401 if session is missing, 403 if playerId does not match session.
+   * Usage: await assertPlayerOwnership(req, res); if it throws, route is already responded.
+   */
+  async function assertPlayerOwnership(
+    req: Request,
+    res: Response,
+    bodyPlayerId?: string
+  ): Promise<string | null> {
+    const sessionPlayerId: string | undefined = (req.session as any)?.playerId;
+    const targetId = bodyPlayerId ?? req.body?.playerId;
+
+    if (!sessionPlayerId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return null;
+    }
+    if (targetId && targetId !== sessionPlayerId) {
+      res.status(403).json({ error: "Forbidden: player ID mismatch" });
+      return null;
+    }
+    return sessionPlayerId;
+  }
 
   app.get("/api/blockchain/status", async (_req, res) => {
     try {
@@ -634,6 +658,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/mine", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const action = mineActionSchema.parse(req.body);
       const result = await storage.mineResources(action);
       res.json({ success: true, yield: result });
@@ -678,6 +704,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/attack", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const action = attackActionSchema.parse(req.body);
       const battle = await storage.deployAttack(action);
       if (action.crystalBurned && action.crystalBurned > 0) {
@@ -720,6 +748,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/build", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const action = buildActionSchema.parse(req.body);
       const parcel = await storage.buildImprovement(action);
       const buildPlayer = await storage.getPlayer(action.playerId);
@@ -872,6 +902,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/collect", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const action = collectActionSchema.parse(req.body);
       const result = await storage.collectAll(action.playerId);
       res.json({ success: true, collected: result });
@@ -932,6 +964,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/mint-avatar", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const action = mintAvatarActionSchema.parse(req.body);
       const avatar = await storage.mintAvatar(action);
       const mintPlayer = await storage.getPlayer(action.playerId);
@@ -967,6 +1001,8 @@ export async function registerRoutes(
 
   app.post("/api/actions/switch-commander", async (req, res) => {
     try {
+      const verifiedId = await assertPlayerOwnership(req, res);
+      if (!verifiedId) return;
       const { playerId, commanderIndex } = req.body;
       if (!playerId || commanderIndex === undefined) return res.status(400).json({ error: "playerId and commanderIndex required" });
       const activeCommander = await storage.switchCommander(playerId, commanderIndex);
