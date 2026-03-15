@@ -136,11 +136,16 @@ export class DbStorage implements IStorage {
   // ── initialization ─────────────────────────────────────────────────────────
 
   /** Lazily initialise the DB world (idempotent — checks game_meta.initialized). */
-  private async initialize(): Promise<void> {
+  async initialize(): Promise<void> {
     if (!this.initPromise) {
       this.initPromise = seedDatabase(this.db);
     }
     return this.initPromise;
+  }
+
+  /** Reset initialization state so seedDatabase runs again on next access. */
+  resetInitState(): void {
+    this.initPromise = null;
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

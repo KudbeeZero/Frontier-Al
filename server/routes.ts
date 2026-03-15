@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
-import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable } from "./db-schema";
+import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable, battles as battlesTable, gameEvents as gameEventsTable, gameMeta, tradeOrders as tradeOrdersTable, subParcels as subParcelsTable, orbitalEvents as orbitalEventsTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
 import { broadcastGameState, broadcastRaw, markDirty } from "./wsServer";
 import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
@@ -1131,6 +1131,41 @@ export async function registerRoutes(
       res.json({ success: true, events });
     } catch (error) {
       res.status(500).json({ error: "Failed to run AI turn" });
+    }
+  });
+
+  // ── Testnet Reset ─────────────────────────────────────────────────────────
+  // Wipe all game data and re-seed from scratch. Testnet only.
+  app.post("/api/game/reset", async (_req, res) => {
+    try {
+      console.log("[RESET] Wiping game data for testnet reset…");
+      // Clear all tables in dependency order
+      await db.delete(subParcelsTable);
+      await db.delete(tradeOrdersTable);
+      await db.delete(orbitalEventsTable);
+      await db.delete(gameEventsTable);
+      await db.delete(battlesTable);
+      await db.delete(plotNftsTable);
+      await db.delete(mintIdempotencyTable);
+      await db.delete(parcelsTable);
+      await db.delete(playersTable);
+      // Reset game_meta so seeder runs on next init
+      await db.update(gameMeta).set({ initialized: false, currentTurn: 1, lastUpdateTs: 0 }).where(eq(gameMeta.id, 1));
+      console.log("[RESET] All tables cleared. Re-seeding…");
+
+      // Reset the storage init state and re-seed
+      storage.resetInitState();
+      await storage.initialize();
+
+      // Broadcast fresh state
+      const freshState = await storage.getGameState();
+      broadcastGameState(freshState);
+
+      console.log("[RESET] Testnet reset complete.");
+      res.json({ success: true, message: "Game reset and re-seeded successfully", totalParcels: freshState.parcels.length });
+    } catch (error) {
+      console.error("[RESET] Error:", error);
+      res.status(500).json({ error: "Failed to reset game" });
     }
   });
 
