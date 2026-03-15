@@ -8,11 +8,13 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import NotFound from "@/pages/not-found";
 import GamePage from "@/pages/game";
 import TestnetPage from "@/pages/testnet";
+import LandingPage from "@/pages/landing";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={GamePage} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/game" component={GamePage} />
       <Route path="/testnet" component={TestnetPage} />
       <Route component={NotFound} />
     </Switch>
