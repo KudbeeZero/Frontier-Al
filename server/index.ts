@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { initSeasonManager } from "./engine/season/manager";
 import { hydrateWorldEventsFromRedis } from "./worldEventStore";
 import { warmUpDb } from "./db";
 import { assertChainConfig } from "./services/chain/client";
@@ -104,6 +105,18 @@ app.use((req, res, next) => {
   });
 
   assertChainConfig();
+
+  // GUARDRAIL: Crash immediately if ALGORAND_NETWORK is missing or invalid.
+  // Prevents silent testnet/mainnet mismatch on deploy.
+  const _algodNetwork = process.env.ALGORAND_NETWORK;
+  if (!_algodNetwork || !['testnet', 'mainnet', 'localnet'].includes(_algodNetwork)) {
+    throw new Error(
+      `[FATAL] ALGORAND_NETWORK must be "testnet", "mainnet", or "localnet". ` +
+      `Got: "${_algodNetwork ?? 'undefined'}". Set ALGORAND_NETWORK in your environment.`
+    );
+  }
+  console.log(`[startup] ALGORAND_NETWORK=${_algodNetwork} ✓`);
+
   const { initWsServer } = await import("./wsServer");
   initWsServer(httpServer, storage);
   // Wake up Neon DB before accepting traffic (handles cold-start timeouts)
@@ -111,6 +124,9 @@ app.use((req, res, next) => {
   // Hydrate world event feed from Redis (no-op if Redis unavailable)
   await hydrateWorldEventsFromRedis();
   await registerRoutes(httpServer, app);
+  // Start season lifecycle manager (auto-expiry + countdown broadcasts)
+  initSeasonManager(storage);
+  console.log("[startup] Season manager initialised ✓");
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
