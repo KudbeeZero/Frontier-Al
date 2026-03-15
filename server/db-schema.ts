@@ -317,3 +317,29 @@ export const seasons = pgTable("seasons", {
 
 export type SeasonRow    = typeof seasons.$inferSelect;
 export type InsertSeason = typeof seasons.$inferInsert;
+
+// ─── treasury_ledger ─────────────────────────────────────────────────────────
+// Tracks all FRONTIER fee inflows to the protocol treasury.
+// Used for audit trail and batched on-chain settlement to the admin wallet.
+// Rows are created on sub-parcel purchases (30% of fee) and marked settled
+// when a batch on-chain transfer is executed.
+
+export const treasuryLedger = pgTable(
+  "treasury_ledger",
+  {
+    id:           varchar("id", { length: 36 }).primaryKey(),
+    eventType:    varchar("event_type", { length: 50 }).notNull(),  // 'sub_parcel_purchase' | 'on_chain_settlement'
+    amountMicro:  bigint("amount_micro", { mode: "number" }).notNull(), // FRONTIER in micro units
+    fromPlayerId: varchar("from_player_id", { length: 36 }),        // NULL for system events
+    settled:      boolean("settled").notNull().default(false),
+    settleTxId:   text("settle_tx_id"),                             // Algorand txId when settled
+    createdAt:    bigint("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => ({
+    settledIdx:  index("treasury_ledger_settled_idx").on(t.settled),
+    createdIdx:  index("treasury_ledger_created_idx").on(t.createdAt),
+  })
+);
+
+export type TreasuryLedgerRow    = typeof treasuryLedger.$inferSelect;
+export type InsertTreasuryLedger = typeof treasuryLedger.$inferInsert;

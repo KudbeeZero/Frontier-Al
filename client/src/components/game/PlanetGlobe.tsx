@@ -947,6 +947,9 @@ interface PlotOverlayProps {
   onPlotSelect: (parcelId: string) => void;
 }
 
+// Color used for subdivided macro-plot fill (neutral dim so sub-tiles show through)
+const COLOR_SUBDIVIDED = new THREE.Color(0x111820);
+
 // Subtle size variation — natural variety without causing overlap artifacts
 const SIZE_VARIANTS = [1.0, 1.04, 0.96, 1.06, 0.98, 1.02, 0.95, 1.05];
 function getPlotSizeVariant(plotId: number): number {
@@ -1088,6 +1091,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
       let fillColor: THREE.Color;
 
+      const isSubdivided = !!(parcel as LandParcel)?.isSubdivided;
+
       if (isHovered) {
         // Any hovered tile shows dim green — owned or not
         fillColor = COLOR_PLAYER.clone().multiplyScalar(0.6);
@@ -1100,6 +1105,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
       } else if (parcel?.activeBattleId) {
         const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
         fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
+      } else if (isSubdivided) {
+        fillColor = COLOR_SUBDIVIDED.clone();
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
@@ -1145,14 +1152,18 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
 
       // Determine fill color — ownership flat-colour only.
       let fillColor: THREE.Color;
-      const isOwned    = !!parcel?.ownerId;
-      const isSelected = parcel?.id === selectedPlotId;
+      const isOwned      = !!parcel?.ownerId;
+      const isSelected   = parcel?.id === selectedPlotId;
+      const isSubdivided = !!(parcel as LandParcel)?.isSubdivided;
 
       if (isSelected) {
         // Always show green when selected — owned tiles brighter, unowned slightly dimmer
         fillColor = isOwned ? COLOR_PLAYER.clone() : COLOR_PLAYER.clone().multiplyScalar(0.75);
       } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
+      } else if (isSubdivided) {
+        // Subdivided plots show neutral dark fill so sub-tiles are visible
+        fillColor = COLOR_SUBDIVIDED.clone();
       } else {
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
@@ -1250,6 +1261,151 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           transparent
           opacity={0.72}
           depthWrite={true}
+          side={THREE.DoubleSide}
+          toneMapped={false}
+        />
+      </instancedMesh>
+    </>
+  );
+}
+
+// ── Sub-Parcel Overlay ────────────────────────────────────────────────────────
+// Renders a 3×3 grid of 9 sub-tiles for every subdivided macro-plot.
+// Sub-tile positions are computed via tangent-plane offsets from the macro center.
+
+interface SubParcelOverlayProps {
+  parcels: LandParcel[];
+  players: Player[];
+  currentPlayerId: string | null;
+}
+
+// Max sub-tiles = 21000 plots × 9 sub-parcels (only subdivided ones are rendered)
+const MAX_SUB_TILES = 21000 * 9;
+
+// Build tangent-plane right/up vectors for a sphere surface normal
+function tangentFrame(normal: THREE.Vector3): { right: THREE.Vector3; up: THREE.Vector3 } {
+  const arbitrary = Math.abs(normal.y) < 0.9
+    ? new THREE.Vector3(0, 1, 0)
+    : new THREE.Vector3(1, 0, 0);
+  const right = new THREE.Vector3().crossVectors(normal, arbitrary).normalize();
+  const up    = new THREE.Vector3().crossVectors(right, normal).normalize();
+  return { right, up };
+}
+
+function SubParcelOverlay({ parcels, players, currentPlayerId }: SubParcelOverlayProps) {
+  const fillMeshRef   = useRef<THREE.InstancedMesh>(null!);
+  const borderMeshRef = useRef<THREE.InstancedMesh>(null!);
+
+  const playerMap = useMemo(() => {
+    const m = new Map<string, Player>();
+    players.forEach(p => m.set(p.id, p));
+    return m;
+  }, [players]);
+
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  // Sub-tile size: ~1/3 of macro-tile (fillSize = GLOBE_RADIUS * 0.034)
+  const subFillSize   = GLOBE_RADIUS * 0.010;
+  const subBorderSize = GLOBE_RADIUS * 0.011;
+  // Spacing between sub-tile centers within the macro tile footprint
+  const subSpacing    = GLOBE_RADIUS * 0.011;
+
+  useEffect(() => {
+    if (!fillMeshRef.current || !borderMeshRef.current) return;
+
+    let instanceIdx = 0;
+
+    for (const parcel of parcels) {
+      if (!parcel.isSubdivided || !parcel.subParcelOwnerIds) continue;
+
+      const center = latLngToVec3(parcel.lat, parcel.lng, GLOBE_RADIUS);
+      const normal = center.clone().normalize();
+      const { right, up } = tangentFrame(normal);
+
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) {
+          const subIndex = row * 3 + col;
+          const ownerId  = parcel.subParcelOwnerIds[subIndex] ?? null;
+
+          // Offset in tangent plane: center sub-tile at (0,0)
+          const offsetRight = (col - 1) * subSpacing;
+          const offsetUp    = (1 - row) * subSpacing; // row 0 = top
+
+          const worldPos = center.clone()
+            .addScaledVector(right, offsetRight)
+            .addScaledVector(up, offsetUp)
+            .normalize()
+            .multiplyScalar(GLOBE_RADIUS * 1.007);
+
+          // Determine color
+          let fillColor: THREE.Color;
+          if (!ownerId) {
+            fillColor = new THREE.Color(0x223344); // dark unowned
+          } else if (currentPlayerId && ownerId === currentPlayerId) {
+            fillColor = COLOR_PLAYER.clone().multiplyScalar(0.9);
+          } else {
+            fillColor = COLOR_ENEMY.clone().multiplyScalar(0.9);
+          }
+
+          const borderColor = ownerId ? COLOR_BORDER_OWNED.clone() : new THREE.Color(0x334455);
+
+          // Fill instance
+          dummy.position.copy(worldPos);
+          dummy.lookAt(worldPos.clone().multiplyScalar(2));
+          dummy.scale.setScalar(subFillSize);
+          dummy.updateMatrix();
+          fillMeshRef.current.setMatrixAt(instanceIdx, dummy.matrix);
+          fillMeshRef.current.setColorAt(instanceIdx, fillColor);
+
+          // Border instance
+          dummy.scale.setScalar(subBorderSize);
+          dummy.updateMatrix();
+          borderMeshRef.current.setMatrixAt(instanceIdx, dummy.matrix);
+          borderMeshRef.current.setColorAt(instanceIdx, borderColor);
+
+          instanceIdx++;
+        }
+      }
+    }
+
+    // Hide unused instances
+    const zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
+    const blackColor = new THREE.Color(0, 0, 0);
+    for (let i = instanceIdx; i < MAX_SUB_TILES; i++) {
+      fillMeshRef.current.setMatrixAt(i, zeroScale);
+      borderMeshRef.current.setMatrixAt(i, zeroScale);
+      fillMeshRef.current.setColorAt(i, blackColor);
+      borderMeshRef.current.setColorAt(i, blackColor);
+    }
+
+    fillMeshRef.current.instanceMatrix.needsUpdate   = true;
+    borderMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
+    if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
+    fillMeshRef.current.count   = instanceIdx;
+    borderMeshRef.current.count = instanceIdx;
+  }, [parcels, currentPlayerId, playerMap, dummy, subFillSize, subBorderSize, subSpacing]);
+
+  return (
+    <>
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+        <planeGeometry args={[1.0, 1.0]} />
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.70}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+        <planeGeometry args={[1.0, 1.0]} />
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.85}
+          depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
         />
@@ -1476,6 +1632,11 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
           currentPlayerId={currentPlayerId}
           selectedPlotId={selectedPlotId}
           onPlotSelect={onPlotSelect}
+        />
+        <SubParcelOverlay
+          parcels={parcels}
+          players={players}
+          currentPlayerId={currentPlayerId}
         />
         {replayEvents && replayEvents.length > 0 && replayVisibleTypes && replayTime !== undefined && (
           <GlobeEventOverlays
