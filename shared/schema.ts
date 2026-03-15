@@ -297,6 +297,8 @@ export interface GameState {
   claimedPlots: number;
   frontierTotalSupply: number;
   frontierCirculating: number;
+  /** Current season metadata (null if no season started yet) */
+  currentSeason: Season | null;
 }
 
 /** Minimal parcel data broadcast to all clients for globe/map rendering. */
@@ -319,6 +321,10 @@ export interface SlimParcel {
   ownerId: string | null;
   activeBattleId: string | null;
   animation?: ParcelAnimation;
+  /** true when this macro-plot has been subdivided into sub-parcels */
+  isSubdivided?: boolean;
+  /** Sub-parcel ownership counts for subdivided tiles (optional, for globe rendering) */
+  subParcelOwnerIds?: (string | null)[];
 }
 
 /** Minimal player data broadcast to all clients for color/name rendering. */
@@ -338,6 +344,10 @@ export interface SlimGameState {
   claimedPlots: number;
   frontierCirculating: number;
   lastUpdateTs: number;
+  /** Season countdown — millisecond Unix timestamp when current season ends. null if no season active. */
+  seasonEndsAt: number | null;
+  /** Human-readable season name e.g. "Season 1: First Colonists" */
+  seasonName: string | null;
 }
 
 export const mineActionSchema = z.object({
@@ -620,6 +630,75 @@ export const createTradeOrderSchema = z.object({
 }).refine(d => d.giveResource !== d.wantResource, {
   message: "Cannot trade a resource for itself",
 });
+
+// ─── Sub-Parcel Action Schemas ────────────────────────────────────────────────
+
+export const subdivideParcelSchema = z.object({
+  playerId: z.string(),
+  plotId: z.number().int().min(1),
+});
+
+export const purchaseSubParcelSchema = z.object({
+  playerId: z.string(),
+  subParcelId: z.string(),
+});
+
+export type SubdivideParcelAction = z.infer<typeof subdivideParcelSchema>;
+export type PurchaseSubParcelAction = z.infer<typeof purchaseSubParcelSchema>;
+
+// ─── Sub-Parcel System ────────────────────────────────────────────────────────
+// Each macro-plot can be subdivided into a 3×3 grid of 9 sub-parcels.
+// Sub-parcels are a human-exclusive feature — AI factions own whole macro-plots only.
+
+export const SUB_PARCEL_GRID = 3; // 3×3 = 9 sub-parcels per macro-plot
+export const SUB_PARCEL_COUNT = SUB_PARCEL_GRID * SUB_PARCEL_GRID; // 9
+/** Hours a player must hold a macro-plot before subdividing it */
+export const SUB_PARCEL_HOLD_HOURS = 4;
+/** Fraction of parent plot's daily FRONTIER yield each sub-parcel generates */
+export const SUB_PARCEL_YIELD_FRACTION = 1 / SUB_PARCEL_COUNT;
+/** Bonus multiplier applied when a player owns ALL sub-parcels in a plot */
+export const SUB_PARCEL_FULL_CONTROL_BONUS = 1.5; // +50% yield
+
+export interface SubParcel {
+  id: string;
+  parentPlotId: number;      // FK → parcels.plotId
+  subIndex: number;           // 0–8 (row-major in 3×3 grid)
+  ownerId: string | null;
+  ownerType: "player" | "ai" | null;
+  improvements: Improvement[];
+  resourceYieldFraction: number; // fraction of parent plot yield (default 1/9)
+  purchasePriceFrontier: number;
+  acquiredAt: number | null;     // timestamp when current owner claimed it
+  activeBattleId: string | null;
+}
+
+// ─── Season System ────────────────────────────────────────────────────────────
+// Seasons are ~90-day meta-layers. The world PERSISTS between seasons —
+// ownership, sub-parcels, and improvements carry forward. Season end only
+// takes a leaderboard snapshot and distributes FRONTIER reward tiers.
+
+export type SeasonStatus = "active" | "settling" | "complete";
+
+export interface Season {
+  id: string;
+  number: number;             // 1, 2, 3… incrementing
+  name: string;               // e.g. "Season 1: First Colonists"
+  startedAt: number;          // Unix ms
+  endsAt: number;             // Unix ms
+  status: SeasonStatus;
+  /** Top player IDs by plots held at season end */
+  winnerId: string | null;
+  totalPlotsAtEnd: number | null;
+  /** FRONTIER distributed to top-10 at season end */
+  rewardPool: number;
+}
+
+export interface SeasonLeaderboardEntry extends LeaderboardEntry {
+  seasonId: string;
+  seasonNumber: number;
+  rank: number;
+  rewardFrontier: number;
+}
 
 // ─── calculateFrontierPerDay ──────────────────────────────────────────────────
 

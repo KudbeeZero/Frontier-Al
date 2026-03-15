@@ -1430,5 +1430,105 @@ export async function registerRoutes(
     }
   });
 
+  // ── Sub-Parcel Endpoints ───────────────────────────────────────────────────
+
+  /** GET /api/plots/:plotId/sub-parcels — list sub-parcels for a macro-plot */
+  app.get("/api/plots/:plotId/sub-parcels", async (req, res) => {
+    const plotId = parseInt(req.params.plotId);
+    if (!plotId || isNaN(plotId)) return res.status(400).json({ error: "Invalid plotId" });
+    try {
+      const subParcels = await storage.getSubParcels(plotId);
+      res.json({ plotId, subParcels, isSubdivided: subParcels.length > 0 });
+    } catch (err) {
+      console.error("[sub-parcels] getSubParcels error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/plots/:plotId/subdivide — subdivide a macro-plot into 9 sub-parcels */
+  app.post("/api/plots/:plotId/subdivide", async (req, res) => {
+    const plotId = parseInt(req.params.plotId);
+    const { playerId } = req.body;
+    if (!plotId || isNaN(plotId)) return res.status(400).json({ error: "Invalid plotId" });
+    if (!playerId) return res.status(400).json({ error: "playerId required" });
+    try {
+      const result = await storage.subdivideParcel(plotId, playerId);
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json({ success: true, subParcels: result.subParcels });
+    } catch (err) {
+      console.error("[sub-parcels] subdivideParcel error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/sub-parcels/:subParcelId/purchase — buy an unowned sub-parcel */
+  app.post("/api/sub-parcels/:subParcelId/purchase", async (req, res) => {
+    const { subParcelId } = req.params;
+    const { playerId } = req.body;
+    if (!subParcelId) return res.status(400).json({ error: "Invalid subParcelId" });
+    if (!playerId)    return res.status(400).json({ error: "playerId required" });
+    try {
+      const result = await storage.purchaseSubParcel(subParcelId, playerId);
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json({ success: true, subParcel: result.subParcel });
+    } catch (err) {
+      console.error("[sub-parcels] purchaseSubParcel error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Season Endpoints ───────────────────────────────────────────────────────
+
+  /** GET /api/season/current — get the active season info */
+  app.get("/api/season/current", async (_req, res) => {
+    try {
+      const season = await storage.getCurrentSeason();
+      res.json({ season });
+    } catch (err) {
+      console.error("[season] getCurrentSeason error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** GET /api/season/history — get all past seasons */
+  app.get("/api/season/history", async (_req, res) => {
+    try {
+      const seasons = await storage.getSeasonHistory();
+      res.json({ seasons });
+    } catch (err) {
+      console.error("[season] getSeasonHistory error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/admin/season/start — start a new season (admin only) */
+  app.post("/api/admin/season/start", async (req, res) => {
+    const { name, daysLen } = req.body;
+    if (!name) return res.status(400).json({ error: "name required" });
+    try {
+      const season = await storage.startSeason(name, daysLen ?? 90);
+      markDirty();
+      res.json({ success: true, season });
+    } catch (err: any) {
+      console.error("[season] startSeason error", err);
+      res.status(400).json({ error: err.message ?? "Failed to start season" });
+    }
+  });
+
+  /** POST /api/admin/season/settle — settle the current season */
+  app.post("/api/admin/season/settle", async (_req, res) => {
+    try {
+      const season = await storage.settleCurrentSeason();
+      if (!season) return res.status(404).json({ error: "No active season to settle" });
+      markDirty();
+      res.json({ success: true, season });
+    } catch (err) {
+      console.error("[season] settleCurrentSeason error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   return httpServer;
 }

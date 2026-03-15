@@ -11,13 +11,21 @@ import type {
   ReconDrone,
   OrbitalSatellite,
   LeaderboardEntry,
+  SubParcel,
 } from "@shared/schema";
-import { parcels as parcelsTable, players as playersTable, battles as battlesTable, gameEvents as gameEventsTable } from "../db-schema";
+import {
+  SUB_PARCEL_HOLD_HOURS,
+  SUB_PARCEL_COUNT,
+  SUB_PARCEL_YIELD_FRACTION,
+  LAND_PURCHASE_ALGO,
+} from "@shared/schema";
+import { parcels as parcelsTable, players as playersTable, battles as battlesTable, gameEvents as gameEventsTable, subParcels as subParcelsTable } from "../db-schema";
 
-export type ParcelRow  = typeof parcelsTable.$inferSelect;
-export type PlayerRow  = typeof playersTable.$inferSelect;
-export type BattleRow  = typeof battlesTable.$inferSelect;
-export type EventRow   = typeof gameEventsTable.$inferSelect;
+export type ParcelRow     = typeof parcelsTable.$inferSelect;
+export type PlayerRow     = typeof playersTable.$inferSelect;
+export type BattleRow     = typeof battlesTable.$inferSelect;
+export type EventRow      = typeof gameEventsTable.$inferSelect;
+export type SubParcelRow  = typeof subParcelsTable.$inferSelect;
 
 // ── Micro-FRONTIER helpers ───────────────────────────────────────────────────
 
@@ -181,4 +189,86 @@ export function computeLeaderboard(playerRows: PlayerRow[], parcelRows: Pick<Par
       isAI:                r.isAi,
     }))
     .sort((a, b) => b.territories - a.territories || b.totalFrontierEarned - a.totalFrontierEarned);
+}
+
+// ── Sub-Parcel Helpers ───────────────────────────────────────────────────────
+
+export function rowToSubParcel(row: SubParcelRow): SubParcel {
+  return {
+    id:                    row.id,
+    parentPlotId:          row.parentPlotId,
+    subIndex:              row.subIndex,
+    ownerId:               row.ownerId ?? null,
+    ownerType:             (row.ownerType ?? null) as "player" | "ai" | null,
+    improvements:          (row.improvements ?? []) as Improvement[],
+    resourceYieldFraction: row.resourceYieldFraction,
+    purchasePriceFrontier: row.purchasePriceFrontier,
+    acquiredAt:            row.acquiredAt ? Number(row.acquiredAt) : null,
+    activeBattleId:        row.activeBattleId ?? null,
+  };
+}
+
+/**
+ * Returns null if the player can subdivide this parcel, or an error string explaining why not.
+ *
+ * Rules:
+ * 1. Player must own the macro-plot (ownerType = "player")
+ * 2. Player must have held it for at least SUB_PARCEL_HOLD_HOURS
+ * 3. Plot must not already be subdivided (no existing sub-parcel rows)
+ * 4. Plot must not have an active battle
+ */
+export function canSubdivideParcel(
+  parcel: LandParcel,
+  playerId: string,
+  alreadySubdivided: boolean,
+  nowMs: number
+): string | null {
+  if (parcel.ownerId !== playerId) return "You do not own this plot";
+  if (parcel.ownerType !== "player") return "Only human players can subdivide plots";
+  if (parcel.activeBattleId) return "Cannot subdivide a plot with an active battle";
+  if (alreadySubdivided) return "This plot is already subdivided";
+
+  const holdMs = SUB_PARCEL_HOLD_HOURS * 60 * 60 * 1000;
+  const heldSince = parcel.capturedAt ?? parcel.lastFrontierClaimTs;
+  if (nowMs - heldSince < holdMs) {
+    const remainingHours = ((holdMs - (nowMs - heldSince)) / 3_600_000).toFixed(1);
+    return `Must hold this plot for ${SUB_PARCEL_HOLD_HOURS}h before subdividing (${remainingHours}h remaining)`;
+  }
+
+  return null; // allowed
+}
+
+/**
+ * Calculate the FRONTIER purchase price for a sub-parcel based on the parent
+ * plot's biome. Volcanic/mountain/water plots cost more per sub-parcel.
+ */
+export function computeSubParcelPrice(biome: BiomeType): number {
+  // Scale from Algo price: multiply by 50 and cap between 10–100 FRONTIER
+  const algoBase = LAND_PURCHASE_ALGO[biome] ?? 0.3;
+  return Math.max(10, Math.min(100, Math.round(algoBase * 50)));
+}
+
+/**
+ * Build the 9 sub-parcel insert rows for a freshly subdivided macro-plot.
+ * The parent plot owner gets sub-parcel 4 (center of the 3×3 grid) for free.
+ */
+export function buildSubParcelRows(
+  parentPlot: LandParcel,
+  ownerId: string,
+  nowMs: number
+): SubParcelRow[] {
+  const price = computeSubParcelPrice(parentPlot.biome as BiomeType);
+  return Array.from({ length: SUB_PARCEL_COUNT }, (_, i) => ({
+    id:                    randomUUID(),
+    parentPlotId:          parentPlot.plotId,
+    subIndex:              i,
+    ownerId:               i === 4 ? ownerId : null,  // center cell given to subdivider
+    ownerType:             i === 4 ? ("player" as const) : null,
+    improvements:          [],
+    resourceYieldFraction: SUB_PARCEL_YIELD_FRACTION,
+    purchasePriceFrontier: price,
+    acquiredAt:            i === 4 ? nowMs : null,
+    activeBattleId:        null,
+    createdAt:             nowMs,
+  }));
 }

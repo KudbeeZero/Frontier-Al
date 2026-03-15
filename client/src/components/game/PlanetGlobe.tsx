@@ -19,6 +19,13 @@ const GLOBE_RADIUS = 2;
 const PLOT_COUNT = 21000;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
+/**
+ * Polar exclusion latitude — must match server/sphereUtils.ts POLAR_EXCLUSION_LAT.
+ * Plots above this latitude (abs) are skipped so the globe shows clean circular
+ * polar cap voids at both poles (matching the Zero Colonies aesthetic).
+ */
+const POLAR_EXCLUSION_LAT = 75;
+
 // Tile fill palette
 const COLOR_PLAYER   = new THREE.Color("#00ff88"); // vivid neon-green — your territory
 const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy/AI territory
@@ -30,15 +37,23 @@ const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue gr
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
 
+/**
+ * Client-side Fibonacci sphere generator.
+ * MUST produce the same lat/lng positions as server/sphereUtils.ts generateFibonacciSphere().
+ * Uses polar exclusion to skip |lat| > POLAR_EXCLUSION_LAT, creating the clean circular
+ * polar cap voids on the globe.
+ */
 function generateFibonacciSphere(count: number): PlotCoord[] {
   const plots: PlotCoord[] = [];
-  for (let i = 0; i < count; i++) {
-    const y = 1 - (i / (count - 1)) * 2;
-    const radius = Math.sqrt(1 - y * y);
+  const candidates = Math.ceil(count * 1.1); // same headroom multiplier as server
+
+  for (let i = 0; i < candidates && plots.length < count; i++) {
+    const y = 1 - (i / (candidates - 1)) * 2;
     const theta = GOLDEN_ANGLE * i;
     const lat = Math.asin(y) * (180 / Math.PI);
+    if (Math.abs(lat) > POLAR_EXCLUSION_LAT) continue;
     const lng = ((theta * 180) / Math.PI) % 360;
-    plots.push({ plotId: i + 1, lat, lng: lng > 180 ? lng - 360 : lng });
+    plots.push({ plotId: plots.length + 1, lat, lng: lng > 180 ? lng - 360 : lng });
   }
   return plots;
 }
@@ -62,9 +77,16 @@ interface CameraControllerProps {
   targetLat: number | null;
   targetLng: number | null;
   controlsRef: React.RefObject<OrbitControlsImpl>;
+  /** When true, auto-pilot camera through active battle hotspots (stream mode). */
+  streamMode?: boolean;
+  /** Sorted list of battle lat/lng hotspots for stream camera auto-rotation. */
+  battleHotspots?: { lat: number; lng: number }[];
 }
 
-function CameraController({ targetLat, targetLng, controlsRef }: CameraControllerProps) {
+/** How long the stream camera dwells on each battle hotspot (ms). */
+const STREAM_DWELL_MS = 15_000;
+
+function CameraController({ targetLat, targetLng, controlsRef, streamMode, battleHotspots }: CameraControllerProps) {
   const { camera } = useThree();
 
   const flyTarget  = useRef<THREE.Vector3 | null>(null);
@@ -73,6 +95,10 @@ function CameraController({ targetLat, targetLng, controlsRef }: CameraControlle
 
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isIdle    = useRef(false);
+
+  // Stream mode state
+  const streamHotspotIdx  = useRef(0);
+  const streamDwellStart  = useRef<number>(0);
 
   const FLY_DISTANCE = GLOBE_RADIUS * 2.8;
   const FLY_SPEED    = 0.055;
@@ -118,6 +144,21 @@ function CameraController({ targetLat, targetLng, controlsRef }: CameraControlle
   }, [controlsRef]);
 
   useFrame(() => {
+    // Stream mode: auto-pilot through battle hotspots, ignoring manual fly-to
+    if (streamMode && battleHotspots && battleHotspots.length > 0) {
+      if (controlsRef.current) controlsRef.current.autoRotate = false;
+
+      const now = Date.now();
+      if (now - streamDwellStart.current > STREAM_DWELL_MS) {
+        // Advance to next hotspot
+        streamHotspotIdx.current = (streamHotspotIdx.current + 1) % battleHotspots.length;
+        streamDwellStart.current = now;
+        const h = battleHotspots[streamHotspotIdx.current];
+        const surfaceVec = latLngToVec3(h.lat, h.lng, 1);
+        flyTarget.current = surfaceVec.clone().multiplyScalar(FLY_DISTANCE);
+      }
+    }
+
     if (!flyTarget.current) return;
     if (controlsRef.current) controlsRef.current.autoRotate = false;
 
@@ -1159,26 +1200,26 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial transparent opacity={0.001} depthWrite={false} side={THREE.FrontSide} />
       </mesh>
 
-      {/* Border ring — white on owned tiles, teal-blue pulse on unowned land grid. */}
+      {/* Border frame — thin square outline for grid tile look (matches Zero Colonies aesthetic). */}
       <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
-        <circleGeometry args={[0.5, 6]} />
+        <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.75}
+          opacity={0.65}
           depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
         />
       </instancedMesh>
 
-      {/* Fill layer — toneMapped=false so colours appear at exact sRGB values. */}
+      {/* Fill layer — square tile. toneMapped=false so colours appear at exact sRGB values. */}
       <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
-        <circleGeometry args={[0.5, 6]} />
+        <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.82}
+          opacity={0.78}
           depthWrite={true}
           side={THREE.DoubleSide}
           toneMapped={false}
@@ -1368,15 +1409,29 @@ interface SceneProps {
   replayEvents?: WorldEvent[];
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
+  streamMode?: boolean;
 }
 
-function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents, replayEvents, replayTime, replayVisibleTypes }: SceneProps) {
+function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect, controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents, replayEvents, replayTime, replayVisibleTypes, streamMode }: SceneProps) {
+  // Build hotspot list from active battles for stream camera
+  const battleHotspots = useMemo(() => {
+    if (!streamMode) return [];
+    const parcelMap = new Map(parcels.map(p => [p.id, p]));
+    return battles
+      .filter(b => b.status === "pending")
+      .map(b => parcelMap.get(b.targetParcelId))
+      .filter((p): p is LandParcel => !!p)
+      .map(p => ({ lat: p.lat, lng: p.lng }));
+  }, [streamMode, battles, parcels]);
+
   return (
     <>
       <CameraController
         targetLat={targetLat}
         targetLng={targetLng}
         controlsRef={controlsRef}
+        streamMode={streamMode}
+        battleHotspots={battleHotspots}
       />
       <StarField />
       <AtmosphereGlow />
@@ -1510,6 +1565,8 @@ interface PlanetGlobeProps {
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
   activeBattleCount?: number;
+  /** Enable stream mode: fullscreen hotspot camera + no HUD chrome. */
+  streamMode?: boolean;
 }
 
 export default function PlanetGlobe({
@@ -1529,6 +1586,7 @@ export default function PlanetGlobe({
   replayTime,
   replayVisibleTypes,
   activeBattleCount = 0,
+  streamMode = false,
 }: PlanetGlobeProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null!);
 
@@ -1565,6 +1623,7 @@ export default function PlanetGlobe({
           replayEvents={replayEvents}
           replayTime={replayTime}
           replayVisibleTypes={replayVisibleTypes}
+          streamMode={streamMode}
         />
       </Canvas>
 

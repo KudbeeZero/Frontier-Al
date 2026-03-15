@@ -33,6 +33,7 @@ import { Coins, Shield, Globe, Trophy, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
+import { StreamOverlay } from "./StreamOverlay";
 
 export function GameLayout() {
   const wallet = useWallet();
@@ -89,6 +90,39 @@ export function GameLayout() {
   const [now, setNow] = useState(() => Date.now());
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
   const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
+
+  // ── Stream mode & season countdown ────────────────────────────────────────
+  /** Detect ?stream=1 in URL to enable the fullscreen streaming HUD. */
+  const streamMode = useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("stream") === "1";
+    } catch {
+      return false;
+    }
+  }, []);
+
+  /** Tick `now` every second to drive the live season countdown display. */
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(tick);
+  }, []);
+
+  const seasonEndsAt = (gameState as any)?.seasonEndsAt as number | null | undefined;
+  const seasonName   = (gameState as any)?.seasonName as string | null | undefined;
+
+  const seasonCountdown = useMemo(() => {
+    if (!seasonEndsAt) return null;
+    const ms = seasonEndsAt - now;
+    if (ms <= 0) return "SEASON ENDED";
+    const totalSec = Math.floor(ms / 1000);
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    return `${m}m ${s}s`;
+  }, [seasonEndsAt, now]);
 
   useEffect(() => {
     if (livePulses.length === 0) return;
@@ -695,6 +729,7 @@ export function GameLayout() {
             replayEvents={replayEvents}
             replayTime={replayTime}
             replayVisibleTypes={replayVisibleTypes}
+            streamMode={streamMode}
           />
         </>
       ) : null}
@@ -704,6 +739,25 @@ export function GameLayout() {
           isConnected={isConnected}
           mobileMenuContent={mobileMenuContent}
         />
+        {/* Season countdown badge — shown when a season is active */}
+        {seasonCountdown && (
+          <div
+            className="absolute top-full left-1/2 -translate-x-1/2 mt-1 pointer-events-none select-none flex items-center gap-2 px-3 py-1 rounded-full z-50"
+            style={{
+              background: "rgba(4,8,20,0.85)",
+              border: "1px solid rgba(0,229,255,0.25)",
+              backdropFilter: "blur(8px)",
+              fontFamily: "monospace",
+              fontSize: 10,
+              letterSpacing: "0.2em",
+              color: "rgba(0,229,255,0.8)",
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#00e5ff", display: "inline-block", boxShadow: "0 0 6px #00e5ff" }} />
+            {seasonName ? `${seasonName.toUpperCase()} · ` : "SEASON · "}
+            {seasonCountdown}
+          </div>
+        )}
       </div>
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
@@ -921,6 +975,15 @@ export function GameLayout() {
             : null
         }
       />
+
+      {/* Stream overlay — rendered only when ?stream=1 is in the URL */}
+      {streamMode && (
+        <StreamOverlay
+          gameState={gameState ?? null}
+          seasonCountdown={seasonCountdown}
+          seasonName={seasonName ?? null}
+        />
+      )}
     </div>
   );
 }

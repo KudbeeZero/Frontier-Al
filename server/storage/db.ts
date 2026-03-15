@@ -89,6 +89,8 @@ import {
   gameEvents as gameEventsTable,
   orbitalEvents as orbitalEventsTable,
   tradeOrders as tradeOrdersTable,
+  subParcels as subParcelsTable,
+  seasons as seasonsTable,
   type TradeOrder,
   type InsertTradeOrder,
 } from "../db-schema";
@@ -97,12 +99,22 @@ import {
   rowToPlayer,
   rowToBattle,
   rowToEvent,
+  rowToSubParcel,
   computeLeaderboard,
+  canSubdivideParcel,
+  buildSubParcelRows,
+  computeSubParcelPrice,
   fromMicroFRNTR,
   toMicroFRNTR,
   type ParcelRow,
   type BattleRow,
 } from "./game-rules";
+import type { SubParcel, Season } from "@shared/schema";
+import {
+  SUB_PARCEL_HOLD_HOURS,
+  SUB_PARCEL_FULL_CONTROL_BONUS,
+  SUB_PARCEL_COUNT,
+} from "@shared/schema";
 import { seedDatabase } from "./seeder";
 import { runAITurn as runAITurnFn } from "./ai-engine";
 import type { IStorage } from "./interface";
@@ -525,6 +537,9 @@ export class DbStorage implements IStorage {
     const allParcelsFull = await this.db.select().from(parcelsTable);
     const leaderboard = computeLeaderboard(allPlayersFull, allParcelsFull);
 
+    // Include current season for countdown timer in HUD
+    const currentSeason = await this.getCurrentSeason();
+
     return {
       parcels:            slimParcels,
       players:            slimPlayers,
@@ -533,6 +548,8 @@ export class DbStorage implements IStorage {
       claimedPlots,
       frontierCirculating,
       lastUpdateTs:       Number(meta?.lastUpdateTs ?? 0),
+      seasonEndsAt:       currentSeason?.endsAt ?? null,
+      seasonName:         currentSeason?.name ?? null,
     };
   }
 
@@ -1799,5 +1816,200 @@ export class DbStorage implements IStorage {
     });
 
     return result;
+  }
+
+  // ── Sub-Parcel Methods ─────────────────────────────────────────────────────
+
+  async getSubParcels(parentPlotId: number): Promise<SubParcel[]> {
+    await this.initialize();
+    const rows = await this.db
+      .select()
+      .from(subParcelsTable)
+      .where(eq(subParcelsTable.parentPlotId, parentPlotId));
+    return rows.map(rowToSubParcel);
+  }
+
+  async isSubdivided(parentPlotId: number): Promise<boolean> {
+    await this.initialize();
+    const [row] = await this.db
+      .select({ id: subParcelsTable.id })
+      .from(subParcelsTable)
+      .where(eq(subParcelsTable.parentPlotId, parentPlotId))
+      .limit(1);
+    return !!row;
+  }
+
+  async subdivideParcel(plotId: number, playerId: string): Promise<{ subParcels: SubParcel[]; error?: string }> {
+    await this.initialize();
+
+    // Load the parcel
+    const [parcelRow] = await this.db
+      .select()
+      .from(parcelsTable)
+      .where(eq(parcelsTable.plotId, plotId));
+    if (!parcelRow) return { subParcels: [], error: "Plot not found" };
+
+    const parcel = rowToParcel(parcelRow);
+    const alreadySubdivided = await this.isSubdivided(plotId);
+    const now = Date.now();
+
+    const validationError = canSubdivideParcel(parcel, playerId, alreadySubdivided, now);
+    if (validationError) return { subParcels: [], error: validationError };
+
+    const rows = buildSubParcelRows(parcel, playerId, now);
+    const inserted = await this.db
+      .insert(subParcelsTable)
+      .values(rows)
+      .returning();
+
+    // Log event
+    await this.db.insert(gameEventsTable).values({
+      id:          randomUUID(),
+      type:        "build",
+      playerId,
+      parcelId:    parcelRow.id,
+      description: `Plot #${plotId} subdivided into ${SUB_PARCEL_COUNT} sub-parcels`,
+      narrativeText: `🏗️ A colonist subdivides Plot #${plotId} — ${SUB_PARCEL_COUNT - 1} sub-parcels now available for purchase!`,
+      ts:          now,
+    });
+
+    return { subParcels: inserted.map(rowToSubParcel) };
+  }
+
+  async purchaseSubParcel(subParcelId: string, playerId: string): Promise<{ subParcel: SubParcel; error?: string }> {
+    await this.initialize();
+
+    const [row] = await this.db
+      .select()
+      .from(subParcelsTable)
+      .where(eq(subParcelsTable.id, subParcelId));
+    if (!row) return { subParcel: null as any, error: "Sub-parcel not found" };
+    if (row.ownerId) return { subParcel: rowToSubParcel(row), error: "Sub-parcel already owned" };
+
+    // Deduct FRONTIER from player
+    const [playerRow] = await this.db
+      .select()
+      .from(playersTable)
+      .where(eq(playersTable.id, playerId));
+    if (!playerRow) return { subParcel: null as any, error: "Player not found" };
+
+    const playerFrontier = fromMicroFRNTR(playerRow.frntrBalanceMicro);
+    if (playerFrontier < row.purchasePriceFrontier) {
+      return { subParcel: null as any, error: `Insufficient FRONTIER — need ${row.purchasePriceFrontier}, have ${playerFrontier.toFixed(2)}` };
+    }
+
+    const now = Date.now();
+    const costMicro = toMicroFRNTR(row.purchasePriceFrontier);
+
+    const [updated] = await this.db
+      .update(subParcelsTable)
+      .set({ ownerId: playerId, ownerType: "player", acquiredAt: now })
+      .where(eq(subParcelsTable.id, subParcelId))
+      .returning();
+
+    await this.db
+      .update(playersTable)
+      .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} - ${costMicro}` })
+      .where(eq(playersTable.id, playerId));
+
+    return { subParcel: rowToSubParcel(updated) };
+  }
+
+  // ── Season Methods ─────────────────────────────────────────────────────────
+
+  async getCurrentSeason(): Promise<Season | null> {
+    await this.initialize();
+    const [row] = await this.db
+      .select()
+      .from(seasonsTable)
+      .where(eq(seasonsTable.status, "active"))
+      .orderBy(desc(seasonsTable.number))
+      .limit(1);
+    if (!row) return null;
+    return {
+      id:             row.id,
+      number:         row.number,
+      name:           row.name,
+      startedAt:      Number(row.startedAt),
+      endsAt:         Number(row.endsAt),
+      status:         row.status as Season["status"],
+      winnerId:       row.winnerId ?? null,
+      totalPlotsAtEnd: row.totalPlotsAtEnd ?? null,
+      rewardPool:     row.rewardPool,
+    };
+  }
+
+  async startSeason(name: string, daysLen = 90): Promise<Season> {
+    await this.initialize();
+
+    // Ensure no active season
+    const existing = await this.getCurrentSeason();
+    if (existing) throw new Error("A season is already active");
+
+    // Determine next season number
+    const [lastRow] = await this.db
+      .select({ number: seasonsTable.number })
+      .from(seasonsTable)
+      .orderBy(desc(seasonsTable.number))
+      .limit(1);
+    const number = (lastRow?.number ?? 0) + 1;
+
+    const now = Date.now();
+    const endsAt = now + daysLen * 24 * 60 * 60 * 1000;
+
+    const [row] = await this.db
+      .insert(seasonsTable)
+      .values({ id: randomUUID(), number, name, startedAt: now, endsAt, status: "active", rewardPool: 0, leaderboardSnapshot: [] })
+      .returning();
+
+    return {
+      id: row.id, number: row.number, name: row.name,
+      startedAt: Number(row.startedAt), endsAt: Number(row.endsAt),
+      status: "active", winnerId: null, totalPlotsAtEnd: null, rewardPool: row.rewardPool,
+    };
+  }
+
+  async settleCurrentSeason(): Promise<Season | null> {
+    await this.initialize();
+    const current = await this.getCurrentSeason();
+    if (!current) return null;
+
+    const allPlayersFull = await this.db.select().from(playersTable);
+    const allParcelsFull = await this.db.select().from(parcelsTable);
+    const leaderboard = computeLeaderboard(allPlayersFull, allParcelsFull);
+    const claimedPlots = allParcelsFull.filter(p => p.ownerId).length;
+    const winnerId = leaderboard[0]?.playerId ?? null;
+
+    const [row] = await this.db
+      .update(seasonsTable)
+      .set({
+        status: "complete",
+        winnerId,
+        totalPlotsAtEnd: claimedPlots,
+        leaderboardSnapshot: leaderboard.slice(0, 10) as object[],
+      })
+      .where(eq(seasonsTable.id, current.id))
+      .returning();
+
+    return {
+      id: row.id, number: row.number, name: row.name,
+      startedAt: Number(row.startedAt), endsAt: Number(row.endsAt),
+      status: "complete", winnerId: row.winnerId ?? null,
+      totalPlotsAtEnd: row.totalPlotsAtEnd ?? null, rewardPool: row.rewardPool,
+    };
+  }
+
+  async getSeasonHistory(): Promise<Season[]> {
+    await this.initialize();
+    const rows = await this.db
+      .select()
+      .from(seasonsTable)
+      .orderBy(seasonsTable.number);
+    return rows.map(row => ({
+      id: row.id, number: row.number, name: row.name,
+      startedAt: Number(row.startedAt), endsAt: Number(row.endsAt),
+      status: row.status as Season["status"],
+      winnerId: row.winnerId ?? null, totalPlotsAtEnd: row.totalPlotsAtEnd ?? null, rewardPool: row.rewardPool,
+    }));
   }
 }

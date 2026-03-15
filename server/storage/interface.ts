@@ -19,6 +19,8 @@ import type {
   ReconDrone,
   OrbitalSatellite,
   OrbitalEvent,
+  SubParcel,
+  Season,
 } from "@shared/schema";
 import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
@@ -75,4 +77,31 @@ export interface IStorage {
   fillTradeOrder(orderId: string, fillerId: string): Promise<{ success: boolean; error?: string; trade?: TradeOrder }>;
   getTradeHistory(limit?: number): Promise<TradeOrder[]>;
   getTradeLeaderboard(): Promise<{ playerId: string; name: string; tradesPosted: number; tradesFilled: number }[]>;
+
+  // ── Sub-Parcels ──────────────────────────────────────────────────────────
+  /** Get all sub-parcels for a given macro-plot. Returns [] if not yet subdivided. */
+  getSubParcels(parentPlotId: number): Promise<SubParcel[]>;
+  /**
+   * Subdivide a macro-plot into 9 sub-parcels. The subdividing player receives
+   * the center sub-parcel (index 4) for free. Fails if the plot cannot be subdivided.
+   */
+  subdivideParcel(plotId: number, playerId: string): Promise<{ subParcels: SubParcel[]; error?: string }>;
+  /** Purchase an unowned sub-parcel with FRONTIER tokens. */
+  purchaseSubParcel(subParcelId: string, playerId: string): Promise<{ subParcel: SubParcel; error?: string }>;
+  /** Check whether a macro-plot has been subdivided. */
+  isSubdivided(parentPlotId: number): Promise<boolean>;
+
+  // ── Season System ────────────────────────────────────────────────────────
+  /** Get the currently active season, or null if none has been started. */
+  getCurrentSeason(): Promise<Season | null>;
+  /**
+   * Start a new season. If a season is already active, throws.
+   * @param name    Human-readable season name (e.g. "Season 1: First Colonists")
+   * @param daysLen Duration in days (default 90)
+   */
+  startSeason(name: string, daysLen?: number): Promise<Season>;
+  /** Settle the current season: snapshot leaderboard, mark complete. */
+  settleCurrentSeason(): Promise<Season | null>;
+  /** Get all past seasons ordered by number. */
+  getSeasonHistory(): Promise<Season[]>;
 }
