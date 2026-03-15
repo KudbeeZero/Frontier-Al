@@ -25,6 +25,10 @@ import type {
 import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
 export interface IStorage {
+  /** Initialize storage (run seeder if needed). */
+  initialize(): Promise<void>;
+  /** Reset init state so next initialize() re-seeds. Used for testnet reset. */
+  resetInitState(): void;
   getGameState(): Promise<GameState>;
   getSlimGameState(): Promise<SlimGameState>;
   getParcel(id: string): Promise<LandParcel | undefined>;

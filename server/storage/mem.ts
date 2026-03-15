@@ -89,7 +89,7 @@ export class MemStorage implements IStorage {
     this.lastUpdateTs = Date.now();
   }
 
-  private async initialize() {
+  async initialize() {
     if (this.initialized) return;
 
     this.plotCoords = generateFibonacciSphere(TOTAL_PLOTS);
@@ -228,6 +228,17 @@ export class MemStorage implements IStorage {
     });
 
     this.initialized = true;
+  }
+
+  resetInitState(): void {
+    this.initialized = false;
+    this.parcels.clear();
+    this.parcelByPlotId.clear();
+    this.players.clear();
+    this.battles.clear();
+    this.events = [];
+    this.currentTurn = 1;
+    this.lastUpdateTs = Date.now();
   }
 
   private updateFrontierAccumulation(parcel: LandParcel) {

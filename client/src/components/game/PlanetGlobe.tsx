@@ -8,7 +8,8 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { Canvas, useLoader, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent } from "@shared/schema";
+import type { LandParcel, Player, Battle, SlimParcel, OrbitalEvent, BiomeType } from "@shared/schema";
+import { biomeColors } from "@shared/schema";
 import type { WorldEvent } from "@shared/worldEvents";
 import { GlobeEventOverlays } from "./GlobeEventOverlays";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,12 @@ const COLOR_BATTLE   = new THREE.Color("#ff1744"); // red — active battle
 // Border colors
 const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
 const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue grid
+
+// Pre-computed biome THREE.Color lookup for unowned tile rendering
+const BIOME_COLORS: Record<string, THREE.Color> = {};
+for (const [biome, hex] of Object.entries(biomeColors)) {
+  BIOME_COLORS[biome] = new THREE.Color(hex);
+}
 
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
@@ -812,12 +819,17 @@ function AtmosphereGlow() {
 }
 
 
-/** Per-instance fill colour — pure ownership flat-colours, no biome blending. */
+/** Per-instance fill colour — biome-tinted for unowned, ownership colours for owned. */
 function getPlotColor(
   parcel: LandParcel | undefined,
   currentPlayerId: string | null,
 ): THREE.Color {
-  if (!parcel?.ownerId) return new THREE.Color(0, 0, 0); // scale=0 anyway
+  if (!parcel) return new THREE.Color(0x1a2a3a); // fallback dark blue-grey
+  if (!parcel.ownerId) {
+    // Unowned: show biome color (dimmed)
+    const biomeCol = BIOME_COLORS[parcel.biome];
+    return biomeCol ? biomeCol.clone() : new THREE.Color(0x1a2a3a);
+  }
   if (currentPlayerId && parcel.ownerId === currentPlayerId) return COLOR_PLAYER.clone();
   return COLOR_ENEMY.clone();
 }
@@ -997,8 +1009,8 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [plotCoords, plotIdToParcel]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const fillSize   = GLOBE_RADIUS * 0.026;
-  const borderSize = GLOBE_RADIUS * 0.030;
+  const fillSize   = GLOBE_RADIUS * 0.034;
+  const borderSize = GLOBE_RADIUS * 0.038;
 
   const applyInstance = (
     mesh: THREE.InstancedMesh,
@@ -1088,9 +1100,9 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
           ? COLOR_BORDER_OWNED.clone()
           : fillColor.clone().multiplyScalar(0.55);
 
-      // Unowned tiles: hide fill and border so globe terrain shows through.
-      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.0;
-      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.0;
+      // All tiles visible: owned tiles full scale, unowned slightly smaller with biome color
+      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.85;
+      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.85;
 
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
@@ -1135,16 +1147,16 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      // Border: green on selected, white on owned, teal-blue on unowned.
+      // Border: green on selected, white on owned, dim biome-tinted on unowned.
       const borderColor = isSelected
         ? COLOR_PLAYER.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
+          : fillColor.clone().lerp(COLOR_BORDER_UNOWNED, 0.5);
 
-      // Unowned tiles: hide fill and border so globe terrain shows through.
-      const fillScale   = isOwned || isSelected ? 1.0 : 0.0;
-      const borderScale = isOwned || isSelected ? 1.0 : 0.0;
+      // All tiles visible: owned tiles full scale, unowned slightly smaller with biome color
+      const fillScale   = isOwned || isSelected ? 1.0 : 0.85;
+      const borderScale = isOwned || isSelected ? 1.0 : 0.85;
       applyInstance(fillMeshRef.current,   i, fillPos,   fillSize   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, borderSize * sizeVar * borderScale, borderColor);
     }
@@ -1159,10 +1171,12 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
   }, [parcels, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
       fillPositions3D, borderPositions3D, fillSize, borderSize]);
 
-  // Sphere-based hover — fires on the invisible coverage sphere, always hits the globe surface
+  // Sphere-based hover — fires on the invisible coverage sphere, normalize to globe surface
   const handlePointerMove = useCallback((e: any) => {
     const p = e.point as THREE.Vector3;
-    hoveredIndexRef.current = nearestPlot(p.x, p.y, p.z);
+    const len = p.length();
+    const scale = len > 0 ? GLOBE_RADIUS / len : 1;
+    hoveredIndexRef.current = nearestPlot(p.x * scale, p.y * scale, p.z * scale);
   }, [nearestPlot]);
 
   const handlePointerLeave = useCallback(() => {
@@ -1173,13 +1187,18 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
     pointerDownPt.current = (e.point as THREE.Vector3).clone();
   }, []);
 
-  // Click fires from the invisible coverage sphere — find nearest plot, fire if it has a parcel
+  // Click fires from the invisible coverage sphere — find nearest plot, fire if it has a parcel.
+  // Normalize click point to GLOBE_RADIUS so the nearest-neighbor search matches plotPositions3D.
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
     // Ignore if the pointer moved significantly (orbit drag)
     if ((e.delta as number) > 6) return;
     const p = e.point as THREE.Vector3;
-    const idx = nearestPlot(p.x, p.y, p.z);
+    // Normalize click point from the invisible sphere surface down to globe surface
+    const len = p.length();
+    const scale = len > 0 ? GLOBE_RADIUS / len : 1;
+    const nx = p.x * scale, ny = p.y * scale, nz = p.z * scale;
+    const idx = nearestPlot(nx, ny, nz);
     const coord = plotCoords[idx];
     const parcel = plotIdToParcel.get(coord.plotId);
     if (parcel) onPlotSelect(parcel.id);
@@ -1219,7 +1238,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.78}
+          opacity={0.72}
           depthWrite={true}
           side={THREE.DoubleSide}
           toneMapped={false}
