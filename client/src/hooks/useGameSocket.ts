@@ -25,8 +25,11 @@ export function useGameSocket() {
     function connect() {
       if (reconnectCount.current >= WS_MAX_RECONNECTS) return;
 
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${protocol}//${window.location.host}/ws`;
+      // MIGRATION: WebSocket URL now driven by VITE_WS_URL env var
+      const wsBase = import.meta.env.VITE_WS_URL;
+      const url = wsBase
+        ? `${wsBase}/ws`
+        : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
