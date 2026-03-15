@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TopBar } from "./TopBar";
 import PlanetGlobe from "./PlanetGlobe";
-import type { LivePulse } from "@/components/game/PlanetGlobe";
+import type { LivePulse } from "@/components/game/MiningPulseLayer";
 import { AttackModal } from "./AttackModal";
 import { BattleWatchModal } from "./BattleWatchModal";
 import { BottomNav, type NavTab } from "./BottomNav";
