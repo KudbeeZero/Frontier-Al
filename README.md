@@ -28,6 +28,7 @@ Players and AI factions compete for control of a shared 21,000-plot world map re
 |----------|-------------|
 | [Game Manual](GAME_MANUAL.md) | Complete guide to every game system, mechanic, and feature — including rare minerals, loot boxes, landmarks, and seasons |
 | [Strategy Guide](STRATEGY_GUIDE.md) | Beginner tips, advanced strategies, scenario playbooks, and quick reference tables |
+| [Economics & Tokenomics](ECONOMICS.md) | Parcel/sub-parcel pricing, 70/30 fee splits, protocol treasury, FRONTIER token supply/sinks |
 | [Development Roadmap](ROADMAP.md) | Full development roadmap with 6 phases covering infrastructure, new features, and visual polish |
 
 ---

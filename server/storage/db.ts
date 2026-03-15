@@ -91,6 +91,7 @@ import {
   tradeOrders as tradeOrdersTable,
   subParcels as subParcelsTable,
   seasons as seasonsTable,
+  treasuryLedger as treasuryLedgerTable,
   type TradeOrder,
   type InsertTradeOrder,
 } from "../db-schema";
@@ -434,13 +435,27 @@ export class DbStorage implements IStorage {
     await this.initialize();
     await this.resolveBattles();
 
-    const [allParcels, allPlayers, allBattles, recentEvents, [meta]] = await Promise.all([
+    const [allParcels, allPlayers, allBattles, recentEvents, [meta], allSubParcels] = await Promise.all([
       this.db.select().from(parcelsTable),
       this.db.select().from(playersTable),
       this.db.select().from(battlesTable),
       this.db.select().from(gameEventsTable).orderBy(desc(gameEventsTable.ts)).limit(50),
       this.db.select().from(gameMeta).where(eq(gameMeta.id, 1)),
+      this.db.select({
+        parentPlotId: subParcelsTable.parentPlotId,
+        subIndex:     subParcelsTable.subIndex,
+        ownerId:      subParcelsTable.ownerId,
+      }).from(subParcelsTable),
     ]);
+
+    // Build sub-parcel map: parentPlotId → array of 9 owner ids
+    const subParcelMap = new Map<number, (string | null)[]>();
+    for (const sp of allSubParcels) {
+      if (!subParcelMap.has(sp.parentPlotId)) {
+        subParcelMap.set(sp.parentPlotId, new Array(9).fill(null));
+      }
+      subParcelMap.get(sp.parentPlotId)![sp.subIndex] = sp.ownerId ?? null;
+    }
 
     // Build ownedParcels arrays from the parcel rows (avoids a separate join).
     const ownerMap = new Map<string, string[]>();
@@ -455,7 +470,15 @@ export class DbStorage implements IStorage {
     const frontierCirculating = allPlayers.reduce((sum, p) => sum + fromMicroFRNTR(p.frntrBalanceMicro), 0);
 
     return {
-      parcels:            allParcels.map(rowToParcel),
+      parcels: allParcels.map(r => {
+        const parcel = rowToParcel(r);
+        const ownerIds = subParcelMap.get(r.plotId);
+        if (ownerIds) {
+          parcel.isSubdivided = true;
+          parcel.subParcelOwnerIds = ownerIds;
+        }
+        return parcel;
+      }),
       players:            allPlayers.map((r) => rowToPlayer(r, ownerMap.get(r.id) ?? [])),
       battles:            allBattles.map(rowToBattle),
       events:             recentEvents.map(rowToEvent),
@@ -512,12 +535,29 @@ export class DbStorage implements IStorage {
     );
 
     const ownedPlotIds = allParcels.filter(p => p.ownerId).map(p => p.plotId);
-    const animationMap = await getParcelAnimations(ownedPlotIds);
+    const [animationMap, allSubParcels] = await Promise.all([
+      getParcelAnimations(ownedPlotIds),
+      this.db.select({
+        parentPlotId: subParcelsTable.parentPlotId,
+        subIndex:     subParcelsTable.subIndex,
+        ownerId:      subParcelsTable.ownerId,
+      }).from(subParcelsTable),
+    ]);
+
+    // Build map: parentPlotId → array of 9 owner ids (null if unowned)
+    const subParcelMap = new Map<number, (string | null)[]>();
+    for (const sp of allSubParcels) {
+      if (!subParcelMap.has(sp.parentPlotId)) {
+        subParcelMap.set(sp.parentPlotId, new Array(9).fill(null));
+      }
+      subParcelMap.get(sp.parentPlotId)![sp.subIndex] = sp.ownerId ?? null;
+    }
 
     const now = Date.now();
     const slimParcels: SlimParcel[] = allParcels.map(r => {
       const anim = animationMap[r.plotId];
       const activeAnim = anim && (!anim.endTs || now < anim.endTs) ? anim : undefined;
+      const ownerIds = subParcelMap.get(r.plotId);
       return {
         id:             r.id,
         plotId:         r.plotId,
@@ -527,6 +567,7 @@ export class DbStorage implements IStorage {
         ownerId:        r.ownerId ?? null,
         activeBattleId: r.activeBattleId ?? null,
         ...(activeAnim ? { animation: activeAnim } : {}),
+        ...(ownerIds ? { isSubdivided: true, subParcelOwnerIds: ownerIds } : {}),
       };
     });
 
@@ -1906,18 +1947,92 @@ export class DbStorage implements IStorage {
     const now = Date.now();
     const costMicro = toMicroFRNTR(row.purchasePriceFrontier);
 
+    // 70% to macro-plot owner, 30% to protocol treasury
+    const ownerShareMicro   = Math.floor(costMicro * 0.70);
+    const treasuryShareMicro = costMicro - ownerShareMicro;
+
+    // Fetch macro-plot owner
+    const [parcelRow] = await this.db
+      .select({ ownerId: parcelsTable.ownerId })
+      .from(parcelsTable)
+      .where(eq(parcelsTable.plotId, row.parentPlotId));
+    const macroOwner = parcelRow?.ownerId ?? null;
+
     const [updated] = await this.db
       .update(subParcelsTable)
       .set({ ownerId: playerId, ownerType: "player", acquiredAt: now })
       .where(eq(subParcelsTable.id, subParcelId))
       .returning();
 
+    // Deduct full cost from buyer
     await this.db
       .update(playersTable)
       .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} - ${costMicro}` })
       .where(eq(playersTable.id, playerId));
 
+    // 70% credit to macro-plot owner (if owned by a player)
+    if (macroOwner && macroOwner !== playerId) {
+      await this.db
+        .update(playersTable)
+        .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} + ${ownerShareMicro}` })
+        .where(eq(playersTable.id, macroOwner));
+    } else {
+      // No macro owner (or buyer is owner) — route their share to treasury too
+      await this.recordTreasuryFee(ownerShareMicro, playerId, "sub_parcel_purchase_no_owner");
+    }
+
+    // 30% to protocol treasury ledger
+    await this.recordTreasuryFee(treasuryShareMicro, playerId, "sub_parcel_purchase");
+
     return { subParcel: rowToSubParcel(updated) };
+  }
+
+  // ── Treasury Methods ────────────────────────────────────────────────────────
+
+  async recordTreasuryFee(amountMicro: number, fromPlayerId: string | null, eventType: string): Promise<void> {
+    await this.initialize();
+    await this.db.insert(treasuryLedgerTable).values({
+      id:           randomUUID(),
+      eventType,
+      amountMicro,
+      fromPlayerId: fromPlayerId ?? undefined,
+      settled:      false,
+      createdAt:    Date.now(),
+    });
+  }
+
+  async getTreasuryBalance(): Promise<{ unsettledMicro: number; totalMicro: number }> {
+    await this.initialize();
+    const [unsettledRow] = await this.db
+      .select({ total: sum(treasuryLedgerTable.amountMicro) })
+      .from(treasuryLedgerTable)
+      .where(eq(treasuryLedgerTable.settled, false));
+    const [totalRow] = await this.db
+      .select({ total: sum(treasuryLedgerTable.amountMicro) })
+      .from(treasuryLedgerTable);
+    return {
+      unsettledMicro: Number(unsettledRow?.total ?? 0),
+      totalMicro:     Number(totalRow?.total ?? 0),
+    };
+  }
+
+  async getUnsettledTreasuryRows(): Promise<{ id: string; amountMicro: number }[]> {
+    await this.initialize();
+    return this.db
+      .select({ id: treasuryLedgerTable.id, amountMicro: treasuryLedgerTable.amountMicro })
+      .from(treasuryLedgerTable)
+      .where(eq(treasuryLedgerTable.settled, false));
+  }
+
+  async markTreasurySettled(ids: string[], txId: string): Promise<void> {
+    await this.initialize();
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      await this.db
+        .update(treasuryLedgerTable)
+        .set({ settled: true, settleTxId: txId })
+        .where(eq(treasuryLedgerTable.id, id));
+    }
   }
 
   // ── Season Methods ─────────────────────────────────────────────────────────

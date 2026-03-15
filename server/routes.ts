@@ -23,6 +23,7 @@ import {
   getFactionAsaId,
   FACTION_DEFINITIONS,
 } from "./services/chain/factions";
+import { fromMicroFRNTR } from "./storage/game-rules";
 
 const algodClient    = getAlgodClient();
 const indexerClient  = getIndexerClient();
@@ -163,6 +164,15 @@ export async function registerRoutes(
         inGameCirculating = circulating;
       }
 
+      // Treasury ledger balance from DB (protocol fees collected)
+      let protocolTreasuryUnsettled = 0;
+      let protocolTreasuryTotal     = 0;
+      try {
+        const bal = await storage.getTreasuryBalance();
+        protocolTreasuryUnsettled = Math.round(fromMicroFRNTR(bal.unsettledMicro) * 100) / 100;
+        protocolTreasuryTotal     = Math.round(fromMicroFRNTR(bal.totalMicro)     * 100) / 100;
+      } catch (_e) { /* non-fatal */ }
+
       res.json({
         asaId,
         adminAddress: adminAddr,
@@ -171,6 +181,8 @@ export async function registerRoutes(
         circulating,
         totalBurned,
         inGameCirculating,
+        protocolTreasuryUnsettled,
+        protocolTreasuryTotal,
         network: "Algorand TestNet",
         unitName: "FRNTR",
         assetName: "FRONTIER",

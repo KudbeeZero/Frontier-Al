@@ -137,6 +137,10 @@ export interface LandParcel {
   capturedFromFaction: string | null;
   capturedAt:          number | null;
   handoverCount:       number;
+  /** true when this macro-plot has been subdivided into 9 sub-parcels */
+  isSubdivided?: boolean;
+  /** Owner IDs for each of the 9 sub-parcels (index 0–8, null = unowned) */
+  subParcelOwnerIds?: (string | null)[];
 }
 
 export interface Player {

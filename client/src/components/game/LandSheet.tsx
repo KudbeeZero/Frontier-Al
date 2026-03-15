@@ -1,11 +1,154 @@
 import { useState, useEffect } from "react";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink, Grid3X3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO } from "@shared/schema";
+import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS } from "@shared/schema";
+
+// ── SubParcelGrid ─────────────────────────────────────────────────────────────
+// Shows the 3×3 sub-parcel ownership grid for subdivided plots.
+// Fetches sub-parcel data from /api/plots/:plotId/sub-parcels.
+
+interface SubParcelGridProps {
+  parcel: LandParcel;
+  player: Player | null;
+}
+
+function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
+  const { data: subParcels = [], isLoading } = useQuery<SubParcel[]>({
+    queryKey: [`/api/plots/${parcel.plotId}/sub-parcels`],
+    enabled: !!parcel.isSubdivided,
+  });
+
+  const purchaseMutation = useMutation({
+    mutationFn: (subParcelId: string) =>
+      apiRequest("POST", `/api/sub-parcels/${subParcelId}/purchase`, { playerId: player?.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/plots/${parcel.plotId}/sub-parcels`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+
+  const subdivideMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/plots/${parcel.plotId}/subdivide`, { playerId: player?.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+
+  const isOwner = player && parcel.ownerId === player.id;
+  const holdMs  = SUB_PARCEL_HOLD_HOURS * 60 * 60 * 1000;
+  const heldSince = parcel.capturedAt ?? parcel.lastFrontierClaimTs;
+  const canSubdivide = !!(isOwner && !parcel.isSubdivided && heldSince && Date.now() - heldSince >= holdMs);
+
+  if (!parcel.isSubdivided) {
+    if (!isOwner) return null;
+    return (
+      <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+        <div className="flex items-center gap-2 mb-2">
+          <Grid3X3 className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Sub-Parcels</span>
+        </div>
+        <p className="text-[9px] text-muted-foreground mb-2">
+          {canSubdivide
+            ? "Subdivide this plot into a 3×3 grid of 9 purchasable sub-parcels."
+            : `Hold this plot for ${SUB_PARCEL_HOLD_HOURS}h to unlock subdivision.`
+          }
+        </p>
+        {canSubdivide && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full text-[10px] font-display uppercase"
+            onClick={() => subdivideMutation.mutate()}
+            disabled={subdivideMutation.isPending}
+          >
+            <Grid3X3 className="w-3 h-3 mr-1" />
+            {subdivideMutation.isPending ? "Subdividing..." : "Subdivide Plot"}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+        <div className="flex items-center gap-2 mb-2">
+          <Grid3X3 className="w-3.5 h-3.5 text-primary" />
+          <span className="text-[10px] font-display uppercase tracking-wide">Sub-Parcels</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className="h-10 rounded bg-muted/40 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Build indexed map for quick lookup
+  const subMap = new Map<number, SubParcel>();
+  for (const sp of subParcels) subMap.set(sp.subIndex, sp);
+
+  const allOwnedByMe = subParcels.length === 9 && subParcels.every(s => s.ownerId === player?.id);
+
+  return (
+    <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Grid3X3 className="w-3.5 h-3.5 text-primary" />
+          <span className="text-[10px] font-display uppercase tracking-wide">Sub-Parcels</span>
+        </div>
+        {allOwnedByMe && (
+          <Badge variant="outline" className="text-[9px] text-primary border-primary/40">
+            +50% Yield
+          </Badge>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        {Array.from({ length: 9 }).map((_, i) => {
+          const sp = subMap.get(i);
+          const isYours = sp?.ownerId === player?.id;
+          const isEnemy = sp?.ownerId && !isYours;
+          const price   = sp?.purchasePriceFrontier;
+          const canBuy  = !sp?.ownerId && player && price !== undefined;
+
+          return (
+            <button
+              key={i}
+              disabled={!canBuy || purchaseMutation.isPending}
+              onClick={() => canBuy && sp && purchaseMutation.mutate(sp.id)}
+              className={cn(
+                "rounded p-1.5 text-center transition-colors border text-[8px] font-mono",
+                isYours
+                  ? "bg-primary/20 border-primary/40 text-primary"
+                  : isEnemy
+                    ? "bg-destructive/20 border-destructive/40 text-destructive"
+                    : sp
+                      ? "bg-muted/30 border-border/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 cursor-pointer"
+                      : "bg-muted/10 border-border/20 text-muted-foreground/40"
+              )}
+              title={canBuy ? `Buy for ${price} FRNTR` : isYours ? "Your cell" : isEnemy ? "Enemy cell" : ""}
+            >
+              {isYours ? "YOU" : isEnemy ? "ENM" : sp ? `${price}F` : "–"}
+            </button>
+          );
+        })}
+      </div>
+      {purchaseMutation.isError && (
+        <p className="text-[9px] text-destructive mt-1">
+          {String((purchaseMutation.error as any)?.message ?? "Purchase failed")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 const ATTACK_ICONS: Record<SpecialAttackType, React.ElementType> = {
   orbital_strike: Target,
@@ -235,6 +378,11 @@ export function LandSheet({
               <Progress value={storagePercent} className="h-1" />
               <CooldownTimer lastMineTs={parcel.lastMineTs} />
             </div>
+          )}
+
+          {/* Sub-parcel grid — shown for owned plots and subdivided plots */}
+          {(parcel.isSubdivided || isOwned) && (
+            <SubParcelGrid parcel={parcel} player={player} />
           )}
 
           <div className="flex gap-2">
