@@ -106,14 +106,14 @@ export function buildNarrative(ctx: NarrativeContext): string | null {
 
 function biomeLabel(biome: BiomeType): string {
   const labels: Record<BiomeType, string> = {
-    forest:   "Forest",
-    desert:   "Desert",
-    mountain: "Mountain",
-    plains:   "Plains",
-    water:    "Aquatic",
-    tundra:   "Tundra",
-    volcanic: "Volcanic",
-    swamp:    "Swamp",
+    forest:   "Storm Belt",
+    desert:   "Canyon Zone",
+    mountain: "AI Nexus",
+    plains:   "Launch District",
+    water:    "Aquatic Rift",
+    tundra:   "Ice Sector",
+    volcanic: "Volcanic Core",
+    swamp:    "Arena District",
   };
   return labels[biome] ?? biome;
 }

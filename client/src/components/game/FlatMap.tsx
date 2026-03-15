@@ -16,16 +16,28 @@ function getSector(lat: number, lng: number): string {
   return ns + ew;
 }
 
+// Zone name mapping — DB biome keys are unchanged, display names are gameplay zones
+const BIOME_ZONE_NAMES: Record<BiomeType, string> = {
+  forest:   "Storm Belt",
+  desert:   "Canyon Zone",
+  mountain: "AI Nexus",
+  plains:   "Launch District",
+  water:    "Aquatic Rift",
+  tundra:   "Ice Sector",
+  volcanic: "Volcanic Core",
+  swamp:    "Arena District",
+};
+
 function getPlotName(plotId: number, biome: BiomeType): string {
   const prefixes: Record<BiomeType, string[]> = {
-    forest: ["Ironwood", "Timberfall", "Greenhollow", "Darkroot"],
-    desert: ["Dustmarch", "Sunblast", "Sandrift", "Dryreach"],
-    mountain: ["Stonepeak", "Ironridge", "Frostcrag", "Highforge"],
-    plains: ["Flatwind", "Openfield", "Grassmere", "Goldstretch"],
-    water: ["Tidehaven", "Deepcove", "Saltmere", "Wavecrest"],
-    tundra: ["Frostheim", "Iceveil", "Snowdrift", "Coldreach"],
-    volcanic: ["Emberpeak", "Ashfall", "Magmacore", "Firegate"],
-    swamp: ["Bogmire", "Murkfen", "Rothollow", "Gloommarsh"],
+    forest:   ["Tempest", "Surge", "Thundermark", "Stormwall"],
+    desert:   ["Riftmark", "Dustfall", "Ironpass", "Canyonedge"],
+    mountain: ["Nexus", "Cipher", "Gridpoint", "Uplink"],
+    plains:   ["Launchpad", "Orbit", "Skyport", "Trajectory"],
+    water:    ["Deeprift", "Tidal", "Current", "Floodgate"],
+    tundra:   ["Frostwall", "Coldpost", "Arctic", "Iceveil"],
+    volcanic: ["Ashcore", "Magmavent", "Cinderhold", "Emberpeak"],
+    swamp:    ["Arena", "Combatzone", "Battlepit", "Skirmish"],
   };
   const names = prefixes[biome] || prefixes.plains;
   return `${names[plotId % names.length]}-${plotId}`;
@@ -631,7 +643,7 @@ export function FlatMap({
             {getPlotName(selectedPlot.plotId, selectedPlot.biome)}
           </div>
           <div className="flex items-center gap-1.5 mt-2">
-            <span className="text-[10px] uppercase text-muted-foreground">{selectedPlot.biome}</span>
+            <span className="text-[10px] uppercase text-muted-foreground">{BIOME_ZONE_NAMES[selectedPlot.biome] ?? selectedPlot.biome}</span>
           </div>
         </div>
       </div>
