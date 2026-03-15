@@ -1,5 +1,12 @@
 # FRONTIER-AL — v1.4.0
 
+<p align="center">
+  <a href="GAME_MANUAL.md"><img src="https://img.shields.io/badge/📖_Game_Manual-Read_Now-blue?style=for-the-badge" alt="Game Manual"></a>
+  <a href="STRATEGY_GUIDE.md"><img src="https://img.shields.io/badge/🎯_Strategy_Guide-Read_Now-green?style=for-the-badge" alt="Strategy Guide"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/🗺️_Roadmap-View-orange?style=for-the-badge" alt="Roadmap"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge" alt="License"></a>
+</p>
+
 **A persistent globe-based strategy game powered by the Algorand blockchain.**
 
 Players and AI factions compete for control of a shared 21,000-plot world map rendered as a 3D rotating planet. Mine resources, build defenses, launch attacks, mint Commander avatars, and earn FRONTIER (FRNTR) tokens on Algorand TestNet. Every plot purchase is recorded as a real Algorand ASA NFT. Every FRONTIER token claim triggers a live on-chain transfer.
@@ -11,6 +18,16 @@ Players and AI factions compete for control of a shared 21,000-plot world map re
 - **Fix**: Economics Panel now reads FRONTIER supply directly from the game database for real-time accuracy. Previously the panel only updated after the Algorand on-chain transfer settled, which could lag or fail silently.
 - **Fix**: "Distributed" stat card was showing a duplicate of "In Circulation" (copy-paste bug). It is now a distinct "Burned" card showing total FRONTIER spent in-game on commanders, improvements, drones, and special attacks.
 - **New**: Token Distribution bar now shows three segments — **In Circulation**, **Burned**, and **Treasury Reserve** — giving a complete picture of where all supply lives.
+
+---
+
+## Player Resources
+
+| Document | Description |
+|----------|-------------|
+| [Game Manual](GAME_MANUAL.md) | Complete guide to every game system, mechanic, and feature — including rare minerals, loot boxes, landmarks, and seasons |
+| [Strategy Guide](STRATEGY_GUIDE.md) | Beginner tips, advanced strategies, scenario playbooks, and quick reference tables |
+| [Development Roadmap](ROADMAP.md) | Full development roadmap with 6 phases covering infrastructure, new features, and visual polish |
 
 ---
 
