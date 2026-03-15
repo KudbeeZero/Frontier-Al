@@ -28,6 +28,21 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// CORS — allow cross-origin requests from the Vercel frontend in production
+app.use((req, res, next) => {
+  const origin = process.env.CLIENT_ORIGIN;
+  if (origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+  }
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -66,8 +81,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // 1. Healthcheck route (Task 1 & 2)
-  // Respond 200 to "/" and "/health" for Replit production healthchecks
+  // 1. Healthcheck route
+  // Respond 200 to "/" and "/health" for production healthchecks
   app.get("/health", (_req, res) => {
     res.status(200).send("OK");
   });
@@ -78,9 +93,10 @@ app.use((req, res, next) => {
     if (process.env.NODE_ENV === "production") {
       const isHtmlRequest = req.headers.accept?.includes("text/html");
       const userAgent = (req.headers["user-agent"] || "").toLowerCase();
-      const isReplitHealthcheck = !userAgent || userAgent.includes("replit") || userAgent.includes("healthcheck") || userAgent.includes("uptimerobot");
+      // MIGRATION: was REPL_* — removed "replit" user-agent check, kept generic healthcheck detection
+      const isHealthcheckAgent = !userAgent || userAgent.includes("healthcheck") || userAgent.includes("uptimerobot");
 
-      if (!isHtmlRequest || isReplitHealthcheck) {
+      if (!isHtmlRequest || isHealthcheckAgent) {
         return res.status(200).send("Frontier server running");
       }
     }

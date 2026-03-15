@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm run build && NODE_ENV=production node dist/index.cjs"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

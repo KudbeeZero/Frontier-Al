@@ -47,7 +47,7 @@ export function initWsServer(httpServer: Server, storage: IStorage): WebSocketSe
 
     ws.on("error", () => ws.terminate());
 
-    // Ping every 25 s to keep Replit proxy alive
+    // Ping every 25 s to keep reverse-proxy connections alive
     const pingInterval = setInterval(() => {
       if (!alive) { clearInterval(pingInterval); ws.terminate(); return; }
       alive = false;

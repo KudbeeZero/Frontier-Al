@@ -18,6 +18,6 @@ export const storage: IStorage = process.env.DATABASE_URL
   : (() => {
       throw new Error(
         "[FATAL] DATABASE_URL is not set. FRONTIER requires a PostgreSQL database to run. " +
-        "Set DATABASE_URL in Replit Secrets before starting the server."
+        "Set DATABASE_URL in your environment variables before starting the server."
       );
     })();
