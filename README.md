@@ -1,5 +1,12 @@
 # FRONTIER-AL — v1.5.0
 
+<p align="center">
+  <a href="GAME_MANUAL.md"><img src="https://img.shields.io/badge/📖_Game_Manual-Read_Now-blue?style=for-the-badge" alt="Game Manual"></a>
+  <a href="STRATEGY_GUIDE.md"><img src="https://img.shields.io/badge/🎯_Strategy_Guide-Read_Now-green?style=for-the-badge" alt="Strategy Guide"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/🗺️_Roadmap-View-orange?style=for-the-badge" alt="Roadmap"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge" alt="License"></a>
+</p>
+
 **A persistent globe-based strategy game powered by the Algorand blockchain.**
 
 Players and AI factions compete for control of a shared 21,000-plot world map rendered as a 3D rotating planet. Mine resources, build defenses, launch attacks, mint Commander avatars, and earn FRONTIER (FRNTR) tokens on Algorand TestNet. Every plot purchase is recorded as a real Algorand ASA NFT. Every FRONTIER token claim triggers a live on-chain transfer.
@@ -12,6 +19,16 @@ Players and AI factions compete for control of a shared 21,000-plot world map re
 - **Docs**: README completely rewritten to v1.5 with a full **Player Game Manual** — step-by-step walkthrough of a player's journey from first login through advanced endgame strategy.
 - **Docs**: All biome yield tables updated with corrected Iron multipliers (Volcanic: +80%, Forest: +20%).
 - **Docs**: Commander lock-time, satellite duration, and drone capacity limits verified against `shared/schema.ts` and `server/engine/`.
+
+---
+
+## Player Resources
+
+| Document | Description |
+|----------|-------------|
+| [Game Manual](GAME_MANUAL.md) | Complete guide to every game system, mechanic, and feature — including rare minerals, loot boxes, landmarks, and seasons |
+| [Strategy Guide](STRATEGY_GUIDE.md) | Beginner tips, advanced strategies, scenario playbooks, and quick reference tables |
+| [Development Roadmap](ROADMAP.md) | Full development roadmap with 6 phases covering infrastructure, new features, and visual polish |
 
 ---
 
