@@ -253,9 +253,67 @@ export const gameEvents = pgTable(
     battleId:    varchar("battle_id", { length: 36 }),
     description: text("description").notNull(),
     ts:          bigint("ts", { mode: "number" }).notNull(),
+    /** Human-readable narrative string for stream overlay / commentary feed */
+    narrativeText: text("narrative_text"),
   },
   (t) => ({
     /** Efficient DESC scan for the latest 50 events shown in the UI. */
     tsIdx: index("game_events_ts_idx").on(t.ts),
   })
 );
+
+// ─── sub_parcels ──────────────────────────────────────────────────────────────
+// Sub-parcels subdivide a macro-plot into a 3×3 grid of 9 individually
+// ownable units. Created lazily when the owner of a macro-plot subdivides it.
+// Human-exclusive feature — AI factions never create sub-parcels.
+//
+// parentPlotId + subIndex must be unique (one row per cell in the grid).
+
+export const subParcels = pgTable(
+  "sub_parcels",
+  {
+    id:                    varchar("id", { length: 36 }).primaryKey(),
+    parentPlotId:          integer("parent_plot_id").notNull(),
+    subIndex:              integer("sub_index").notNull(),           // 0–8
+    ownerId:               varchar("owner_id", { length: 36 }),
+    ownerType:             varchar("owner_type", { length: 10 }),
+    improvements:          jsonb("improvements").$type<object[]>().notNull().default([]),
+    resourceYieldFraction: real("resource_yield_fraction").notNull().default(1.0 / 9.0),
+    purchasePriceFrontier: real("purchase_price_frontier").notNull().default(50),
+    acquiredAt:            bigint("acquired_at", { mode: "number" }),
+    activeBattleId:        varchar("active_battle_id", { length: 36 }),
+    createdAt:             bigint("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => ({
+    /** Efficiently load all sub-parcels for a given parent plot. */
+    parentPlotIdx: index("sub_parcels_parent_plot_idx").on(t.parentPlotId),
+    /** Efficiently load all sub-parcels owned by a given player. */
+    ownerIdx:      index("sub_parcels_owner_idx").on(t.ownerId),
+  })
+);
+
+export type SubParcelRow    = typeof subParcels.$inferSelect;
+export type InsertSubParcel = typeof subParcels.$inferInsert;
+
+// ─── seasons ─────────────────────────────────────────────────────────────────
+// Each season is a ~90-day meta-layer. The game world PERSISTS between seasons;
+// this table only snapshots leaderboard state and tracks reward distribution.
+//
+// Status lifecycle: active → settling → complete
+
+export const seasons = pgTable("seasons", {
+  id:              varchar("id", { length: 36 }).primaryKey(),
+  number:          integer("number").notNull(),                          // 1, 2, 3…
+  name:            varchar("name", { length: 100 }).notNull(),           // "Season 1: First Colonists"
+  startedAt:       bigint("started_at", { mode: "number" }).notNull(),
+  endsAt:          bigint("ends_at",    { mode: "number" }).notNull(),
+  status:          varchar("status", { length: 20 }).notNull().default("active"),
+  winnerId:        varchar("winner_id", { length: 36 }),
+  totalPlotsAtEnd: integer("total_plots_at_end"),
+  rewardPool:      real("reward_pool").notNull().default(0),
+  /** JSON snapshot of the top-10 leaderboard at season end */
+  leaderboardSnapshot: jsonb("leaderboard_snapshot").$type<object[]>().notNull().default([]),
+});
+
+export type SeasonRow    = typeof seasons.$inferSelect;
+export type InsertSeason = typeof seasons.$inferInsert;

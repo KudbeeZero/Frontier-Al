@@ -70,6 +70,51 @@ export async function seedDatabase(db: DB): Promise<void> {
       ON orbital_events (resolved, end_at)
   `);
 
+  // Sub-parcels table — created here so no separate migration step is needed.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS sub_parcels (
+      id                      VARCHAR(36) PRIMARY KEY,
+      parent_plot_id          INT NOT NULL,
+      sub_index               INT NOT NULL,
+      owner_id                VARCHAR(36),
+      owner_type              VARCHAR(10),
+      improvements            JSONB NOT NULL DEFAULT '[]',
+      resource_yield_fraction REAL NOT NULL DEFAULT 0.111111,
+      purchase_price_frontier REAL NOT NULL DEFAULT 50,
+      acquired_at             BIGINT,
+      active_battle_id        VARCHAR(36),
+      created_at              BIGINT NOT NULL,
+      UNIQUE (parent_plot_id, sub_index)
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS sub_parcels_parent_plot_idx ON sub_parcels (parent_plot_id)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS sub_parcels_owner_idx ON sub_parcels (owner_id)
+  `);
+
+  // narrative_text column on game_events — added for streaming commentary
+  await db.execute(sql`
+    ALTER TABLE game_events ADD COLUMN IF NOT EXISTS narrative_text TEXT
+  `);
+
+  // Seasons table — for the season meta-layer system.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS seasons (
+      id                    VARCHAR(36) PRIMARY KEY,
+      number                INT NOT NULL,
+      name                  VARCHAR(100) NOT NULL,
+      started_at            BIGINT NOT NULL,
+      ends_at               BIGINT NOT NULL,
+      status                VARCHAR(20) NOT NULL DEFAULT 'active',
+      winner_id             VARCHAR(36),
+      total_plots_at_end    INT,
+      reward_pool           REAL NOT NULL DEFAULT 0,
+      leaderboard_snapshot  JSONB NOT NULL DEFAULT '[]'
+    )
+  `);
+
   // Trade Station orders table — peer-to-peer resource exchange.
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS trade_orders (
