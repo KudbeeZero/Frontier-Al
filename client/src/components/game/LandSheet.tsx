@@ -41,8 +41,9 @@ function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
   );
 
   useEffect(() => {
-    setRemaining(Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs)));
-    if (remaining === 0) return;
+    const initial = Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs));
+    setRemaining(initial);
+    if (initial === 0) return;
     const id = setInterval(() => {
       const r = Math.max(0, MINE_COOLDOWN_MS - (Date.now() - lastMineTs));
       setRemaining(r);
