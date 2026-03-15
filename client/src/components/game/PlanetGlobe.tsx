@@ -33,13 +33,20 @@ const COLOR_ENEMY    = new THREE.Color("#ff6d00"); // orange — enemy/AI territ
 const COLOR_BATTLE   = new THREE.Color("#ff1744"); // red — active battle
 // Border colors
 const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
-const COLOR_BORDER_UNOWNED = new THREE.Color("#2a6080"); // visible teal-blue grid
+const COLOR_BORDER_UNOWNED = new THREE.Color("#4fc3f7"); // bright cyan grid — visible on all terrain
 
-// Pre-computed biome THREE.Color lookup for unowned tile rendering
-const BIOME_COLORS: Record<string, THREE.Color> = {};
-for (const [biome, hex] of Object.entries(biomeColors)) {
-  BIOME_COLORS[biome] = new THREE.Color(hex);
-}
+// Brightened biome tile colors — 2-3x lighter than raw biome values so tiles
+// stand out clearly against the dark planet terrain texture.
+const BIOME_COLORS: Record<string, THREE.Color> = {
+  forest:   new THREE.Color("#3cb371"), // medium sea green
+  desert:   new THREE.Color("#d4a830"), // golden ochre
+  mountain: new THREE.Color("#909090"), // medium gray
+  plains:   new THREE.Color("#6abf40"), // lime green
+  water:    new THREE.Color("#2196f3"), // clear blue
+  tundra:   new THREE.Color("#b0d8e8"), // ice blue
+  volcanic: new THREE.Color("#e05020"), // deep orange
+  swamp:    new THREE.Color("#5a8c44"), // olive green
+};
 
 
 interface PlotCoord { plotId: number; lat: number; lng: number; }
@@ -1098,7 +1105,7 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         ? COLOR_PLAYER.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : fillColor.clone().multiplyScalar(0.55);
+          : COLOR_BORDER_UNOWNED.clone();
 
       // All tiles visible: owned tiles full scale, unowned slightly smaller with biome color
       const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.85;
@@ -1147,12 +1154,12 @@ function PlotOverlay({ parcels, players, currentPlayerId, selectedPlotId, onPlot
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      // Border: green on selected, white on owned, dim biome-tinted on unowned.
+      // Border: green on selected, white on owned, bright cyan on unowned.
       const borderColor = isSelected
         ? COLOR_PLAYER.clone()
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
-          : fillColor.clone().lerp(COLOR_BORDER_UNOWNED, 0.5);
+          : COLOR_BORDER_UNOWNED.clone();
 
       // All tiles visible: owned tiles full scale, unowned slightly smaller with biome color
       const fillScale   = isOwned || isSelected ? 1.0 : 0.85;
@@ -1493,8 +1500,6 @@ function Scene({ parcels, players, currentPlayerId, selectedPlotId, onPlotSelect
         zoomSpeed={0.9}
         minDistance={GLOBE_RADIUS * 1.8}
         maxDistance={GLOBE_RADIUS * 6.0}
-        minPolarAngle={Math.PI * 0.18}
-        maxPolarAngle={Math.PI * 0.82}
         touches={{
           ONE: THREE.TOUCH.ROTATE,
           TWO: THREE.TOUCH.DOLLY_ROTATE,
@@ -1564,6 +1569,83 @@ function GlobeHUD({ activeBattleCount, replayTime }: GlobeHUDProps) {
         <div>176 OPS-4179</div>
       </div>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compass + Zoom overlay — lives outside the Canvas so it's pure HTML/CSS.
+// Polls OrbitControls via rAF to keep bearing in sync without React re-renders.
+// ---------------------------------------------------------------------------
+function GlobeCompass({ controlsRef }: { controlsRef: { current: OrbitControlsImpl } }) {
+  const needleRef = useRef<HTMLDivElement>(null);
+  const labelRef  = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let raf: number;
+    const tick = () => {
+      const ctrl = controlsRef.current;
+      if (ctrl && needleRef.current && labelRef.current) {
+        const az  = ctrl.getAzimuthalAngle(); // radians, 0 = positive-Z axis
+        const deg = ((az * 180 / Math.PI) % 360 + 360) % 360;
+        needleRef.current.style.transform = `rotate(${deg}deg)`;
+        const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+        labelRef.current.textContent = dirs[Math.round(deg / 45) % 8];
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [controlsRef]);
+
+  return (
+    <div
+      style={{
+        position: "absolute", top: 12, right: 12, zIndex: 30,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+        pointerEvents: "none", userSelect: "none",
+      }}
+    >
+      {/* Compass rose */}
+      <div style={{ position: "relative", width: 44, height: 44 }}>
+        {/* Cardinal labels — fixed */}
+        {(["N","E","S","W"] as const).map((d, i) => {
+          const angle = i * 90;
+          const r = 16;
+          const x = 22 + r * Math.sin(angle * Math.PI / 180);
+          const y = 22 - r * Math.cos(angle * Math.PI / 180);
+          return (
+            <span key={d} style={{
+              position: "absolute", left: x, top: y,
+              transform: "translate(-50%,-50%)",
+              fontSize: 8, fontFamily: "monospace", fontWeight: "bold", letterSpacing: "0.05em",
+              color: d === "N" ? "#ff4444" : "rgba(0,229,255,0.7)",
+            }}>{d}</span>
+          );
+        })}
+        {/* Rotating needle */}
+        <div ref={needleRef} style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transformOrigin: "center",
+        }}>
+          <div style={{
+            width: 2, height: 20, borderRadius: 1,
+            background: "linear-gradient(to bottom, #ff4444 50%, rgba(0,229,255,0.5) 50%)",
+          }} />
+        </div>
+        {/* Center dot */}
+        <div style={{
+          position: "absolute", left: "50%", top: "50%",
+          width: 4, height: 4, borderRadius: "50%",
+          background: "rgba(0,229,255,0.9)",
+          transform: "translate(-50%,-50%)",
+        }} />
+      </div>
+      <span ref={labelRef} style={{
+        fontSize: 8, fontFamily: "monospace", letterSpacing: "0.2em",
+        color: "rgba(0,229,255,0.7)",
+      }}>N</span>
+    </div>
   );
 }
 
@@ -1647,6 +1729,39 @@ export default function PlanetGlobe({
       </Canvas>
 
       <GlobeHUD activeBattleCount={activeBattleCount} replayTime={replayTime} />
+
+      <GlobeCompass controlsRef={controlsRef} />
+
+      {/* Zoom buttons */}
+      <div style={{
+        position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+        zIndex: 30, display: "flex", flexDirection: "column", gap: 4,
+      }}>
+        {(["+", "−"] as const).map((label, i) => (
+          <button
+            key={label}
+            onClick={() => {
+              const cam = controlsRef.current?.object;
+              if (!cam) return;
+              const d = (cam as THREE.PerspectiveCamera).position.length();
+              const next = i === 0
+                ? Math.max(GLOBE_RADIUS * 1.8, d * 0.82)
+                : Math.min(GLOBE_RADIUS * 6.0, d * 1.20);
+              (cam as THREE.PerspectiveCamera).position.setLength(next);
+              controlsRef.current.update();
+            }}
+            style={{
+              width: 32, height: 32,
+              background: "rgba(4,8,20,0.7)",
+              border: "1px solid rgba(79,195,247,0.3)",
+              borderRadius: 6, color: "rgba(0,229,255,0.85)",
+              fontSize: 18, lineHeight: 1, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "monospace",
+            }}
+          >{label}</button>
+        ))}
+      </div>
 
       <PlayerLegend />
 
