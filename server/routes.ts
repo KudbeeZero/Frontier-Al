@@ -77,27 +77,32 @@ export async function registerRoutes(
   })();
 
   /**
-   * Asserts that the authenticated session player owns the playerId in req.body.
-   * Throws 401 if session is missing, 403 if playerId does not match session.
-   * Usage: await assertPlayerOwnership(req, res); if it throws, route is already responded.
+   * Verifies the playerId in req.body exists in the DB and is not an AI player.
+   * Returns the verified playerId or null (response already sent on failure).
    */
   async function assertPlayerOwnership(
     req: Request,
     res: Response,
     bodyPlayerId?: string
   ): Promise<string | null> {
-    const sessionPlayerId: string | undefined = (req.session as any)?.playerId;
     const targetId = bodyPlayerId ?? req.body?.playerId;
 
-    if (!sessionPlayerId) {
-      res.status(401).json({ error: "Not authenticated" });
+    if (!targetId || typeof targetId !== "string") {
+      res.status(401).json({ error: "Player ID required" });
       return null;
     }
-    if (targetId && targetId !== sessionPlayerId) {
-      res.status(403).json({ error: "Forbidden: player ID mismatch" });
+
+    const player = await storage.getPlayer(targetId).catch(() => null);
+    if (!player) {
+      res.status(404).json({ error: "Player not found" });
       return null;
     }
-    return sessionPlayerId;
+    if (player.isAI) {
+      res.status(403).json({ error: "Forbidden" });
+      return null;
+    }
+
+    return targetId;
   }
 
   app.get("/api/blockchain/status", async (_req, res) => {
