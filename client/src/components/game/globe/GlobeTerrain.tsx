@@ -35,7 +35,7 @@ export function GlobeTerrain() {
 
     void main() {
       vec4 dayCol = texture2D(albedoMap, vUv);
-      vec3 boosted = boostSat(dayCol.rgb, 1.35) * 1.1;
+      vec3 boosted = boostSat(dayCol.rgb, 1.5) * 1.4;
       gl_FragColor = vec4(boosted, 1.0);
     }
   `;
