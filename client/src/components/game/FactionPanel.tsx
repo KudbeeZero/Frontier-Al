@@ -229,9 +229,18 @@ function FactionCard({
   );
 }
 
+function formatCooldown(endsAt: number): string {
+  const ms = endsAt - Date.now();
+  if (ms <= 0) return "";
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export function FactionPanel({ player, className }: FactionPanelProps) {
   const queryClient = useQueryClient();
   const [joiningFaction, setJoiningFaction] = useState<string | null>(null);
+  const [cooldownEndsAt, setCooldownEndsAt] = useState<number | null>(null);
 
   const { data, isLoading, error } = useQuery<{ factions: FactionData[] }>({
     queryKey: ["/api/factions"],
@@ -253,8 +262,17 @@ export function FactionPanel({ player, className }: FactionPanelProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/factions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
       setJoiningFaction(null);
+      setCooldownEndsAt(null);
     },
-    onError: () => setJoiningFaction(null),
+    onError: (err: Error) => {
+      setJoiningFaction(null);
+      try {
+        const body = JSON.parse(err.message.replace(/^\d+: /, ""));
+        if (body?.cooldownEndsAt) setCooldownEndsAt(body.cooldownEndsAt);
+      } catch {
+        // not a cooldown error
+      }
+    },
   });
 
   const leaveMutation = useMutation({
@@ -284,9 +302,10 @@ export function FactionPanel({ player, className }: FactionPanelProps) {
 
   const currentFaction = player?.playerFactionId ?? null;
   const factions = data?.factions ?? [];
+  const sortedByTerritory = [...factions].sort((a, b) => b.territoryCount - a.territoryCount);
 
   return (
-    <div className={cn("flex flex-col h-full", className)} data-testid="faction-panel">
+    <div className={cn("flex flex-col h-full overflow-hidden", className)} data-testid="faction-panel">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border shrink-0">
         <h2 className="font-display text-sm uppercase tracking-widest text-primary">Factions</h2>
@@ -297,6 +316,13 @@ export function FactionPanel({ player, className }: FactionPanelProps) {
         </p>
       </div>
 
+      {/* Cooldown notice */}
+      {cooldownEndsAt && Date.now() < cooldownEndsAt && (
+        <div className="mx-4 mt-3 p-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 text-[11px] text-yellow-400 leading-relaxed">
+          Faction switch on cooldown — available in {formatCooldown(cooldownEndsAt)}.
+        </div>
+      )}
+
       {/* Unaligned banner */}
       {!currentFaction && player && (
         <div className="mx-4 mt-3 p-3 rounded-md border border-muted-foreground/20 bg-muted/30 text-[11px] text-muted-foreground leading-relaxed">
@@ -305,7 +331,7 @@ export function FactionPanel({ player, className }: FactionPanelProps) {
       )}
 
       {/* Faction cards */}
-      <ScrollArea className="flex-1 px-4 py-3">
+      <ScrollArea className="flex-1 min-h-0 px-4 py-3">
         {isLoading ? (
           <div className="space-y-3">
             {[...Array(4)].map((_, i) => (
@@ -318,6 +344,30 @@ export function FactionPanel({ player, className }: FactionPanelProps) {
           </div>
         ) : (
           <div className="space-y-3 pb-4">
+            {/* Leaderboard */}
+            {sortedByTerritory.length > 0 && (
+              <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+                <div className="px-3 py-2 border-b border-border bg-muted/30">
+                  <span className="text-[10px] font-display uppercase tracking-widest text-muted-foreground">Territory Ranking</span>
+                </div>
+                <div className="divide-y divide-border">
+                  {sortedByTerritory.map((f, i) => {
+                    const pct = ((f.territoryCount / MAX_TERRITORY) * 100).toFixed(1);
+                    const accentClass = FACTION_ACCENT[f.name] ?? "bg-primary";
+                    return (
+                      <div key={f.name} className={cn("flex items-center gap-2 px-3 py-2", f.name === currentFaction && "bg-primary/5")}>
+                        <span className="text-[10px] font-mono text-muted-foreground/60 w-4 shrink-0">{i + 1}</span>
+                        <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", accentClass)} />
+                        <span className="text-[11px] font-display uppercase tracking-wide flex-1 truncate">{f.name}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground">{f.memberCount}m</span>
+                        <span className="text-[10px] font-mono font-bold">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {factions.map((faction) => (
               <FactionCard
                 key={faction.name}

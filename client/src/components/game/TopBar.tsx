@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap } from "lucide-react";
+import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap, Flag } from "lucide-react";
 import { SiTelegram, SiX, SiGithub, SiDiscord } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,10 +8,19 @@ import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Link } from "wouter";
+
+const FACTION_BADGE_COLORS: Record<string, string> = {
+  "NEXUS-7":  "border-blue-500/40 text-blue-400 bg-blue-500/10",
+  "KRONOS":   "border-green-500/40 text-green-400 bg-green-500/10",
+  "VANGUARD": "border-red-500/40 text-red-400 bg-red-500/10",
+  "SPECTRE":  "border-yellow-500/40 text-yellow-400 bg-yellow-500/10",
+};
+
 interface TopBarProps {
   isConnected: boolean;
   className?: string;
   mobileMenuContent?: React.ReactNode;
+  playerFactionId?: string | null;
   mobileResources?: {
     iron: number;
     fuel: number;
@@ -20,7 +29,7 @@ interface TopBarProps {
   } | null;
 }
 
-export function TopBar({ isConnected, className, mobileMenuContent, mobileResources }: TopBarProps) {
+export function TopBar({ isConnected, className, mobileMenuContent, mobileResources, playerFactionId }: TopBarProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -144,6 +153,20 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
         <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-settings">
           <Settings className="w-5 h-5" />
         </Button>
+
+        {playerFactionId && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "hidden sm:flex items-center gap-1 text-[10px] font-mono uppercase tracking-wide border",
+              FACTION_BADGE_COLORS[playerFactionId] ?? "border-border text-muted-foreground"
+            )}
+            data-testid="faction-badge"
+          >
+            <Flag className="w-2.5 h-2.5" />
+            {playerFactionId}
+          </Badge>
+        )}
 
         <WalletConnect />
       </div>
