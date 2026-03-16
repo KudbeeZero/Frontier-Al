@@ -48,6 +48,11 @@ export default defineConfig({
         target: "http://0.0.0.0:5000",
         changeOrigin: true,
       },
+      "/ws": {
+        target: "ws://0.0.0.0:5000",
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 });
