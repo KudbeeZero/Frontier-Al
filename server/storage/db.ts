@@ -2545,14 +2545,23 @@ export class DbStorage implements IStorage {
     // Close markets past their deadline but not yet resolved
     // (admin must manually pick winner via /api/admin/markets/:id/resolve)
     const now = Date.now();
-    await this.db
-      .update(predictionMarketsTable)
-      .set({ status: "closed" })
-      .where(
-        and(
-          eq(predictionMarketsTable.status, "open"),
-          lt(predictionMarketsTable.resolvesAt, now),
-        )
-      );
+    try {
+      await this.db
+        .update(predictionMarketsTable)
+        .set({ status: "closed" })
+        .where(
+          and(
+            eq(predictionMarketsTable.status, "open"),
+            lt(predictionMarketsTable.resolvesAt, now),
+          )
+        );
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string };
+      if (pgErr?.code === "42P01") {
+        // Table doesn't exist yet (schema not yet pushed to this environment) — skip silently
+        return;
+      }
+      throw err;
+    }
   }
 }
