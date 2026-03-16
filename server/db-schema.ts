@@ -46,6 +46,34 @@ export const mintIdempotency = pgTable("mint_idempotency", {
   updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 });
 
+// ─── commander_nfts ───────────────────────────────────────────────────────────
+// Tracks on-chain Algorand ASA (NFT) minting state per Commander avatar.
+// commanderId is the UUID assigned at avatar creation time.
+// asset_id is NULL until the Commander NFT is minted on-chain.
+// algo_payment_tx_id stores the buyer's ALGO payment txn for audit trail.
+
+export const commanderNfts = pgTable("commander_nfts", {
+  commanderId:       varchar("commander_id", { length: 36 }).primaryKey(),
+  assetId:           bigint("asset_id", { mode: "number" }),          // NULL until minted on-chain
+  mintedToAddress:   text("minted_to_address"),                        // Algorand wallet address
+  mintedAt:          bigint("minted_at", { mode: "number" }),          // Unix ms timestamp of mint
+  algoPaymentTxId:   text("algo_payment_tx_id"),                       // buyer's ALGO payment txn
+});
+
+// ─── commander_mint_idempotency ───────────────────────────────────────────────
+// Prevents double-minting on rapid re-submits.
+// Key format: "cmdr:mint:{playerId}:{commanderId}"
+// Status lifecycle: pending → confirmed | failed
+
+export const commanderMintIdempotency = pgTable("commander_mint_idempotency", {
+  key:       text("key").primaryKey(),                                      // "cmdr:mint:{playerId}:{commanderId}"
+  status:    varchar("status", { length: 10 }).notNull().default("pending"), // pending|confirmed|failed
+  assetId:   bigint("asset_id",  { mode: "number" }),
+  txId:      text("tx_id"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+
 // ─── ai_faction_identities ────────────────────────────────────────────────────
 // One row per AI faction. Records the on-chain Algorand ASA that serves as
 // that faction's permanent identity token. Minted once at world init.

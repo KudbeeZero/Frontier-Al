@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema, placeBetSchema, createMarketSchema, resolveMarketSchema } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
-import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable, battles as battlesTable, gameEvents as gameEventsTable, gameMeta, tradeOrders as tradeOrdersTable, subParcels as subParcelsTable, orbitalEvents as orbitalEventsTable } from "./db-schema";
+import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable, battles as battlesTable, gameEvents as gameEventsTable, gameMeta, tradeOrders as tradeOrdersTable, subParcels as subParcelsTable, orbitalEvents as orbitalEventsTable, commanderNfts as commanderNftsTable, commanderMintIdempotency as commanderMintIdempotencyTable } from "./db-schema";
 import { eq, sql } from "drizzle-orm";
 import { broadcastGameState, broadcastRaw, markDirty } from "./wsServer";
 import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./worldEventStore";
@@ -17,6 +17,7 @@ import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./world
 import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
 import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
 import { mintLandNft, transferLandNft } from "./services/chain/land";
+import { mintCommanderNft, transferCommanderNft, forwardLiquiditySplit, verifyAlgoPayment } from "./services/chain/commander";
 import {
   bootstrapFactionIdentities,
   getAllFactionAsaIds,
@@ -425,6 +426,173 @@ export async function registerRoutes(
       res.json({ success: true, plotId, assetId, txId, explorerUrl: `https://allo.info/asset/${assetId}` });
     } catch (error) {
       console.error(`[nft/deliver] plotId=${plotId} error:`, error instanceof Error ? error.message : error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Delivery failed" });
+    }
+  });
+
+  // ── Commander NFT Image Serving ─────────────────────────────────────────────
+  // Serves Commander tier PNGs as stable public URLs baked into on-chain ASA metadata.
+  // GET /nft/images/commander/:tier
+  const COMMANDER_IMAGE_FILES: Record<string, string> = {
+    sentinel: "image_1771570491560.png",
+    phantom:  "image_1771570495782.png",
+    reaper:   "image_1771570500912.png",
+  };
+
+  app.get("/nft/images/commander/:tier", (req, res) => {
+    const { tier } = req.params;
+    const filename = COMMANDER_IMAGE_FILES[tier];
+    if (!filename) return res.status(404).json({ error: "Unknown commander tier" });
+
+    const filePath = require("path").resolve(
+      __dirname, "..", "client", "src", "assets", filename
+    );
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(filePath);
+  });
+
+  // ── Commander NFT Metadata (ARC-3) ──────────────────────────────────────────
+  // GET /nft/metadata/commander/:commanderId
+  app.get("/nft/metadata/commander/:commanderId", async (req, res) => {
+    const { commanderId } = req.params;
+    if (!commanderId || commanderId.length < 8) {
+      return res.status(400).json({ error: "Invalid commanderId" });
+    }
+    if (!db) return res.status(503).json({ error: "Database not available" });
+
+    try {
+      const rawBaseUrl = process.env.PUBLIC_BASE_URL || null;
+      const baseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, "") : null;
+      if (!baseUrl) {
+        return res.status(503).json({ error: "PUBLIC_BASE_URL not configured — NFT metadata URLs would be invalid." });
+      }
+
+      // Look up the player whose commanders array contains this commanderId
+      const { COMMANDER_INFO } = await import("@shared/schema");
+      const players = await db.select({ id: playersTable.id, commanders: playersTable.commanders }).from(playersTable);
+      let avatar: any = null;
+      for (const p of players) {
+        const cmds = (p.commanders as any[]) ?? [];
+        const found = cmds.find((c: any) => c.id === commanderId);
+        if (found) { avatar = found; break; }
+      }
+
+      if (!avatar) return res.status(404).json({ error: "Commander not found" });
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.json({
+        name:         `Frontier Commander — ${avatar.name}`,
+        description:  COMMANDER_INFO[avatar.tier as keyof typeof COMMANDER_INFO]?.description ?? `A ${avatar.tier} commander on the Frontier globe.`,
+        image:        `${baseUrl}/nft/images/commander/${avatar.tier}`,
+        external_url: `${baseUrl}/commander/${avatar.id}`,
+        properties: {
+          commanderId:    avatar.id,
+          tier:           avatar.tier,
+          name:           avatar.name,
+          attackBonus:    avatar.attackBonus,
+          defenseBonus:   avatar.defenseBonus,
+          specialAbility: avatar.specialAbility,
+          mintedAt:       avatar.mintedAt,
+          version:        1,
+        },
+      });
+    } catch (error) {
+      console.error("[/nft/metadata/commander] error:", error);
+      res.status(500).json({ error: "Failed to fetch Commander NFT metadata" });
+    }
+  });
+
+  // ── Commander NFT Price ─────────────────────────────────────────────────────
+  // GET /api/nft/commander-price/:tier
+  // Returns the ALGO price for the given tier based on ALGO_USD_RATE env var.
+  const COMMANDER_USD_PRICES: Record<string, number> = {
+    sentinel: 1.50,
+    phantom:  2.25,
+    reaper:   3.25,
+  };
+
+  app.get("/api/nft/commander-price/:tier", (req, res) => {
+    const { tier } = req.params;
+    const usdPrice = COMMANDER_USD_PRICES[tier];
+    if (usdPrice === undefined) return res.status(400).json({ error: "Unknown tier" });
+
+    const algoUsdRate = parseFloat(process.env.ALGO_USD_RATE ?? "0.25");
+    const algoPrice   = parseFloat((usdPrice / algoUsdRate).toFixed(6));
+    const adminAddress = getAdminAddress();
+
+    res.json({ tier, usdPrice, algoPrice, adminAddress });
+  });
+
+  // ── Commander NFT on-chain record lookup ────────────────────────────────────
+  // GET /api/nft/commander/:commanderId
+  app.get("/api/nft/commander/:commanderId", async (req, res) => {
+    const { commanderId } = req.params;
+    if (!commanderId) return res.status(400).json({ error: "commanderId required" });
+    if (!db) return res.status(503).json({ error: "Database not available" });
+
+    try {
+      const [row] = await db.select().from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId));
+      if (!row) return res.status(404).json({ error: "No NFT record for this commander" });
+
+      res.json({
+        commanderId:     row.commanderId,
+        assetId:         row.assetId ? Number(row.assetId) : null,
+        mintedToAddress: row.mintedToAddress,
+        mintedAt:        row.mintedAt ? Number(row.mintedAt) : null,
+        explorerUrl:     row.assetId ? `https://allo.info/asset/${row.assetId}` : null,
+      });
+    } catch (error) {
+      console.error("[api/nft/commander] lookup error:", error);
+      res.status(500).json({ error: "Failed to fetch Commander NFT record" });
+    }
+  });
+
+  // ── Commander NFT Delivery ──────────────────────────────────────────────────
+  // POST /api/nft/deliver-commander/:commanderId  body: { address: string }
+  app.post("/api/nft/deliver-commander/:commanderId", async (req, res) => {
+    const { commanderId } = req.params;
+    if (!commanderId) return res.status(400).json({ error: "commanderId required" });
+    if (!db) return res.status(503).json({ error: "Database not available" });
+
+    const { address } = req.body;
+    if (!address || !algosdk.isValidAddress(address)) {
+      return res.status(400).json({ error: "Valid Algorand address required in body.address" });
+    }
+
+    try {
+      const [row] = await db.select().from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId));
+      if (!row) return res.status(404).json({ error: "No NFT record for this commander — not yet minted" });
+
+      const assetId = row.assetId ? Number(row.assetId) : null;
+      if (!assetId) return res.status(404).json({ error: "Commander NFT not yet minted" });
+
+      const adminAddr = getAdminAddress();
+      if (row.mintedToAddress !== adminAddr) {
+        return res.json({ success: false, reason: "not_in_custody", message: "NFT already delivered to buyer", assetId });
+      }
+
+      const optedIn = await isAddressOptedIn(address, assetId);
+      if (!optedIn) {
+        return res.json({
+          success:  false,
+          reason:   "not_opted_in",
+          message:  `Add asset ${assetId} to your Pera wallet to receive your Commander NFT.`,
+          assetId,
+          hint:     "opt_in_required",
+        });
+      }
+
+      const { txId } = await transferCommanderNft({ assetId, toAddress: address });
+      await db.update(commanderNftsTable)
+        .set({ mintedToAddress: address })
+        .where(eq(commanderNftsTable.commanderId, commanderId));
+
+      console.log(`[nft/deliver-commander] commanderId=${commanderId} assetId=${assetId} delivered to ${address} txId=${txId}`);
+      res.json({ success: true, commanderId, assetId, txId, explorerUrl: `https://allo.info/asset/${assetId}` });
+    } catch (error) {
+      console.error(`[nft/deliver-commander] commanderId=${commanderId} error:`, error instanceof Error ? error.message : error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Delivery failed" });
     }
   });
@@ -1135,14 +1303,150 @@ export async function registerRoutes(
       const verifiedId = await assertPlayerOwnership(req, res);
       if (!verifiedId) return;
       const action = mintAvatarActionSchema.parse(req.body);
-      const avatar = await storage.mintAvatar(action);
+
+      // ── ALGO payment verification ──────────────────────────────────────────
+      // algoPaymentTxId is optional: if absent (e.g. AI or dev mode), skip.
+      const algoPaymentTxId: string | undefined = req.body.algoPaymentTxId;
+
       const mintPlayer = await storage.getPlayer(action.playerId);
-      if (mintPlayer) {
-        const { COMMANDER_INFO } = await import('@shared/schema');
-        const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
-        if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+      if (!mintPlayer) return res.status(404).json({ error: "Player not found" });
+
+      const COMMANDER_USD_PRICES: Record<string, number> = { sentinel: 1.50, phantom: 2.25, reaper: 3.25 };
+      const usdPrice    = COMMANDER_USD_PRICES[action.tier] ?? 0;
+      const algoUsdRate = parseFloat(process.env.ALGO_USD_RATE ?? "0.25");
+      const algoPrice   = usdPrice / algoUsdRate;
+      const minMicroAlgo = Math.floor(algoPrice * 1_000_000);
+
+      const isHumanPlayer =
+        mintPlayer.address &&
+        !mintPlayer.address.startsWith("AI_") &&
+        mintPlayer.address !== "PLAYER_WALLET" &&
+        algosdk.isValidAddress(mintPlayer.address);
+
+      // If the player is human and a payment txId was provided, verify it on-chain.
+      // If no txId provided for a human player, reject (payment required).
+      if (isHumanPlayer && db) {
+        if (!algoPaymentTxId) {
+          return res.status(402).json({
+            error: "ALGO payment required",
+            algoPrice,
+            minMicroAlgo,
+            adminAddress: getAdminAddress(),
+          });
+        }
+
+        // Guard against reuse of the same payment txId
+        const [existingPayment] = await db
+          .select()
+          .from(commanderNftsTable)
+          .where(eq(commanderNftsTable.algoPaymentTxId, algoPaymentTxId));
+        if (existingPayment) {
+          return res.status(409).json({ error: "Payment txId already used for another Commander mint" });
+        }
+
+        try {
+          await verifyAlgoPayment({
+            txId:           algoPaymentTxId,
+            expectedSender: mintPlayer.address,
+            minMicroAlgo,
+          });
+        } catch (payErr) {
+          return res.status(402).json({ error: payErr instanceof Error ? payErr.message : "Payment verification failed" });
+        }
       }
-      res.json({ success: true, avatar });
+
+      // ── Mint in-game avatar ────────────────────────────────────────────────
+      const avatar = await storage.mintAvatar(action);
+
+      // ── FRONTIER token burn (existing mechanic) ────────────────────────────
+      const { COMMANDER_INFO } = await import('@shared/schema');
+      const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
+      if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+
+      res.json({
+        success: true,
+        avatar,
+        nft: isHumanPlayer && db
+          ? { status: "minting", message: "Your Commander NFT is being minted. Check back shortly for the on-chain asset ID." }
+          : undefined,
+      });
+
+      // ── Post-response: liquidity split + NFT mint (fire-and-forget) ────────
+      if (isHumanPlayer && db && algoPaymentTxId) {
+        // Forward 50% of received ALGO to LIQUIDITY_WALLET
+        if (minMicroAlgo > 0) {
+          forwardLiquiditySplit(
+            Math.floor(minMicroAlgo * 0.5),
+            `Commander NFT liquidity split tier=${action.tier} cmd=${avatar.id}`
+          ).catch((err) => console.error("[mint-avatar] liquidity split failed:", err));
+        }
+
+        // ── Idempotency guard for NFT mint ──────────────────────────────────
+        const idempotencyKey = `cmdr:mint:${action.playerId}:${avatar.id}`;
+        const now = Date.now();
+
+        const [existingKey] = await db
+          .select()
+          .from(commanderMintIdempotencyTable)
+          .where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+
+        if (!existingKey) {
+          await db.insert(commanderMintIdempotencyTable).values({
+            key: idempotencyKey,
+            status: "pending",
+            assetId: null,
+            txId: null,
+            createdAt: now,
+            updatedAt: now,
+          }).onConflictDoNothing();
+        }
+
+        if (!existingKey || existingKey.status === "failed") {
+          const rawBase =
+            process.env.PUBLIC_BASE_URL ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "");
+          const PUBLIC_BASE_URL = rawBase.replace(/\/+$/, "");
+
+          if (PUBLIC_BASE_URL) {
+            mintCommanderNft({
+              commanderId:     avatar.id,
+              tier:            avatar.tier as "sentinel" | "phantom" | "reaper",
+              receiverAddress: mintPlayer.address,
+              metadataBaseUrl: PUBLIC_BASE_URL,
+            })
+              .then(async (result) => {
+                await db!.insert(commanderNftsTable).values({
+                  commanderId:     avatar.id,
+                  assetId:         result.assetId,
+                  mintedToAddress: result.mintedToAddress,
+                  mintedAt:        Date.now(),
+                  algoPaymentTxId: algoPaymentTxId ?? null,
+                }).onConflictDoUpdate({
+                  target: commanderNftsTable.commanderId,
+                  set: {
+                    assetId:         result.assetId,
+                    mintedToAddress: result.mintedToAddress,
+                    mintedAt:        Date.now(),
+                    algoPaymentTxId: algoPaymentTxId ?? null,
+                  },
+                });
+                await db!.update(commanderMintIdempotencyTable)
+                  .set({ status: "confirmed", assetId: result.assetId, txId: result.createTxId, updatedAt: Date.now() })
+                  .where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+                console.log(`[mint-avatar] Commander NFT minted commanderId=${avatar.id} assetId=${result.assetId}`);
+              })
+              .catch(async (err) => {
+                await db!.update(commanderMintIdempotencyTable)
+                  .set({ status: "failed", updatedAt: Date.now() })
+                  .where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+                console.error(`[mint-avatar] Commander NFT mint failed commanderId=${avatar.id}:`, err instanceof Error ? err.message : err);
+              });
+          } else {
+            console.warn(`[mint-avatar] PUBLIC_BASE_URL not set — skipping Commander NFT mint for commanderId=${avatar.id}`);
+          }
+        }
+      }
+
       try {
         const mintPlayerEvt = await storage.getPlayer(action.playerId).catch(() => undefined);
         if (mintPlayerEvt) {
