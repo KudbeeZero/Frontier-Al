@@ -36,6 +36,11 @@ export default defineConfig({
       protocol: "wss",     // Replit requires secure WebSocket
     },
     allowedHosts: ["localhost", ".replit.dev", ".picard.replit.dev"],
+    allowedHosts: true,
+    hmr: {
+      clientPort: 443,
+      protocol: "wss",
+    },
     proxy: {
       "/api": {
         target: "http://0.0.0.0:5000",
@@ -47,6 +52,11 @@ export default defineConfig({
       },
       "/faction": {
         target: "http://0.0.0.0:5000",
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: "ws://0.0.0.0:5000",
+        ws: true,
         changeOrigin: true,
       },
     },

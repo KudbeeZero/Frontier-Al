@@ -10,20 +10,34 @@ import algosdk from "algosdk";
 import type { ChainNetwork } from "./types";
 
 export function assertChainConfig(): void {
-  const required = [
-    'DATABASE_URL',
-    'ALGORAND_ADMIN_MNEMONIC',
-    'ALGORAND_ADMIN_ADDRESS',
-    'SESSION_SECRET',
-    'PUBLIC_BASE_URL',
-  ];
-  const missing = required.filter(k => !process.env[k]);
-  if (missing.length > 0) {
-    throw new Error(`[FRONTIER] Missing required secrets: ${missing.join(', ')}`);
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // PUBLIC_BASE_URL can be derived from REPLIT_DOMAINS in dev
+  if (!process.env.PUBLIC_BASE_URL && process.env.REPLIT_DOMAINS) {
+    const domains = process.env.REPLIT_DOMAINS.split(',')[0].trim();
+    process.env.PUBLIC_BASE_URL = `https://${domains}`;
+    console.log(`[FRONTIER] PUBLIC_BASE_URL auto-set from REPLIT_DOMAINS: ${process.env.PUBLIC_BASE_URL}`);
   }
+
+  const alwaysRequired = ['DATABASE_URL', 'SESSION_SECRET', 'PUBLIC_BASE_URL'];
+  const chainRequired = ['ALGORAND_ADMIN_MNEMONIC', 'ALGORAND_ADMIN_ADDRESS'];
+
+  const missingCore = alwaysRequired.filter(k => !process.env[k]);
+  if (missingCore.length > 0) {
+    throw new Error(`[FRONTIER] Missing required secrets: ${missingCore.join(', ')}`);
+  }
+
+  const missingChain = chainRequired.filter(k => !process.env[k]);
+  if (missingChain.length > 0) {
+    if (isProd) {
+      throw new Error(`[FRONTIER] Missing required secrets: ${missingChain.join(', ')}`);
+    }
+    console.warn(`[FRONTIER] WARNING: Missing chain secrets (blockchain features disabled): ${missingChain.join(', ')}`);
+  }
+
   const network = process.env.ALGORAND_NETWORK;
   if (!network) {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd) {
       throw new Error('[FRONTIER] ALGORAND_NETWORK must be set explicitly in production. Set to "mainnet" or "testnet".');
     }
     console.warn('[FRONTIER] WARNING: ALGORAND_NETWORK not set. Defaulting to testnet.');
