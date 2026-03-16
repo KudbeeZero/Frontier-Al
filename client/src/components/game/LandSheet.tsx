@@ -265,7 +265,7 @@ export function LandSheet({
           style={{ backgroundColor: biomeColors[parcel.biome] }}
         />
 
-        <div className="p-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-border/30">
             <div className="flex items-center gap-3">
               <div

@@ -1,4 +1,4 @@
-import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2, Smartphone, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,7 +17,14 @@ import {
 } from "@/components/ui/dialog";
 import { useWallet } from "@/hooks/useWallet";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+
+function useIsMobile() {
+  return useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }, []);
+}
 
 export function WalletConnect({ className }: { className?: string }) {
   const { isConnected, address, displayAddress, balance, isConnecting, error, walletType, connectPera, connectLute, disconnect } = useWallet();
@@ -133,9 +140,11 @@ function WalletPickerDialog({
   onSelectPera: () => void;
   onSelectLute: () => void;
 }) {
+  const isMobile = useIsMobile();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[85vh] overflow-y-auto rounded-xl">
         <DialogHeader>
           <DialogTitle className="font-display uppercase tracking-wide text-center">
             Connect Wallet
@@ -147,27 +156,43 @@ function WalletPickerDialog({
         <div className="flex flex-col gap-3 py-4">
           <button
             onClick={onSelectPera}
-            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors"
+            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors text-left w-full"
             data-testid="button-connect-pera"
           >
             <div className="w-10 h-10 rounded-md bg-[#ffee55] flex items-center justify-center shrink-0">
               <span className="text-black font-bold text-lg">P</span>
             </div>
-            <div className="text-left">
-              <p className="font-display text-sm uppercase tracking-wide">Pera Wallet</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Mobile & Web wallet for Algorand</p>
+            <div className="text-left flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-display text-sm uppercase tracking-wide">Pera Wallet</p>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-display uppercase tracking-wide">
+                  {isMobile ? <Smartphone className="w-2.5 h-2.5" /> : <Monitor className="w-2.5 h-2.5" />}
+                  {isMobile ? "Deep link" : "QR Code"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isMobile
+                  ? "Opens the Pera app directly on this device"
+                  : "Scan QR code with Pera on your phone"}
+              </p>
             </div>
           </button>
           <button
             onClick={onSelectLute}
-            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors"
+            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors text-left w-full"
             data-testid="button-connect-lute"
           >
             <div className="w-10 h-10 rounded-md bg-[#6366f1] flex items-center justify-center shrink-0">
               <span className="text-white font-bold text-lg">L</span>
             </div>
-            <div className="text-left">
-              <p className="font-display text-sm uppercase tracking-wide">LUTE Wallet</p>
+            <div className="text-left flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-display text-sm uppercase tracking-wide">LUTE Wallet</p>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-display uppercase tracking-wide">
+                  <Monitor className="w-2.5 h-2.5" />
+                  Browser
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground mt-0.5">Browser-based Algorand wallet</p>
             </div>
           </button>
