@@ -727,6 +727,68 @@ export interface SeasonLeaderboardEntry extends LeaderboardEntry {
 
 // ─── calculateFrontierPerDay ──────────────────────────────────────────────────
 
+// ─── Prediction Markets ───────────────────────────────────────────────────────
+
+export type MarketStatus = "open" | "closed" | "resolved" | "cancelled";
+export type MarketCategory = "battle" | "faction" | "season" | "orbital" | "economy";
+export type MarketOutcome = "a" | "b";
+
+export interface PredictionMarket {
+  id: string;
+  title: string;
+  description: string;
+  category: MarketCategory;
+  resolutionCriteria: string;
+  outcomeALabel: string;
+  outcomeBLabel: string;
+  tokenPoolA: number;
+  tokenPoolB: number;
+  status: MarketStatus;
+  resolvesAt: number;
+  resolvedAt: number | null;
+  winningOutcome: MarketOutcome | null;
+  createdBy: string;
+  relatedEventId: string | null;
+  createdAt: number;
+}
+
+export interface MarketPosition {
+  id: string;
+  marketId: string;
+  playerId: string;
+  outcome: MarketOutcome;
+  amountWagered: number;
+  claimed: boolean;
+  createdAt: number;
+}
+
+export const MARKET_FEE_RATE = 0.05; // 5% protocol fee on winning pool
+
+export const placeBetSchema = z.object({
+  playerId: z.string(),
+  outcome: z.enum(["a", "b"]),
+  amount: z.number().int().min(1),
+});
+
+export const createMarketSchema = z.object({
+  title: z.string().min(5).max(200),
+  description: z.string().min(10),
+  category: z.enum(["battle", "faction", "season", "orbital", "economy"]),
+  resolutionCriteria: z.string().min(10),
+  outcomeALabel: z.string().min(1).max(100).default("Yes"),
+  outcomeBLabel: z.string().min(1).max(100).default("No"),
+  resolvesAt: z.number().int().positive(),
+  relatedEventId: z.string().optional(),
+});
+
+export const resolveMarketSchema = z.object({
+  winningOutcome: z.enum(["a", "b"]),
+});
+
+export type PlaceBetAction = z.infer<typeof placeBetSchema>;
+export type CreateMarketAction = z.infer<typeof createMarketSchema>;
+export type ResolveMarketAction = z.infer<typeof resolveMarketSchema>;
+
 export function calculateFrontierPerDay(improvements: Improvement[]): number {
   let perDay = 1;
   

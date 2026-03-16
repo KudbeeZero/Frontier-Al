@@ -3,7 +3,7 @@ import { getBattleReplay } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema, placeBetSchema, createMarketSchema, resolveMarketSchema } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable, battles as battlesTable, gameEvents as gameEventsTable, gameMeta, tradeOrders as tradeOrdersTable, subParcels as subParcelsTable, orbitalEvents as orbitalEventsTable } from "./db-schema";
@@ -1647,6 +1647,116 @@ export async function registerRoutes(
       res.json({ success: true, trade });
     } catch (err) {
       console.error("[trade] fillTradeOrder error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Prediction Markets ────────────────────────────────────────────────────
+
+  // Background resolver: close expired open markets every 60 seconds
+  setInterval(async () => {
+    try {
+      await withDbRetry(() => storage.resolveExpiredMarkets(), "resolveExpiredMarkets");
+    } catch (err) {
+      console.warn("[markets] resolveExpiredMarkets:", err instanceof Error ? err.message : err);
+    }
+  }, 60_000);
+
+  app.get("/api/markets", async (_req, res) => {
+    try {
+      const markets = await withDbRetry(() => storage.getOpenMarkets(), "getOpenMarkets");
+      res.json(markets);
+    } catch (err) {
+      console.error("[markets] getOpenMarkets error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/markets/history", async (_req, res) => {
+    try {
+      const markets = await withDbRetry(() => storage.getAllMarkets(50), "getAllMarkets");
+      res.json(markets);
+    } catch (err) {
+      console.error("[markets] getAllMarkets error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/markets/player/:playerId", async (req, res) => {
+    const { playerId } = req.params;
+    try {
+      const positions = await withDbRetry(() => storage.getPlayerPositions(playerId), "getPlayerPositions");
+      res.json(positions);
+    } catch (err) {
+      console.error("[markets] getPlayerPositions error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/markets/:id", async (req, res) => {
+    try {
+      const market = await withDbRetry(() => storage.getMarket(req.params.id), "getMarket");
+      if (!market) return res.status(404).json({ error: "Market not found" });
+      res.json(market);
+    } catch (err) {
+      console.error("[markets] getMarket error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/markets/:id/bet", async (req, res) => {
+    try {
+      const parsed = placeBetSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const { playerId, outcome, amount } = parsed.data;
+      const result = await withDbRetry(() => storage.placeBet(req.params.id, playerId, outcome, amount), "placeBet");
+      if ("error" in result) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json(result);
+    } catch (err) {
+      console.error("[markets] placeBet error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/markets/:id/claim", async (req, res) => {
+    try {
+      const { playerId } = req.body;
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+      const result = await withDbRetry(() => storage.claimWinnings(req.params.id, playerId), "claimWinnings");
+      if ("error" in result) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json(result);
+    } catch (err) {
+      console.error("[markets] claimWinnings error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin-only routes
+  app.post("/api/admin/markets", async (req, res) => {
+    if (!requireAdminKey(req, res)) return;
+    try {
+      const parsed = createMarketSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const market = await withDbRetry(() => storage.createMarket(parsed.data, "admin"), "createMarket");
+      res.json(market);
+    } catch (err) {
+      console.error("[markets] createMarket error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/admin/markets/:id/resolve", async (req, res) => {
+    if (!requireAdminKey(req, res)) return;
+    try {
+      const parsed = resolveMarketSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const result = await withDbRetry(() => storage.resolveMarket(req.params.id, parsed.data.winningOutcome), "resolveMarket");
+      if ("error" in result) return res.status(400).json({ error: result.error });
+      res.json(result);
+    } catch (err) {
+      console.error("[markets] resolveMarket error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

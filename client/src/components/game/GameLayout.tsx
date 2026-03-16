@@ -17,6 +17,7 @@ import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { WorldIntelPanel } from "./WorldIntelPanel";
 import { FactionPanel } from "./FactionPanel";
+import { PredictionMarketsPanel } from "./PredictionMarkets";
 import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
@@ -85,7 +86,7 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
-  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade" | "factions">("warroom");
+  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade" | "factions" | "markets">("warroom");
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -886,6 +887,18 @@ export function GameLayout() {
             <Flag className="w-3.5 h-3.5" />
             Factions
           </button>
+          <button
+            onClick={() => setDesktopRightTab("markets")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
+              desktopRightTab === "markets"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Coins className="w-3.5 h-3.5" />
+            Markets
+          </button>
         </div>
         {isLoading ? (
           <div className="p-4 space-y-4">
@@ -901,6 +914,12 @@ export function GameLayout() {
         ) : desktopRightTab === "factions" ? (
           <FactionPanel
             player={player}
+            className="flex-1 border-0 rounded-none overflow-hidden"
+          />
+        ) : desktopRightTab === "markets" ? (
+          <PredictionMarketsPanel
+            currentPlayerId={player?.id ?? ""}
+            currentPlayerFrontier={player?.frontier ?? 0}
             className="flex-1 border-0 rounded-none overflow-hidden"
           />
         ) : gameState ? (
@@ -979,6 +998,13 @@ export function GameLayout() {
           {activeTab === "factions" && (
             <FactionPanel
               player={player}
+              className="h-full"
+            />
+          )}
+          {activeTab === "markets" && (
+            <PredictionMarketsPanel
+              currentPlayerId={player?.id ?? ""}
+              currentPlayerFrontier={player?.frontier ?? 0}
               className="h-full"
             />
           )}
