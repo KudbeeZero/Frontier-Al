@@ -75,8 +75,8 @@ export const FLY_SPEED    = 0.055;
 export const FLY_DONE_SQ  = 0.0004;
 
 // ── PlotOverlay sizing ────────────────────────────────────────────────────────
-export const FILL_SIZE   = GLOBE_RADIUS * 0.034;
-export const BORDER_SIZE = GLOBE_RADIUS * 0.038;
+export const FILL_SIZE   = GLOBE_RADIUS * 0.022;
+export const BORDER_SIZE = GLOBE_RADIUS * 0.026;
 
 // ── SubParcel sizing ──────────────────────────────────────────────────────────
 export const SUB_FILL_SIZE   = GLOBE_RADIUS * 0.010;

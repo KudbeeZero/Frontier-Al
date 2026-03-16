@@ -74,10 +74,8 @@ function Scene({
       />
       <StarField />
       <GlobeAtmosphere />
-      <ambientLight intensity={1.4} color="#b0c8ff" />
-      <directionalLight position={[10, 5, 6]}   intensity={2.2} color="#fff8e8" />
-      <directionalLight position={[-5, -3, -6]} intensity={0.9} color="#8ab4ff" />
-      <directionalLight position={[0,  10, -2]} intensity={0.5} color="#d0e8ff" />
+      <ambientLight intensity={1.0} color="#c8d8ff" />
+      <directionalLight position={[8, 5, 5]} intensity={1.8} color="#fff5e0" />
       <group>
         <GlobeTerrain />
         <PlotOverlay
@@ -105,7 +103,7 @@ function Scene({
       <OrbitalZoneLayer events={orbitalEvents} />
       <SatelliteOrbitLayer players={players} />
       <EffectComposer>
-        <Bloom intensity={1.6} luminanceThreshold={0.18} luminanceSmoothing={0.85} mipmapBlur />
+        <Bloom intensity={0.75} luminanceThreshold={0.55} luminanceSmoothing={0.9} mipmapBlur />
       </EffectComposer>
       <OrbitControls
         ref={controlsRef as any}
