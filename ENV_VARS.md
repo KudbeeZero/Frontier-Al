@@ -38,3 +38,66 @@
 - **VITE_ALGOD_URL / VITE_INDEXER_URL**: Currently default to testnet URLs; must be overridden for mainnet
 - **SESSION_SECRET**: Listed as required in chain config validation but session middleware is not currently initialized — verify if sessions are needed before go-live
 - **AI_ENABLED**: Should be `false` for initial multiplayer launch
+
+---
+
+## Replit Secrets Panel
+
+When importing this project into Replit, add the following via **Tools → Secrets**:
+
+### Required (App will not start without these)
+
+| Secret Key | Where to get it |
+|------------|----------------|
+| `DATABASE_URL` | Replit Database tab → copy Connection URL |
+| `ALGORAND_ADMIN_MNEMONIC` | Your admin Algorand wallet 25-word phrase |
+| `ALGORAND_ADMIN_ADDRESS` | Corresponding admin wallet public address |
+| `SESSION_SECRET` | Generate: `openssl rand -hex 32` |
+| `PUBLIC_BASE_URL` | Your Replit app URL e.g. `https://yourapp.replit.app` |
+| `ALGORAND_NETWORK` | `testnet` (testing) or `mainnet` (live launch) |
+
+### Required for Mainnet (add when switching to mainnet)
+
+| Secret Key | Value |
+|------------|-------|
+| `ALGOD_URL` | `https://mainnet-api.algonode.cloud` |
+| `INDEXER_URL` | `https://mainnet-idx.algonode.cloud` |
+| `VITE_ALGOD_URL` | `https://mainnet-api.algonode.cloud` |
+| `VITE_INDEXER_URL` | `https://mainnet-idx.algonode.cloud` |
+
+### Optional but Recommended
+
+| Secret Key | Purpose |
+|------------|---------|
+| `UPSTASH_REDIS_REST_URL` | Redis caching (fallback to in-memory if absent) |
+| `UPSTASH_REDIS_REST_TOKEN` | Redis auth token |
+| `CLIENT_ORIGIN` | CORS origin if frontend is on a different domain |
+| `ADMIN_KEY` | Random secret for admin-only API endpoints |
+| `AI_ENABLED` | `false` to disable AI factions on launch |
+| `VITE_WS_URL` | WebSocket URL if frontend/backend on different domains |
+
+---
+
+## Mainnet Toggle Checklist
+
+To switch from testnet → mainnet, update or add the following secrets:
+
+```
+ALGORAND_NETWORK=mainnet
+ALGOD_URL=https://mainnet-api.algonode.cloud
+INDEXER_URL=https://mainnet-idx.algonode.cloud
+VITE_ALGOD_URL=https://mainnet-api.algonode.cloud
+VITE_INDEXER_URL=https://mainnet-idx.algonode.cloud
+ALGORAND_ADMIN_MNEMONIC=<mainnet wallet 25-word phrase>
+ALGORAND_ADMIN_ADDRESS=<mainnet wallet public address>
+```
+
+**First-run only (ASA creation):**
+```
+FORCE_NEW_ASA=true
+```
+
+After the first successful startup, record the new ASA IDs from server logs, then:
+- Set `FORCE_NEW_ASA=false` (or remove it)
+- Update ASA IDs in `replit.md`
+- Fund the admin wallet with at least 5 ALGO before first run (covers ASA creation fees)

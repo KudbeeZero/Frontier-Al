@@ -51,6 +51,84 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - `server/algorand.ts` was removed (dead code, fully superseded by chain service).
 - `batchedTransferFrontierAsa` in `asa.ts` uses the chain service's `_frontierAsaId` (fixes bug where claims would fail using stale module-local variable).
 
+---
+
+## Replit Import Instructions
+
+### Step-by-Step Setup
+
+1. **Import the repo** — Use "Import from GitHub" in Replit. Select this repository.
+2. **Open Secrets** — Go to Tools → Secrets and add all required keys (see table below).
+3. **Database** — Open the Database tab; Replit auto-provisions PostgreSQL. Copy the `DATABASE_URL` connection string into Secrets.
+4. **Run** — Click the Run button or the "Project" workflow. Server starts on port 5000; frontend dev server on port 3000.
+5. **Verify** — Hit `GET /health` — should return `200 OK`. Frontend loads at the external port 80 (mapped from 3000).
+6. **DB Schema** — On first run the database is seeded automatically via `seedDatabase()`. No manual migration needed.
+
+### Required Secrets for Replit
+
+| Key | Required? | Notes |
+|-----|-----------|-------|
+| `DATABASE_URL` | ✅ Yes | Replit Database tab → Connection URL |
+| `ALGORAND_ADMIN_MNEMONIC` | ✅ Yes | 25-word phrase — testnet or mainnet wallet |
+| `ALGORAND_ADMIN_ADDRESS` | ✅ Yes | Corresponding public address |
+| `SESSION_SECRET` | ✅ Yes | `openssl rand -hex 32` |
+| `PUBLIC_BASE_URL` | ✅ Yes | `https://<yourapp>.replit.app` |
+| `ALGORAND_NETWORK` | ✅ Yes | `testnet` or `mainnet` |
+| `ALGOD_URL` | Mainnet only | `https://mainnet-api.algonode.cloud` |
+| `INDEXER_URL` | Mainnet only | `https://mainnet-idx.algonode.cloud` |
+| `VITE_ALGOD_URL` | Mainnet only | `https://mainnet-api.algonode.cloud` |
+| `VITE_INDEXER_URL` | Mainnet only | `https://mainnet-idx.algonode.cloud` |
+| `UPSTASH_REDIS_REST_URL` | Optional | Falls back to in-memory |
+| `UPSTASH_REDIS_REST_TOKEN` | Optional | |
+| `CLIENT_ORIGIN` | Optional | Set if frontend is on a separate domain |
+| `ADMIN_KEY` | Optional | Protects admin API endpoints |
+| `AI_ENABLED` | Optional | `false` recommended at launch |
+| `FORCE_NEW_ASA` | First-run only | `true` ONLY on first mainnet boot to create ASAs |
+
+---
+
+## Mainnet Preparation
+
+### What Is Already Done (No Code Changes Required)
+
+- `server/services/chain/client.ts` — Full mainnet support via `ALGORAND_NETWORK=mainnet`
+- Node URLs are env-var-driven — no hardcoded testnet URLs in server code
+- `assertChainConfig()` enforces all required secrets at startup — fails loudly if anything is missing
+- `FORCE_NEW_ASA` flag exists for safe first-run ASA creation on any network
+- NFT metadata URL uses `PUBLIC_BASE_URL` (env-driven, no hardcoded domain)
+- `REPLIT_DOMAINS` fallback exists so `PUBLIC_BASE_URL` isn't strictly required in Replit dev
+
+### What Requires Human Action Before Mainnet Launch
+
+| Action | Notes |
+|--------|-------|
+| Create mainnet admin wallet | Needs minimum ~5 ALGO for ASA creation fees (1 ALGO per ASA × 5) |
+| Fund admin wallet | Transfer ALGO before first startup |
+| Set mainnet secrets | See Mainnet Toggle Checklist in `ENV_VARS.md` |
+| Set `FORCE_NEW_ASA=true` for first run | Creates FRONTIER + 4 faction ASAs on mainnet |
+| Record new ASA IDs from server logs | Update the "Project Status" section of this file after first run |
+| Set `FORCE_NEW_ASA=false` after first run | Prevents re-creation on subsequent restarts |
+| Set `PUBLIC_BASE_URL` to final domain | Required for valid NFT metadata URLs |
+| Run `npm run db:push` if schema changed | Sync Drizzle schema to production DB |
+| Set `AI_ENABLED=false` | Disable AI factions for initial launch |
+
+### Pre-Launch Checklist (Ordered)
+
+- [ ] Admin wallet created on mainnet and funded with ≥ 5 ALGO
+- [ ] All secrets updated in Replit Secrets panel for mainnet
+- [ ] `FORCE_NEW_ASA=true` set for first boot only
+- [ ] First boot: verify server logs show 5 ASAs created (FRONTIER + 4 factions)
+- [ ] Record new mainnet ASA IDs, update this file's Project Status section
+- [ ] Set `FORCE_NEW_ASA=false` (remove or set to false)
+- [ ] Verify `GET /health` returns 200 on mainnet
+- [ ] Test wallet connect (Pera) + ASA opt-in + FRNTR claim on mainnet
+- [ ] Test land purchase + NFT mint on mainnet
+- [ ] Confirm WebSocket broadcasts work (open two browser tabs)
+- [ ] Set `AI_ENABLED=false` confirmed
+- [ ] Announce launch
+
+---
+
 ## Key Behavioral Notes
 - **Claim pipeline**: opt-in check → credit DB balance → queue on-chain batch transfer (fire-and-forget for fast response).
 - **NFT minting**: idempotency-guarded, fire-and-forget; custodian mode (admin holds NFT if buyer not opted in).

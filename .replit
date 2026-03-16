@@ -8,6 +8,7 @@ packages = ["emacsclient-commands", "gt", "lsof", "nano", "psmisc", "run"]
 
 [env]
 PORT = "5000"
+NODE_ENV = "development"
 
 [deployment]
 deploymentTarget = "cloudrun"
