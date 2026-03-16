@@ -178,6 +178,10 @@ export interface Player {
   testnetProgress: string[];
   /** AI-only: virtual treasury for land purchases and operations */
   treasury?: number;
+  /** Faction the human player has aligned with. NULL = unaligned. */
+  playerFactionId?: string | null;
+  /** Timestamp (ms) when the player joined/last switched faction */
+  factionJoinedAt?: number | null;
 }
 
 export interface Battle {
