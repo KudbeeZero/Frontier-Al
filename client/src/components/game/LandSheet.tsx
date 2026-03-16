@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink, Grid3X3 } from "lucide-react";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink, Grid3X3, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS } from "@shared/schema";
 
 // ── SubParcelGrid ─────────────────────────────────────────────────────────────
 // Shows the 3×3 sub-parcel ownership grid for subdivided plots.
@@ -18,7 +18,144 @@ interface SubParcelGridProps {
   player: Player | null;
 }
 
+function SubdivisionCountdown({ heldSince }: { heldSince: number }) {
+  const holdMs = SUB_PARCEL_HOLD_HOURS * 60 * 60 * 1000;
+  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, heldSince + holdMs - Date.now()));
+
+  useEffect(() => {
+    const initial = Math.max(0, heldSince + holdMs - Date.now());
+    setTimeLeft(initial);
+    if (initial === 0) return;
+    const id = setInterval(() => {
+      const r = Math.max(0, heldSince + holdMs - Date.now());
+      setTimeLeft(r);
+      if (r === 0) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [heldSince, holdMs]);
+
+  if (timeLeft === 0) return null;
+
+  const hours = Math.floor(timeLeft / 3600000);
+  const mins  = Math.floor((timeLeft % 3600000) / 60000);
+  const secs  = Math.floor((timeLeft % 60000) / 1000);
+  const progress = ((holdMs - timeLeft) / holdMs) * 100;
+
+  return (
+    <div className="space-y-1 mb-2">
+      <div className="flex items-center justify-between text-[9px]">
+        <span className="text-muted-foreground font-display uppercase tracking-wide flex items-center gap-1">
+          <Clock className="w-2.5 h-2.5" /> Unlocks in
+        </span>
+        <span className="font-mono text-amber-400">{hours}h {String(mins).padStart(2,"0")}m {String(secs).padStart(2,"0")}s</span>
+      </div>
+      <Progress value={progress} className="h-1" />
+    </div>
+  );
+}
+
+function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
+  sp: SubParcel;
+  player: Player;
+  parentPlotId: number;
+  onClose: () => void;
+}) {
+  const buildMutation = useMutation({
+    mutationFn: (improvementType: ImprovementType) =>
+      apiRequest("POST", `/api/sub-parcels/${sp.id}/build`, { playerId: player.id, improvementType }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/plots/${parentPlotId}/sub-parcels`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+
+  const improvements = sp.improvements ?? [];
+
+  const facilityTypes: FacilityType[] = ["electricity", "blockchain_node", "data_centre", "ai_lab"];
+  const defenseTypes: DefenseImprovementType[] = ["turret", "shield_gen", "storage_depot", "radar", "fortress"];
+
+  return (
+    <div className="mt-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-display uppercase tracking-wide text-primary flex items-center gap-1.5">
+          <Wrench className="w-3 h-3" /> Sub-Parcel #{sp.subIndex} Upgrades
+        </span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-[10px]">✕</button>
+      </div>
+
+      {improvements.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {improvements.map((imp, i) => (
+            <Badge key={i} variant="secondary" className="text-[9px]">
+              {IMPROVEMENT_INFO[imp.type]?.name ?? imp.type} Lv{imp.level}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <p className="text-[9px] text-muted-foreground font-display uppercase tracking-wide mb-1">Facilities (FRNTR)</p>
+        <div className="grid grid-cols-2 gap-1">
+          {facilityTypes.map(type => {
+            const info = FACILITY_INFO[type];
+            const existing = improvements.find(i => i.type === type);
+            const atMax = existing && existing.level >= info.maxLevel;
+            const level = existing ? existing.level + 1 : 1;
+            const cost = atMax ? 0 : SUB_PARCEL_FACILITY_COSTS[type][level - 1];
+            const canAfford = player.frontier >= cost;
+            const hasPrereq = !info.prerequisite || improvements.find(i => i.type === info.prerequisite);
+            return (
+              <Button key={type} variant="outline" size="sm"
+                onClick={() => buildMutation.mutate(type)}
+                disabled={buildMutation.isPending || !!atMax || !canAfford || !hasPrereq}
+                className={cn("flex-col items-start h-auto py-1.5 px-2 text-left", !hasPrereq && "opacity-50")}
+              >
+                <span className="text-[9px] font-display uppercase">{info.name}</span>
+                {existing && <span className="text-[8px] text-primary font-mono">Lv{existing.level}{!atMax ? ` → Lv${level}` : " MAX"}</span>}
+                <span className="text-[8px] text-muted-foreground font-mono">{atMax ? "✓ MAX" : `${cost} FRNTR`}</span>
+                {!hasPrereq && <span className="text-[7px] text-destructive">🔒 Needs Electricity</span>}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[9px] text-muted-foreground font-display uppercase tracking-wide mb-1">Defense (Iron/Fuel)</p>
+        <div className="grid grid-cols-2 gap-1">
+          {defenseTypes.map(type => {
+            const info = DEFENSE_IMPROVEMENT_INFO[type];
+            const existing = improvements.find(i => i.type === type);
+            const atMax = existing && existing.level >= info.maxLevel;
+            const level = existing ? existing.level + 1 : 1;
+            const baseCost = SUB_PARCEL_DEFENSE_COSTS[type];
+            const cost = { iron: baseCost.iron * level, fuel: baseCost.fuel * level };
+            const canAfford = player.iron >= cost.iron && player.fuel >= cost.fuel;
+            return (
+              <Button key={type} variant="outline" size="sm"
+                onClick={() => buildMutation.mutate(type)}
+                disabled={buildMutation.isPending || !!atMax || !canAfford}
+                className="flex-col items-start h-auto py-1.5 px-2 text-left"
+              >
+                <span className="text-[9px] font-display uppercase">{info.name}</span>
+                {existing && <span className="text-[8px] text-primary font-mono">Lv{existing.level}{!atMax ? ` → Lv${level}` : " MAX"}</span>}
+                <span className="text-[8px] text-muted-foreground font-mono">{atMax ? "✓ MAX" : `${cost.iron}I ${cost.fuel}F`}</span>
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+
+      {buildMutation.isError && (
+        <p className="text-[9px] text-destructive">{String((buildMutation.error as any)?.message ?? "Build failed")}</p>
+      )}
+    </div>
+  );
+}
+
 function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
+  const [selectedSubIndex, setSelectedSubIndex] = useState<number | null>(null);
+
   const { data: subParcels = [], isLoading } = useQuery<SubParcel[]>({
     queryKey: [`/api/plots/${parcel.plotId}/sub-parcels`],
     enabled: !!parcel.isSubdivided,
@@ -54,10 +191,11 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
           <Grid3X3 className="w-3.5 h-3.5 text-muted-foreground" />
           <span className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Sub-Parcels</span>
         </div>
+        {heldSince && !canSubdivide && <SubdivisionCountdown heldSince={heldSince} />}
         <p className="text-[9px] text-muted-foreground mb-2">
           {canSubdivide
             ? "Subdivide this plot into a 3×3 grid of 9 purchasable sub-parcels."
-            : `Hold this plot for ${SUB_PARCEL_HOLD_HOURS}h to unlock subdivision.`
+            : `Hold for ${SUB_PARCEL_HOLD_HOURS}h to unlock subdivision.`
           }
         </p>
         {canSubdivide && (
@@ -97,6 +235,7 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
   for (const sp of subParcels) subMap.set(sp.subIndex, sp);
 
   const allOwnedByMe = subParcels.length === 9 && subParcels.every(s => s.ownerId === player?.id);
+  const selectedSp = selectedSubIndex !== null ? subMap.get(selectedSubIndex) : undefined;
 
   return (
     <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/40">
@@ -118,29 +257,49 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
           const isEnemy = sp?.ownerId && !isYours;
           const price   = sp?.purchasePriceFrontier;
           const canBuy  = !sp?.ownerId && player && price !== undefined;
+          const hasImprovements = (sp?.improvements?.length ?? 0) > 0;
+          const isSelected = selectedSubIndex === i;
 
           return (
             <button
               key={i}
-              disabled={!canBuy || purchaseMutation.isPending}
-              onClick={() => canBuy && sp && purchaseMutation.mutate(sp.id)}
+              disabled={!canBuy && !isYours || purchaseMutation.isPending}
+              onClick={() => {
+                if (canBuy && sp) {
+                  purchaseMutation.mutate(sp.id);
+                } else if (isYours) {
+                  setSelectedSubIndex(isSelected ? null : i);
+                }
+              }}
               className={cn(
-                "rounded p-1.5 text-center transition-colors border text-[8px] font-mono",
-                isYours
-                  ? "bg-primary/20 border-primary/40 text-primary"
-                  : isEnemy
-                    ? "bg-destructive/20 border-destructive/40 text-destructive"
-                    : sp
-                      ? "bg-muted/30 border-border/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 cursor-pointer"
-                      : "bg-muted/10 border-border/20 text-muted-foreground/40"
+                "rounded p-1.5 text-center transition-colors border text-[8px] font-mono relative",
+                isYours && isSelected
+                  ? "bg-primary/30 border-primary ring-1 ring-primary text-primary"
+                  : isYours
+                    ? "bg-primary/20 border-primary/40 text-primary hover:border-primary cursor-pointer"
+                    : isEnemy
+                      ? "bg-destructive/20 border-destructive/40 text-destructive"
+                      : sp
+                        ? "bg-muted/30 border-border/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 cursor-pointer"
+                        : "bg-muted/10 border-border/20 text-muted-foreground/40"
               )}
-              title={canBuy ? `Buy for ${price} FRNTR` : isYours ? "Your cell" : isEnemy ? "Enemy cell" : ""}
+              title={canBuy ? `Buy for ${price} FRNTR` : isYours ? "Click to manage upgrades" : isEnemy ? "Enemy cell" : ""}
             >
-              {isYours ? "YOU" : isEnemy ? "ENM" : sp ? `${price}F` : "–"}
+              {isYours ? (hasImprovements ? "⚙YOU" : "YOU") : isEnemy ? "ENM" : sp ? `${price}F` : "–"}
             </button>
           );
         })}
       </div>
+
+      {selectedSp && player && selectedSp.ownerId === player.id && (
+        <SubParcelUpgradePanel
+          sp={selectedSp}
+          player={player}
+          parentPlotId={parcel.plotId}
+          onClose={() => setSelectedSubIndex(null)}
+        />
+      )}
+
       {purchaseMutation.isError && (
         <p className="text-[9px] text-destructive mt-1">
           {String((purchaseMutation.error as any)?.message ?? "Purchase failed")}

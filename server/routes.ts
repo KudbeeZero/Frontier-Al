@@ -1582,6 +1582,24 @@ export async function registerRoutes(
     }
   });
 
+  /** POST /api/sub-parcels/:subParcelId/build — build or upgrade an improvement on an owned sub-parcel */
+  app.post("/api/sub-parcels/:subParcelId/build", async (req, res) => {
+    const { subParcelId } = req.params;
+    const { playerId, improvementType } = req.body;
+    if (!subParcelId)     return res.status(400).json({ error: "Invalid subParcelId" });
+    if (!playerId)        return res.status(400).json({ error: "playerId required" });
+    if (!improvementType) return res.status(400).json({ error: "improvementType required" });
+    try {
+      const result = await storage.buildSubParcelImprovement(subParcelId, playerId, improvementType);
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json({ success: true, subParcel: result.subParcel });
+    } catch (err) {
+      console.error("[sub-parcels] buildSubParcelImprovement error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ── Season Endpoints ───────────────────────────────────────────────────────
 
   /** GET /api/season/current — get the active season info */
