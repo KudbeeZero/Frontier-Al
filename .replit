@@ -68,3 +68,7 @@ expertMode = true
 [userenv.production]
 PORT = "3000"
 NODE_ENV = "production"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
