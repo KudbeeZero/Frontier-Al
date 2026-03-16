@@ -30,14 +30,9 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 3000,
-    hmr: {
-      path: "/vite-hmr",   // matches server/vite.ts middleware-mode path
-      clientPort: 443,     // Replit proxies on HTTPS port 443
-      protocol: "wss",     // Replit requires secure WebSocket
-    },
-    allowedHosts: ["localhost", ".replit.dev", ".picard.replit.dev"],
     allowedHosts: true,
     hmr: {
+      path: "/vite-hmr",
       clientPort: 443,
       protocol: "wss",
     },
