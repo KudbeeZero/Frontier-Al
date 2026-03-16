@@ -123,7 +123,7 @@ Algorand requires wallets to explicitly opt in before receiving any ASA.
 │  BottomNav: Map | Inventory | Battles | Rankings | Cmd  │
 └─────────────────────────────────────────────────────────┘
 ```
-- **Map tab** — globe/flat map, tap any plot to open its detail sheet.
+- **Map tab** — 3D globe, tap any plot to open its detail sheet.
 - **Inventory tab** — resources, wallet balance, FRNTR claim button.
 - **Battles tab** — active and recently resolved battles.
 - **Rankings tab** — leaderboard sorted by territories, resources, FRNTR earned, or combat record.
@@ -624,7 +624,6 @@ Frontier-Al/
 │   │   │   ├── CommandCenterPanel.tsx   # Mission control view
 │   │   │   ├── CommanderPanel.tsx       # Mint/manage commanders
 │   │   │   ├── EconomicsPanel.tsx       # Token supply analytics
-│   │   │   ├── FlatMap.tsx              # 2D scrollable world map
 │   │   │   ├── GameLayout.tsx           # Root layout + game loop
 │   │   │   ├── GamerTagModal.tsx        # Player name setup
 │   │   │   ├── InventoryPanel.tsx       # Resources, wallet, claims

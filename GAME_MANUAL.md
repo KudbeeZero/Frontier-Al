@@ -51,7 +51,6 @@ FRONTIER-AL is a persistent globe-based strategy game powered by the Algorand bl
 ### UI Overview
 
 - **3D Globe** — Three.js GPU-accelerated rendering of all 21,000 plots on a rotating planet
-- **2D Flat Map** — Scrollable world map with parallax texture and territory heat-map overlay
 - **Bottom Navigation** — Map, Inventory, Battles, Rankings, Commander tabs
 - **Resource HUD** — Top bar showing Iron, Fuel, Crystal, FRNTR balances with daily generation rate
 
@@ -175,7 +174,7 @@ Use the **Collect** action to gather all stored resources from all your owned pl
 
 ### Purchase Flow
 
-1. Select an unclaimed plot on the globe or flat map
+1. Select an unclaimed plot on the globe
 2. Confirm the ALGO price in the purchase modal
 3. Sign the Algorand transaction with your wallet
 4. Plot is minted as a unique **ARC-3 NFT** on Algorand TestNet
