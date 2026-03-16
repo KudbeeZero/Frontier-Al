@@ -179,7 +179,7 @@ export default function PlanetGlobe({
   return (
     <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#000b1e" }}>
       <Canvas
-        camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 45 }}
+        camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 45, near: 0.5, far: 200 }}
         gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         style={{ background: "#000b1e", touchAction: "none" }}
       >

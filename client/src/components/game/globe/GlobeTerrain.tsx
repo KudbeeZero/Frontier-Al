@@ -41,12 +41,15 @@ export function GlobeTerrain() {
   `;
 
   return (
-    <mesh>
+    <mesh renderOrder={0}>
       <sphereGeometry args={[GLOBE_RADIUS, 128, 64]} />
       <shaderMaterial
         uniforms={terrainUniforms}
         vertexShader={terrainVert}
         fragmentShader={terrainFrag}
+        polygonOffset
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
       />
     </mesh>
   );
