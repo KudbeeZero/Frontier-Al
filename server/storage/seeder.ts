@@ -164,6 +164,14 @@ export async function seedDatabase(db: DB): Promise<void> {
     sql`ALTER TABLE battles ADD COLUMN IF NOT EXISTS influence_damage INT NOT NULL DEFAULT 0`
   );
 
+  // Faction alignment columns — players can align with one of the 4 factions
+  await db.execute(
+    sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS player_faction_id VARCHAR(20)`
+  );
+  await db.execute(
+    sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS faction_joined_at BIGINT`
+  );
+
   // Check whether the world has already been seeded.
   const [meta] = await db
     .insert(gameMeta)

@@ -629,26 +629,173 @@ export async function registerRoutes(
     }
   });
 
-  // Returns all faction identity records for the game UI
+  // Returns all faction identity records for the game UI, enriched with live stats
   app.get("/api/factions", async (_req, res) => {
     try {
       const factionAsaIds = getAllFactionAsaIds();
-      const factions = FACTION_DEFINITIONS.map((f) => ({
-        name:        f.name,
-        unitName:    f.unitName,
-        assetName:   f.assetName,
-        behavior:    f.behavior,
-        lore:        f.lore,
-        totalSupply: f.totalSupply,
-        assetId:     factionAsaIds[f.name] ?? null,
-        explorerUrl: factionAsaIds[f.name]
-          ? `https://allo.info/asset/${factionAsaIds[f.name]}`
-          : null,
-        onChain:     factionAsaIds[f.name] != null,
-      }));
+
+      // Aggregate member counts and territory counts from DB
+      const [allHumanPlayers, allParcels, allAiPlayers] = await Promise.all([
+        db.select({
+          id: playersTable.id,
+          playerFactionId: playersTable.playerFactionId,
+        }).from(playersTable).where(eq(playersTable.isAi, false)),
+        db.select({
+          ownerId: parcelsTable.ownerId,
+        }).from(parcelsTable),
+        db.select({
+          id: playersTable.id,
+          name: playersTable.name,
+          iron: playersTable.iron,
+          fuel: playersTable.fuel,
+          treasury: playersTable.treasury,
+        }).from(playersTable).where(eq(playersTable.isAi, true)),
+      ]);
+
+      const memberCounts: Record<string, number> = {};
+      for (const p of allHumanPlayers) {
+        if (p.playerFactionId) {
+          memberCounts[p.playerFactionId] = (memberCounts[p.playerFactionId] ?? 0) + 1;
+        }
+      }
+
+      const territoryCounts: Record<string, number> = {};
+      for (const parcel of allParcels) {
+        if (parcel.ownerId) {
+          territoryCounts[parcel.ownerId] = (territoryCounts[parcel.ownerId] ?? 0) + 1;
+        }
+      }
+
+      // Map AI player IDs to faction names
+      const aiPlayerByName: Record<string, { id: string; iron: number; fuel: number; treasury: number }> = {};
+      for (const ai of allAiPlayers) {
+        aiPlayerByName[ai.name] = {
+          id: ai.id,
+          iron: ai.iron,
+          fuel: ai.fuel,
+          treasury: ai.treasury ?? 0,
+        };
+      }
+
+      const factions = FACTION_DEFINITIONS.map((f) => {
+        const aiPlayer = aiPlayerByName[f.name];
+        const aiTerritoryCount = aiPlayer ? (territoryCounts[aiPlayer.id] ?? 0) : 0;
+        return {
+          name:            f.name,
+          unitName:        f.unitName,
+          assetName:       f.assetName,
+          behavior:        f.behavior,
+          lore:            f.lore,
+          totalSupply:     f.totalSupply,
+          assetId:         factionAsaIds[f.name] ?? null,
+          explorerUrl:     factionAsaIds[f.name]
+            ? `https://allo.info/asset/${factionAsaIds[f.name]}`
+            : null,
+          onChain:         factionAsaIds[f.name] != null,
+          // Live stats
+          memberCount:     memberCounts[f.name] ?? 0,
+          territoryCount:  aiTerritoryCount,
+          iron:            aiPlayer?.iron ?? 0,
+          fuel:            aiPlayer?.fuel ?? 0,
+          treasury:        aiPlayer?.treasury ?? 0,
+        };
+      });
       res.json({ factions });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch faction data" });
+    }
+  });
+
+  // Join (or switch) faction alignment for the current player
+  app.post("/api/factions/:name/join", async (req, res) => {
+    try {
+      const factionName = decodeURIComponent(req.params.name);
+      const { playerId } = req.body as { playerId?: string };
+
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const def = FACTION_DEFINITIONS.find((f) => f.name === factionName);
+      if (!def) return res.status(404).json({ error: "Faction not found" });
+
+      // Ensure this is a human player
+      const [playerRow] = await db
+        .select({ id: playersTable.id, isAi: playersTable.isAi, playerFactionId: playersTable.playerFactionId })
+        .from(playersTable)
+        .where(eq(playersTable.id, playerId));
+
+      if (!playerRow) return res.status(404).json({ error: "Player not found" });
+      if (playerRow.isAi) return res.status(400).json({ error: "AI players cannot join factions" });
+
+      await db
+        .update(playersTable)
+        .set({
+          playerFactionId: factionName,
+          factionJoinedAt: BigInt(Date.now()),
+        })
+        .where(eq(playersTable.id, playerId));
+
+      markDirty();
+      res.json({ success: true, factionName, previousFaction: playerRow.playerFactionId ?? null });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to join faction" });
+    }
+  });
+
+  // Leave faction (set to unaligned)
+  app.post("/api/factions/leave", async (req, res) => {
+    try {
+      const { playerId } = req.body as { playerId?: string };
+      if (!playerId) return res.status(400).json({ error: "playerId required" });
+
+      const [playerRow] = await db
+        .select({ id: playersTable.id, playerFactionId: playersTable.playerFactionId })
+        .from(playersTable)
+        .where(eq(playersTable.id, playerId));
+
+      if (!playerRow) return res.status(404).json({ error: "Player not found" });
+
+      await db
+        .update(playersTable)
+        .set({ playerFactionId: null, factionJoinedAt: null })
+        .where(eq(playersTable.id, playerId));
+
+      markDirty();
+      res.json({ success: true, previousFaction: playerRow.playerFactionId ?? null });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to leave faction" });
+    }
+  });
+
+  // Get members for a specific faction
+  app.get("/api/factions/:name/members", async (req, res) => {
+    try {
+      const factionName = decodeURIComponent(req.params.name);
+      const def = FACTION_DEFINITIONS.find((f) => f.name === factionName);
+      if (!def) return res.status(404).json({ error: "Faction not found" });
+
+      const members = await db
+        .select({
+          id: playersTable.id,
+          name: playersTable.name,
+          factionJoinedAt: playersTable.factionJoinedAt,
+          territoriesCaptured: playersTable.territoriesCaptured,
+          attacksWon: playersTable.attacksWon,
+        })
+        .from(playersTable)
+        .where(eq(playersTable.playerFactionId as any, factionName));
+
+      res.json({
+        factionName,
+        members: members.map((m) => ({
+          id: m.id,
+          name: m.name,
+          joinedAt: m.factionJoinedAt ? Number(m.factionJoinedAt) : null,
+          territoriesCaptured: m.territoriesCaptured,
+          attacksWon: m.attacksWon,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch faction members" });
     }
   });
 

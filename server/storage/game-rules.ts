@@ -132,6 +132,8 @@ export function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     attackCooldownUntil:  row.attackCooldownUntil ?? 0,
     consecutiveLosses:    row.consecutiveLosses ?? 0,
     testnetProgress:      (row.testnetProgress ?? []) as string[],
+    playerFactionId:      (row as any).playerFactionId ?? null,
+    factionJoinedAt:      (row as any).factionJoinedAt ? Number((row as any).factionJoinedAt) : null,
   };
 }
 

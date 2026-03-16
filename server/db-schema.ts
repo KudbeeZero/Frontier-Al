@@ -111,6 +111,10 @@ export const players = pgTable("players", {
   consecutiveLosses:    integer("consecutive_losses").notNull().default(0),
   testnetProgress:      jsonb("testnet_progress").$type<string[]>().notNull().default([]),
   treasury:             real("treasury").notNull().default(1000.0),
+  /** Faction the human player has aligned with. NULL = unaligned. */
+  playerFactionId:      varchar("player_faction_id", { length: 20 }),
+  /** Timestamp (ms) when the player last joined/changed faction. */
+  factionJoinedAt:      bigint("faction_joined_at", { mode: "number" }),
 });
 
 // ─── parcels ──────────────────────────────────────────────────────────────────

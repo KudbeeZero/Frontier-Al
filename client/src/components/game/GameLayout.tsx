@@ -16,6 +16,7 @@ import { GamerTagModal } from "./GamerTagModal";
 import { CommandCenterPanel } from "./CommandCenterPanel";
 import { WarRoomPanel } from "./WarRoomPanel";
 import { WorldIntelPanel } from "./WorldIntelPanel";
+import { FactionPanel } from "./FactionPanel";
 import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
@@ -29,7 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock } from "lucide-react";
+import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -84,7 +85,7 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
-  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade">("warroom");
+  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade" | "factions">("warroom");
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -872,6 +873,18 @@ export function GameLayout() {
             <ArrowLeftRight className="w-3.5 h-3.5" />
             Trade
           </button>
+          <button
+            onClick={() => setDesktopRightTab("factions")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
+              desktopRightTab === "factions"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Flag className="w-3.5 h-3.5" />
+            Factions
+          </button>
         </div>
         {isLoading ? (
           <div className="p-4 space-y-4">
@@ -882,6 +895,11 @@ export function GameLayout() {
           <TradeStationPanel
             currentPlayerId={player?.id ?? ""}
             currentPlayerName={player?.name ?? ""}
+            className="flex-1 border-0 rounded-none overflow-hidden"
+          />
+        ) : desktopRightTab === "factions" ? (
+          <FactionPanel
+            player={player}
             className="flex-1 border-0 rounded-none overflow-hidden"
           />
         ) : gameState ? (
@@ -954,6 +972,12 @@ export function GameLayout() {
             <TradeStationPanel
               currentPlayerId={player?.id ?? ""}
               currentPlayerName={player?.name ?? ""}
+              className="h-full"
+            />
+          )}
+          {activeTab === "factions" && (
+            <FactionPanel
+              player={player}
               className="h-full"
             />
           )}
