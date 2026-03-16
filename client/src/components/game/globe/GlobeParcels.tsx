@@ -95,11 +95,11 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
   const fillPositions3D = useMemo(() => {
-    return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.006));
+    return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.018));
   }, [plotCoords]);
 
   const borderPositions3D = useMemo(() => {
-    return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.004));
+    return plotCoords.map(c => latLngToVec3(c.lat, c.lng, GLOBE_RADIUS * 1.012));
   }, [plotCoords]);
 
   const applyInstance = (
@@ -283,7 +283,8 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
           transparent
           opacity={0.75}
           depthWrite={false}
-          side={THREE.DoubleSide}
+          depthTest={false}
+          side={THREE.FrontSide}
           toneMapped={false}
         />
       </instancedMesh>
@@ -296,7 +297,8 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
           transparent
           opacity={0.88}
           depthWrite={false}
-          side={THREE.DoubleSide}
+          depthTest={false}
+          side={THREE.FrontSide}
           toneMapped={false}
         />
       </instancedMesh>

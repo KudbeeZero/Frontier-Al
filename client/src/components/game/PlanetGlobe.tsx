@@ -8,7 +8,6 @@ import * as THREE from "three";
 import { useRef, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, Player, Battle, OrbitalEvent } from "@shared/schema";
 import type { WorldEvent } from "@shared/worldEvents";
@@ -102,9 +101,6 @@ function Scene({
       <MiningPulseLayer pulses={livePulses} />
       <OrbitalZoneLayer events={orbitalEvents} />
       <SatelliteOrbitLayer players={players} />
-      <EffectComposer>
-        <Bloom intensity={0.75} luminanceThreshold={0.55} luminanceSmoothing={0.9} />
-      </EffectComposer>
       <OrbitControls
         ref={controlsRef as any}
         enablePan={false}
