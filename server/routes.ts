@@ -262,7 +262,7 @@ export async function registerRoutes(
   // Public endpoint used by Algorand NFT marketplaces and wallets.
   // Returns immutable plot attributes only — no mutable game state.
   // BASE_URL: set PUBLIC_BASE_URL env var in production, or it falls back
-  // to the request's own origin (works in dev and in production).
+  // to the request's own origin (works in dev and on Replit).
   app.get("/nft/metadata/:plotId", async (req, res) => {
     // Reject non-integer plotId values early.
     const plotId = parseInt(req.params.plotId, 10);
@@ -843,8 +843,11 @@ export async function registerRoutes(
           }
 
           // Resolve the public base URL, stripping any trailing slash.
-          // MIGRATION: was REPLIT_DOMAINS fallback — now uses PUBLIC_BASE_URL only
-          const rawBase = process.env.PUBLIC_BASE_URL || "";
+          // Falls back to REPLIT_DOMAINS (available in all Replit deployments) so
+          // NFT metadata is always hosted at a reachable URL.
+          const rawBase =
+            process.env.PUBLIC_BASE_URL ||
+            (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "");
           const PUBLIC_BASE_URL = rawBase.replace(/\/+$/, "");
 
           if (PUBLIC_BASE_URL) {

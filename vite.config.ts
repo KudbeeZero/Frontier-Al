@@ -30,7 +30,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 3000,
-    allowedHosts: true,
+    allowedHosts: ["localhost", ".replit.dev", ".picard.replit.dev"],
     proxy: {
       "/api": {
         target: "http://0.0.0.0:5000",
