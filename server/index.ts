@@ -94,10 +94,9 @@ app.use((req, res, next) => {
     if (process.env.NODE_ENV === "production") {
       const isHtmlRequest = req.headers.accept?.includes("text/html");
       const userAgent = (req.headers["user-agent"] || "").toLowerCase();
-      // MIGRATION: was REPL_* — removed "replit" user-agent check, kept generic healthcheck detection
-      const isHealthcheckAgent = !userAgent || userAgent.includes("healthcheck") || userAgent.includes("uptimerobot");
+      const isReplitHealthcheck = !userAgent || userAgent.includes("replit") || userAgent.includes("healthcheck") || userAgent.includes("uptimerobot");
 
-      if (!isHtmlRequest || isHealthcheckAgent) {
+      if (!isHtmlRequest || isReplitHealthcheck) {
         return res.status(200).send("Frontier server running");
       }
     }
