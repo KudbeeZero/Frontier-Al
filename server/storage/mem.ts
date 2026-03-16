@@ -27,6 +27,9 @@ import type {
   SlimGameState,
   SlimParcel,
   SlimPlayer,
+  SubParcel,
+  Season,
+  ImprovementType,
 } from "@shared/schema";
 import {
   biomeBonuses,
@@ -1355,4 +1358,23 @@ export class MemStorage implements IStorage {
   }
   async getTradeHistory(_limit = 50): Promise<TradeOrder[]> { return []; }
   async getTradeLeaderboard(): Promise<{ playerId: string; name: string; tradesPosted: number; tradesFilled: number }[]> { return []; }
+
+  // ── Sub-Parcel stubs (MemStorage — dev/test only) ─────────────────────────
+  async getSubParcels(_parentPlotId: number): Promise<SubParcel[]> { return []; }
+  async subdivideParcel(_plotId: number, _playerId: string): Promise<{ subParcels: SubParcel[]; error?: string }> {
+    return { subParcels: [], error: "Not supported in memory storage" };
+  }
+  async purchaseSubParcel(_subParcelId: string, _playerId: string): Promise<{ subParcel: SubParcel; error?: string }> {
+    return { subParcel: null as any, error: "Not supported in memory storage" };
+  }
+  async isSubdivided(_parentPlotId: number): Promise<boolean> { return false; }
+  async buildSubParcelImprovement(_subParcelId: string, _playerId: string, _improvementType: ImprovementType): Promise<{ subParcel: SubParcel; error?: string }> {
+    return { subParcel: null as any, error: "Not supported in memory storage" };
+  }
+
+  // ── Season stubs (MemStorage — dev/test only) ─────────────────────────────
+  async getCurrentSeason(): Promise<Season | null> { return null; }
+  async startSeason(_name: string, _daysLen?: number): Promise<Season> { throw new Error("Not supported in memory storage"); }
+  async settleCurrentSeason(): Promise<Season | null> { return null; }
+  async getSeasonHistory(): Promise<Season[]> { return []; }
 }

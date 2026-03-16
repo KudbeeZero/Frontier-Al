@@ -663,6 +663,23 @@ export const SUB_PARCEL_YIELD_FRACTION = 1 / SUB_PARCEL_COUNT;
 /** Bonus multiplier applied when a player owns ALL sub-parcels in a plot */
 export const SUB_PARCEL_FULL_CONTROL_BONUS = 1.5; // +50% yield
 
+/** Build costs (FRONTIER) for facilities on a sub-parcel — ≈50% of macro-parcel rates */
+export const SUB_PARCEL_FACILITY_COSTS: Record<FacilityType, number[]> = {
+  electricity:     [15],
+  blockchain_node: [60, 135, 240],
+  data_centre:     [60, 135, 240],
+  ai_lab:          [60, 135, 240],
+};
+
+/** Build costs (Iron/Fuel) for defense improvements on a sub-parcel — ≈50% of macro-parcel rates */
+export const SUB_PARCEL_DEFENSE_COSTS: Record<DefenseImprovementType, { iron: number; fuel: number }> = {
+  turret:        { iron: 20, fuel: 10 },
+  shield_gen:    { iron: 30, fuel: 20 },
+  storage_depot: { iron: 18, fuel:  8 },
+  radar:         { iron: 22, fuel: 18 },
+  fortress:      { iron: 100, fuel: 75 },
+};
+
 export interface SubParcel {
   id: string;
   parentPlotId: number;      // FK → parcels.plotId

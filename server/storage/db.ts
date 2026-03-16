@@ -65,7 +65,8 @@ import {
   ORBITAL_TILE_HAZARD_MS,
   ORBITAL_IMPACT_CHANCE,
 } from "@shared/schema";
-import type { FacilityType, DefenseImprovementType } from "@shared/schema";
+import type { FacilityType, DefenseImprovementType, ImprovementType } from "@shared/schema";
+import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS } from "@shared/schema";
 import { sphereDistance } from "../sphereUtils";
 import {
   evaluateReconquest,
@@ -2004,16 +2005,41 @@ export class DbStorage implements IStorage {
     const now = Date.now();
     const costMicro = toMicroFRNTR(row.purchasePriceFrontier);
 
-    // 70% to macro-plot owner, 30% to protocol treasury
-    const ownerShareMicro   = Math.floor(costMicro * 0.70);
-    const treasuryShareMicro = costMicro - ownerShareMicro;
+    // 4-way revenue split:
+    //   30% → protocol treasury
+    //   20% → buyer's faction leader (AI player whose name = parcel.capturedFromFaction)
+    //   30% → center sub-parcel (subIndex=4) owner as land tax
+    //   20% → burned (not credited anywhere)
+    const treasuryShareMicro = Math.floor(costMicro * 0.30);
+    const factionShareMicro  = Math.floor(costMicro * 0.20);
+    const landTaxMicro       = Math.floor(costMicro * 0.30);
+    // remaining 20% is burned (costMicro - treasuryShareMicro - factionShareMicro - landTaxMicro)
 
-    // Fetch macro-plot owner
+    // Fetch parent macro-plot for faction info
     const [parcelRow] = await this.db
-      .select({ ownerId: parcelsTable.ownerId })
+      .select({ capturedFromFaction: parcelsTable.capturedFromFaction })
       .from(parcelsTable)
       .where(eq(parcelsTable.plotId, row.parentPlotId));
-    const macroOwner = parcelRow?.ownerId ?? null;
+    const capturedFromFaction = parcelRow?.capturedFromFaction ?? null;
+
+    // Look up faction leader (AI player matching the faction name)
+    let factionLeaderId: string | null = null;
+    if (capturedFromFaction) {
+      const [factionRow] = await this.db
+        .select({ id: playersTable.id })
+        .from(playersTable)
+        .where(sql`lower(${playersTable.name}) = lower(${capturedFromFaction}) and ${playersTable.isAi} = true`)
+        .limit(1);
+      factionLeaderId = factionRow?.id ?? null;
+    }
+
+    // Look up center sub-parcel (subIndex=4) owner for land tax
+    const [centerRow] = await this.db
+      .select({ ownerId: subParcelsTable.ownerId })
+      .from(subParcelsTable)
+      .where(sql`${subParcelsTable.parentPlotId} = ${row.parentPlotId} and ${subParcelsTable.subIndex} = 4`)
+      .limit(1);
+    const centerOwnerId = centerRow?.ownerId ?? null;
 
     const [updated] = await this.db
       .update(subParcelsTable)
@@ -2027,21 +2053,85 @@ export class DbStorage implements IStorage {
       .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} - ${costMicro}` })
       .where(eq(playersTable.id, playerId));
 
-    // 70% credit to macro-plot owner (if owned by a player)
-    if (macroOwner && macroOwner !== playerId) {
-      await this.db
-        .update(playersTable)
-        .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} + ${ownerShareMicro}` })
-        .where(eq(playersTable.id, macroOwner));
-    } else {
-      // No macro owner (or buyer is owner) — route their share to treasury too
-      await this.recordTreasuryFee(ownerShareMicro, playerId, "sub_parcel_purchase_no_owner");
-    }
-
-    // 30% to protocol treasury ledger
+    // 30% → protocol treasury
     await this.recordTreasuryFee(treasuryShareMicro, playerId, "sub_parcel_purchase");
 
+    // 20% → faction leader (or treasury if none found)
+    if (factionLeaderId) {
+      await this.db
+        .update(playersTable)
+        .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} + ${factionShareMicro}` })
+        .where(eq(playersTable.id, factionLeaderId));
+    } else {
+      await this.recordTreasuryFee(factionShareMicro, playerId, "sub_parcel_purchase_no_faction");
+    }
+
+    // 30% → center sub-parcel owner as land tax (skip/burn if no owner or buyer is center owner)
+    if (centerOwnerId && centerOwnerId !== playerId) {
+      await this.db
+        .update(playersTable)
+        .set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} + ${landTaxMicro}` })
+        .where(eq(playersTable.id, centerOwnerId));
+    }
+    // remaining 20% is burned by omission
+
     return { subParcel: rowToSubParcel(updated) };
+  }
+
+  async buildSubParcelImprovement(subParcelId: string, playerId: string, improvementType: ImprovementType): Promise<{ subParcel: SubParcel; error?: string }> {
+    await this.initialize();
+    return this.db.transaction(async (tx) => {
+      const [[spRow], [playerRow]] = await Promise.all([
+        tx.select().from(subParcelsTable).where(eq(subParcelsTable.id, subParcelId)),
+        tx.select().from(playersTable).where(eq(playersTable.id, playerId)),
+      ]);
+      if (!spRow) return { subParcel: null as any, error: "Sub-parcel not found" };
+      if (!playerRow) return { subParcel: null as any, error: "Player not found" };
+      if (spRow.ownerId !== playerId) return { subParcel: null as any, error: "You don't own this sub-parcel" };
+
+      const currentImprovements: Improvement[] = Array.isArray(spRow.improvements) ? (spRow.improvements as Improvement[]) : [];
+      const existing = currentImprovements.find(i => i.type === improvementType);
+
+      const isFacility = improvementType in FACILITY_INFO;
+      const isDefense  = improvementType in DEFENSE_IMPROVEMENT_INFO;
+      if (!isFacility && !isDefense) return { subParcel: null as any, error: "Invalid improvement type" };
+
+      const level = existing ? existing.level + 1 : 1;
+      let playerUpdates: Partial<typeof playerRow> = {};
+
+      if (isFacility) {
+        const info = FACILITY_INFO[improvementType as FacilityType];
+        if (existing && existing.level >= info.maxLevel) return { subParcel: null as any, error: "Facility already at max level" };
+        if (info.prerequisite && !currentImprovements.find(i => i.type === info.prerequisite)) {
+          return { subParcel: null as any, error: `Requires ${FACILITY_INFO[info.prerequisite!].name} first` };
+        }
+        const cost = SUB_PARCEL_FACILITY_COSTS[improvementType as FacilityType][level - 1];
+        const microCost = toMicroFRNTR(cost);
+        if (playerRow.frntrBalanceMicro < microCost) return { subParcel: null as any, error: `Insufficient FRONTIER (need ${cost})` };
+        playerUpdates = {
+          frntrBalanceMicro:   playerRow.frntrBalanceMicro - microCost,
+          totalFrontierBurned: playerRow.totalFrontierBurned + cost,
+        };
+      } else {
+        const info = DEFENSE_IMPROVEMENT_INFO[improvementType as DefenseImprovementType];
+        if (existing && existing.level >= info.maxLevel) return { subParcel: null as any, error: "Improvement already at max level" };
+        const cost = { iron: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].iron * level,
+                       fuel: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].fuel * level };
+        if (playerRow.iron < cost.iron || playerRow.fuel < cost.fuel) return { subParcel: null as any, error: "Insufficient resources" };
+        playerUpdates = { iron: playerRow.iron - cost.iron, fuel: playerRow.fuel - cost.fuel };
+      }
+
+      const newImprovements = existing
+        ? currentImprovements.map(i => i.type === improvementType ? { ...i, level } : i)
+        : [...currentImprovements, { type: improvementType, level: 1 }];
+
+      const [[updatedSp]] = await Promise.all([
+        tx.update(subParcelsTable).set({ improvements: newImprovements }).where(eq(subParcelsTable.id, subParcelId)).returning(),
+        tx.update(playersTable).set(playerUpdates).where(eq(playersTable.id, playerId)),
+      ]);
+
+      return { subParcel: rowToSubParcel(updatedSp) };
+    });
   }
 
   // ── Treasury Methods ────────────────────────────────────────────────────────

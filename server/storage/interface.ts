@@ -21,6 +21,7 @@ import type {
   OrbitalEvent,
   SubParcel,
   Season,
+  ImprovementType,
 } from "@shared/schema";
 import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
@@ -94,6 +95,8 @@ export interface IStorage {
   purchaseSubParcel(subParcelId: string, playerId: string): Promise<{ subParcel: SubParcel; error?: string }>;
   /** Check whether a macro-plot has been subdivided. */
   isSubdivided(parentPlotId: number): Promise<boolean>;
+  /** Build or upgrade an improvement on an owned sub-parcel. */
+  buildSubParcelImprovement(subParcelId: string, playerId: string, improvementType: ImprovementType): Promise<{ subParcel: SubParcel; error?: string }>;
 
   // ── Season System ────────────────────────────────────────────────────────
   /** Get the currently active season, or null if none has been started. */
