@@ -103,7 +103,7 @@ function Scene({
       <OrbitalZoneLayer events={orbitalEvents} />
       <SatelliteOrbitLayer players={players} />
       <EffectComposer>
-        <Bloom intensity={0.75} luminanceThreshold={0.55} luminanceSmoothing={0.9} mipmapBlur />
+        <Bloom intensity={0.75} luminanceThreshold={0.55} luminanceSmoothing={0.9} />
       </EffectComposer>
       <OrbitControls
         ref={controlsRef as any}
