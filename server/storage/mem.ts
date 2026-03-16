@@ -30,6 +30,10 @@ import type {
   SubParcel,
   Season,
   ImprovementType,
+  PredictionMarket,
+  MarketPosition,
+  MarketOutcome,
+  CreateMarketAction,
 } from "@shared/schema";
 import {
   biomeBonuses,
@@ -1377,4 +1381,15 @@ export class MemStorage implements IStorage {
   async startSeason(_name: string, _daysLen?: number): Promise<Season> { throw new Error("Not supported in memory storage"); }
   async settleCurrentSeason(): Promise<Season | null> { return null; }
   async getSeasonHistory(): Promise<Season[]> { return []; }
+
+  // ── Prediction Market stubs (MemStorage — dev/test only) ──────────────────
+  async getOpenMarkets(): Promise<PredictionMarket[]> { return []; }
+  async getAllMarkets(_limit?: number): Promise<PredictionMarket[]> { return []; }
+  async getMarket(_id: string): Promise<PredictionMarket | undefined> { return undefined; }
+  async createMarket(_action: CreateMarketAction, _createdBy?: string): Promise<PredictionMarket> { throw new Error("Not supported in memory storage"); }
+  async placeBet(_marketId: string, _playerId: string, _outcome: MarketOutcome, _amount: number): Promise<{ position: MarketPosition; market: PredictionMarket } | { error: string }> { return { error: "Not supported in memory storage" }; }
+  async claimWinnings(_marketId: string, _playerId: string): Promise<{ payout: number } | { error: string }> { return { error: "Not supported in memory storage" }; }
+  async resolveMarket(_marketId: string, _winningOutcome: MarketOutcome): Promise<PredictionMarket | { error: string }> { return { error: "Not supported in memory storage" }; }
+  async getPlayerPositions(_playerId: string): Promise<(MarketPosition & { market: PredictionMarket })[]> { return []; }
+  async resolveExpiredMarkets(): Promise<void> { /* no-op */ }
 }

@@ -347,3 +347,61 @@ export const treasuryLedger = pgTable(
 
 export type TreasuryLedgerRow    = typeof treasuryLedger.$inferSelect;
 export type InsertTreasuryLedger = typeof treasuryLedger.$inferInsert;
+
+// ─── prediction_markets ───────────────────────────────────────────────────────
+// Binary outcome prediction markets where players wager FRONTIER tokens.
+// Status lifecycle: open → closed → resolved | cancelled
+// All payouts remain as in-game FRONTIER balance (no on-chain settlement in v1).
+
+export const predictionMarkets = pgTable(
+  "prediction_markets",
+  {
+    id:                  varchar("id", { length: 36 }).primaryKey(),
+    title:               varchar("title", { length: 200 }).notNull(),
+    description:         text("description").notNull(),
+    category:            varchar("category", { length: 30 }).notNull(), // battle | faction | season | orbital | economy
+    resolutionCriteria:  text("resolution_criteria").notNull(),
+    outcomeALabel:       varchar("outcome_a_label", { length: 100 }).notNull().default("Yes"),
+    outcomeBLabel:       varchar("outcome_b_label", { length: 100 }).notNull().default("No"),
+    tokenPoolA:          real("token_pool_a").notNull().default(0),
+    tokenPoolB:          real("token_pool_b").notNull().default(0),
+    status:              varchar("status", { length: 20 }).notNull().default("open"), // open | closed | resolved | cancelled
+    resolvesAt:          bigint("resolves_at", { mode: "number" }).notNull(),
+    resolvedAt:          bigint("resolved_at", { mode: "number" }),
+    winningOutcome:      varchar("winning_outcome", { length: 1 }),  // 'a' | 'b' | null
+    createdBy:           varchar("created_by", { length: 36 }).notNull().default("admin"),
+    relatedEventId:      varchar("related_event_id", { length: 36 }),
+    createdAt:           bigint("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => ({
+    statusIdx:     index("prediction_markets_status_idx").on(t.status),
+    resolvesAtIdx: index("prediction_markets_resolves_at_idx").on(t.resolvesAt),
+  })
+);
+
+export type PredictionMarketRow    = typeof predictionMarkets.$inferSelect;
+export type InsertPredictionMarket = typeof predictionMarkets.$inferInsert;
+
+// ─── market_positions ─────────────────────────────────────────────────────────
+// One row per player bet. Players may place multiple bets on the same market
+// (each creates a new row). Claimed flag is set to true after payout.
+
+export const marketPositions = pgTable(
+  "market_positions",
+  {
+    id:             varchar("id", { length: 36 }).primaryKey(),
+    marketId:       varchar("market_id", { length: 36 }).notNull(),
+    playerId:       varchar("player_id", { length: 36 }).notNull(),
+    outcome:        varchar("outcome", { length: 1 }).notNull(), // 'a' | 'b'
+    amountWagered:  real("amount_wagered").notNull(),
+    claimed:        boolean("claimed").notNull().default(false),
+    createdAt:      bigint("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => ({
+    marketIdx: index("market_positions_market_idx").on(t.marketId),
+    playerIdx: index("market_positions_player_idx").on(t.playerId),
+  })
+);
+
+export type MarketPositionRow    = typeof marketPositions.$inferSelect;
+export type InsertMarketPosition = typeof marketPositions.$inferInsert;

@@ -22,6 +22,10 @@ import type {
   SubParcel,
   Season,
   ImprovementType,
+  PredictionMarket,
+  MarketPosition,
+  MarketOutcome,
+  CreateMarketAction,
 } from "@shared/schema";
 import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
@@ -97,6 +101,17 @@ export interface IStorage {
   isSubdivided(parentPlotId: number): Promise<boolean>;
   /** Build or upgrade an improvement on an owned sub-parcel. */
   buildSubParcelImprovement(subParcelId: string, playerId: string, improvementType: ImprovementType): Promise<{ subParcel: SubParcel; error?: string }>;
+
+  // ── Prediction Markets ────────────────────────────────────────────────────
+  getOpenMarkets(): Promise<PredictionMarket[]>;
+  getAllMarkets(limit?: number): Promise<PredictionMarket[]>;
+  getMarket(id: string): Promise<PredictionMarket | undefined>;
+  createMarket(action: CreateMarketAction, createdBy?: string): Promise<PredictionMarket>;
+  placeBet(marketId: string, playerId: string, outcome: MarketOutcome, amount: number): Promise<{ position: MarketPosition; market: PredictionMarket } | { error: string }>;
+  claimWinnings(marketId: string, playerId: string): Promise<{ payout: number } | { error: string }>;
+  resolveMarket(marketId: string, winningOutcome: MarketOutcome): Promise<PredictionMarket | { error: string }>;
+  getPlayerPositions(playerId: string): Promise<(MarketPosition & { market: PredictionMarket })[]>;
+  resolveExpiredMarkets(): Promise<void>;
 
   // ── Season System ────────────────────────────────────────────────────────
   /** Get the currently active season, or null if none has been started. */

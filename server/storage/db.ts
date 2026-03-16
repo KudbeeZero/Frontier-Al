@@ -93,6 +93,8 @@ import {
   subParcels as subParcelsTable,
   seasons as seasonsTable,
   treasuryLedger as treasuryLedgerTable,
+  predictionMarkets as predictionMarketsTable,
+  marketPositions as marketPositionsTable,
   type TradeOrder,
   type InsertTradeOrder,
 } from "../db-schema";
@@ -111,7 +113,8 @@ import {
   type ParcelRow,
   type BattleRow,
 } from "./game-rules";
-import type { SubParcel, Season } from "@shared/schema";
+import type { SubParcel, Season, PredictionMarket, MarketPosition, MarketOutcome, CreateMarketAction } from "@shared/schema";
+import { MARKET_FEE_RATE } from "@shared/schema";
 import {
   SUB_PARCEL_HOLD_HOURS,
   SUB_PARCEL_FULL_CONTROL_BONUS,
@@ -2278,5 +2281,278 @@ export class DbStorage implements IStorage {
       status: row.status as Season["status"],
       winnerId: row.winnerId ?? null, totalPlotsAtEnd: row.totalPlotsAtEnd ?? null, rewardPool: row.rewardPool,
     }));
+  }
+
+  // ── Prediction Markets ─────────────────────────────────────────────────────
+
+  private rowToMarket(row: typeof predictionMarketsTable.$inferSelect): PredictionMarket {
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      category: row.category as PredictionMarket["category"],
+      resolutionCriteria: row.resolutionCriteria,
+      outcomeALabel: row.outcomeALabel,
+      outcomeBLabel: row.outcomeBLabel,
+      tokenPoolA: row.tokenPoolA,
+      tokenPoolB: row.tokenPoolB,
+      status: row.status as PredictionMarket["status"],
+      resolvesAt: Number(row.resolvesAt),
+      resolvedAt: row.resolvedAt ? Number(row.resolvedAt) : null,
+      winningOutcome: (row.winningOutcome as MarketOutcome) ?? null,
+      createdBy: row.createdBy,
+      relatedEventId: row.relatedEventId ?? null,
+      createdAt: Number(row.createdAt),
+    };
+  }
+
+  private rowToPosition(row: typeof marketPositionsTable.$inferSelect): MarketPosition {
+    return {
+      id: row.id,
+      marketId: row.marketId,
+      playerId: row.playerId,
+      outcome: row.outcome as MarketOutcome,
+      amountWagered: row.amountWagered,
+      claimed: row.claimed,
+      createdAt: Number(row.createdAt),
+    };
+  }
+
+  async getOpenMarkets(): Promise<PredictionMarket[]> {
+    await this.initialize();
+    const rows = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .where(eq(predictionMarketsTable.status, "open"))
+      .orderBy(desc(predictionMarketsTable.resolvesAt));
+    return rows.map(r => this.rowToMarket(r));
+  }
+
+  async getAllMarkets(limit = 50): Promise<PredictionMarket[]> {
+    await this.initialize();
+    const rows = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .orderBy(desc(predictionMarketsTable.createdAt))
+      .limit(limit);
+    return rows.map(r => this.rowToMarket(r));
+  }
+
+  async getMarket(id: string): Promise<PredictionMarket | undefined> {
+    await this.initialize();
+    const [row] = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .where(eq(predictionMarketsTable.id, id));
+    return row ? this.rowToMarket(row) : undefined;
+  }
+
+  async createMarket(action: CreateMarketAction, createdBy = "admin"): Promise<PredictionMarket> {
+    await this.initialize();
+    const now = Date.now();
+    const [row] = await this.db
+      .insert(predictionMarketsTable)
+      .values({
+        id: randomUUID(),
+        title: action.title,
+        description: action.description,
+        category: action.category,
+        resolutionCriteria: action.resolutionCriteria,
+        outcomeALabel: action.outcomeALabel ?? "Yes",
+        outcomeBLabel: action.outcomeBLabel ?? "No",
+        tokenPoolA: 0,
+        tokenPoolB: 0,
+        status: "open",
+        resolvesAt: action.resolvesAt,
+        relatedEventId: action.relatedEventId ?? null,
+        createdBy,
+        createdAt: now,
+      })
+      .returning();
+    return this.rowToMarket(row);
+  }
+
+  async placeBet(
+    marketId: string,
+    playerId: string,
+    outcome: MarketOutcome,
+    amount: number,
+  ): Promise<{ position: MarketPosition; market: PredictionMarket } | { error: string }> {
+    await this.initialize();
+
+    const [marketRow] = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .where(eq(predictionMarketsTable.id, marketId));
+    if (!marketRow) return { error: "Market not found" };
+    if (marketRow.status !== "open") return { error: "Market is not open for betting" };
+    if (Number(marketRow.resolvesAt) <= Date.now()) return { error: "Market has expired" };
+
+    const [playerRow] = await this.db
+      .select()
+      .from(playersTable)
+      .where(eq(playersTable.id, playerId));
+    if (!playerRow) return { error: "Player not found" };
+    if (playerRow.isAi) return { error: "AI players cannot place bets" };
+    if (playerRow.frontier < amount) return { error: "Insufficient FRONTIER balance" };
+
+    // Deduct from player
+    await this.db
+      .update(playersTable)
+      .set({ frontier: playerRow.frontier - amount })
+      .where(eq(playersTable.id, playerId));
+
+    // Update pool
+    const poolField = outcome === "a" ? { tokenPoolA: marketRow.tokenPoolA + amount } : { tokenPoolB: marketRow.tokenPoolB + amount };
+    const [updatedMarket] = await this.db
+      .update(predictionMarketsTable)
+      .set(poolField)
+      .where(eq(predictionMarketsTable.id, marketId))
+      .returning();
+
+    // Create position
+    const [posRow] = await this.db
+      .insert(marketPositionsTable)
+      .values({
+        id: randomUUID(),
+        marketId,
+        playerId,
+        outcome,
+        amountWagered: amount,
+        claimed: false,
+        createdAt: Date.now(),
+      })
+      .returning();
+
+    return { position: this.rowToPosition(posRow), market: this.rowToMarket(updatedMarket) };
+  }
+
+  async claimWinnings(marketId: string, playerId: string): Promise<{ payout: number } | { error: string }> {
+    await this.initialize();
+
+    const [marketRow] = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .where(eq(predictionMarketsTable.id, marketId));
+    if (!marketRow) return { error: "Market not found" };
+    if (marketRow.status !== "resolved") return { error: "Market not yet resolved" };
+    if (!marketRow.winningOutcome) return { error: "No winning outcome set" };
+
+    // Get player's unclaimed winning positions
+    const positions = await this.db
+      .select()
+      .from(marketPositionsTable)
+      .where(
+        and(
+          eq(marketPositionsTable.marketId, marketId),
+          eq(marketPositionsTable.playerId, playerId),
+          eq(marketPositionsTable.outcome, marketRow.winningOutcome),
+          eq(marketPositionsTable.claimed, false),
+        )
+      );
+    if (positions.length === 0) return { error: "No unclaimed winning positions" };
+
+    // Sum of player's winning wagers
+    const playerWagered = positions.reduce((s, p) => s + p.amountWagered, 0);
+
+    // Total winning side pool
+    const totalWinningPool = marketRow.winningOutcome === "a" ? marketRow.tokenPoolA : marketRow.tokenPoolB;
+    const totalLosingPool = marketRow.winningOutcome === "a" ? marketRow.tokenPoolB : marketRow.tokenPoolA;
+
+    if (totalWinningPool === 0) return { error: "Winning pool is empty" };
+
+    const totalPool = totalWinningPool + totalLosingPool;
+    const feeAmount = totalPool * MARKET_FEE_RATE;
+    const distributablePool = totalPool - feeAmount;
+
+    const payout = Math.floor((playerWagered / totalWinningPool) * distributablePool);
+
+    // Mark positions claimed
+    for (const pos of positions) {
+      await this.db
+        .update(marketPositionsTable)
+        .set({ claimed: true })
+        .where(eq(marketPositionsTable.id, pos.id));
+    }
+
+    // Credit player
+    const [playerRow] = await this.db.select().from(playersTable).where(eq(playersTable.id, playerId));
+    if (playerRow) {
+      await this.db
+        .update(playersTable)
+        .set({ frontier: playerRow.frontier + payout })
+        .where(eq(playersTable.id, playerId));
+    }
+
+    // Record fee to treasury
+    if (feeAmount > 0 && positions.length > 0) {
+      const playerShare = (playerWagered / totalWinningPool) * feeAmount;
+      await this.db.insert(treasuryLedgerTable).values({
+        id: randomUUID(),
+        eventType: "prediction_market_fee",
+        amountMicro: Math.floor(playerShare * 1_000_000),
+        fromPlayerId: playerId,
+        settled: false,
+        createdAt: Date.now(),
+      });
+    }
+
+    return { payout };
+  }
+
+  async resolveMarket(marketId: string, winningOutcome: MarketOutcome): Promise<PredictionMarket | { error: string }> {
+    await this.initialize();
+
+    const [marketRow] = await this.db
+      .select()
+      .from(predictionMarketsTable)
+      .where(eq(predictionMarketsTable.id, marketId));
+    if (!marketRow) return { error: "Market not found" };
+    if (marketRow.status === "resolved") return { error: "Market already resolved" };
+    if (marketRow.status === "cancelled") return { error: "Market is cancelled" };
+
+    const [updated] = await this.db
+      .update(predictionMarketsTable)
+      .set({ status: "resolved", winningOutcome, resolvedAt: Date.now() })
+      .where(eq(predictionMarketsTable.id, marketId))
+      .returning();
+
+    return this.rowToMarket(updated);
+  }
+
+  async getPlayerPositions(playerId: string): Promise<(MarketPosition & { market: PredictionMarket })[]> {
+    await this.initialize();
+    const positions = await this.db
+      .select()
+      .from(marketPositionsTable)
+      .where(eq(marketPositionsTable.playerId, playerId))
+      .orderBy(desc(marketPositionsTable.createdAt));
+
+    const result: (MarketPosition & { market: PredictionMarket })[] = [];
+    for (const pos of positions) {
+      const [marketRow] = await this.db
+        .select()
+        .from(predictionMarketsTable)
+        .where(eq(predictionMarketsTable.id, pos.marketId));
+      if (marketRow) {
+        result.push({ ...this.rowToPosition(pos), market: this.rowToMarket(marketRow) });
+      }
+    }
+    return result;
+  }
+
+  async resolveExpiredMarkets(): Promise<void> {
+    // Close markets past their deadline but not yet resolved
+    // (admin must manually pick winner via /api/admin/markets/:id/resolve)
+    const now = Date.now();
+    await this.db
+      .update(predictionMarketsTable)
+      .set({ status: "closed" })
+      .where(
+        and(
+          eq(predictionMarketsTable.status, "open"),
+          lt(predictionMarketsTable.resolvesAt, now),
+        )
+      );
   }
 }

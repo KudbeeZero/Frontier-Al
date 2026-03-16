@@ -1,10 +1,10 @@
-import { Map, Package, Swords, Trophy, Shield, BarChart3, Radar, MoreHorizontal, ArrowLeftRight, Flag } from "lucide-react";
+import { Map, Package, Swords, Trophy, Shield, BarChart3, Radar, MoreHorizontal, ArrowLeftRight, Flag, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
-export type NavTab = "map" | "inventory" | "battles" | "leaderboard" | "commander" | "economics" | "intel" | "trade" | "factions";
+export type NavTab = "map" | "inventory" | "battles" | "leaderboard" | "commander" | "economics" | "intel" | "trade" | "factions" | "markets";
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -25,6 +25,7 @@ const OVERFLOW_TABS: { id: NavTab; label: string; icon: React.ElementType }[] = 
   { id: "leaderboard", label: "Rankings",  icon: Trophy         },
   { id: "economics",   label: "Economics", icon: BarChart3      },
   { id: "trade",       label: "Trade",     icon: ArrowLeftRight },
+  { id: "markets",     label: "Markets",   icon: TrendingUp     },
 ];
 
 export function BottomNav({ activeTab, onTabChange, battleCount }: BottomNavProps) {
