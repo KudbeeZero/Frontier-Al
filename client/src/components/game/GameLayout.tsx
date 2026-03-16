@@ -740,6 +740,7 @@ export function GameLayout() {
         <TopBar
           isConnected={isConnected}
           mobileMenuContent={mobileMenuContent}
+          playerFactionId={player?.playerFactionId ?? null}
         />
         {/* Season countdown badge — shown when a season is active */}
         {seasonCountdown && (
@@ -924,7 +925,7 @@ export function GameLayout() {
       </aside>
 
       {showFullscreenPanel && (
-        <div className="md:hidden absolute inset-0 z-30 bg-background pt-16" data-testid="fullscreen-panel">
+        <div className="md:hidden absolute inset-0 z-30 bg-background pt-16 pb-16 overflow-hidden" data-testid="fullscreen-panel">
           {activeTab === "inventory" && gameState && (
             <InventoryPanel
               player={player}

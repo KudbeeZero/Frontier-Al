@@ -719,12 +719,25 @@ export async function registerRoutes(
 
       // Ensure this is a human player
       const [playerRow] = await db
-        .select({ id: playersTable.id, isAi: playersTable.isAi, playerFactionId: playersTable.playerFactionId })
+        .select({ id: playersTable.id, isAi: playersTable.isAi, playerFactionId: playersTable.playerFactionId, factionJoinedAt: playersTable.factionJoinedAt })
         .from(playersTable)
         .where(eq(playersTable.id, playerId));
 
       if (!playerRow) return res.status(404).json({ error: "Player not found" });
       if (playerRow.isAi) return res.status(400).json({ error: "AI players cannot join factions" });
+
+      // Enforce 24h cooldown on faction switching (first-time joins are always allowed)
+      const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+      if (playerRow.playerFactionId && playerRow.playerFactionId !== factionName) {
+        const joinedAt = playerRow.factionJoinedAt ? Number(playerRow.factionJoinedAt) : 0;
+        const elapsed = Date.now() - joinedAt;
+        if (elapsed < COOLDOWN_MS) {
+          return res.status(400).json({
+            error: "Faction switch cooldown active",
+            cooldownEndsAt: joinedAt + COOLDOWN_MS,
+          });
+        }
+      }
 
       await db
         .update(playersTable)

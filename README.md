@@ -33,6 +33,12 @@ Players and AI factions compete for control of a shared 21,000-plot world map re
 
 ---
 
+## Developer Session Notes
+
+Development session logs are stored in [`session-notes/`](session-notes/). Each file documents what was built, architecture decisions, and next steps for that session. See [session-notes/README.md](session-notes/README.md) for the index.
+
+---
+
 ## Architecture Overview
 
 ```

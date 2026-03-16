@@ -161,47 +161,6 @@ This system should:
 
 # Session Notes
 
-> Updated automatically at end of each session. Claude must append here after every session.
-
-## Session: 2026-03-16 — Faction Alignment System
-
-**Branch:** `claude/faction-alignment-system-bKklV`
-
-### What was built
-
-**Backend:**
-- Added `player_faction_id VARCHAR(20)` and `faction_joined_at BIGINT` to `players` table
-- Migration in `server/storage/seeder.ts` (idempotent `ALTER TABLE IF NOT EXISTS`)
-- Also added `migrations/0001_faction_alignment.sql` for reference
-- Updated `server/storage/game-rules.ts` `rowToPlayer()` to map new fields
-- Updated `shared/schema.ts` `Player` interface with `playerFactionId` and `factionJoinedAt`
-- Replaced `/api/factions` with enriched version including live stats: `memberCount`, `territoryCount`, `iron`, `fuel`, `treasury`
-- Added `POST /api/factions/:name/join` — player aligns with a faction
-- Added `POST /api/factions/leave` — player leaves faction (unaligned)
-- Added `GET /api/factions/:name/members` — returns member roster for a faction
-
-**Frontend:**
-- Created `client/src/components/game/FactionPanel.tsx` — full faction UI with:
-  - Per-faction cards: lore, behavior badge, member count, territory plots
-  - **Territory Control** bar (% of 21,000 total plots)
-  - **Financial Stability** composite score (territory 50% + treasury 30% + resources 20%)
-  - Join / Leave buttons with loading states
-  - On-chain ASA badge
-- Added `"factions"` tab to `BottomNav` (in overflow menu, with Flag icon)
-- Wired `FactionPanel` into `GameLayout`:
-  - Mobile fullscreen panel (overflow tab)
-  - Desktop right sidebar tab (alongside War Room, Rankings, Trade)
-
-### Architecture reference
-- 4 factions: NEXUS-7 (expansionist), KRONOS (defensive), VANGUARD (raider), SPECTRE (economic)
-- Faction AI players exist in `players` table with `isAi=true`, name matches faction name
-- Territory count = parcels owned by the AI player with that faction name
-- Financial stability is a UX metric — not game-logic-authoritative
-
-### Next steps / TODO
-- Gate faction switching (e.g. 24h cooldown or FRONTIER cost to switch)
-- Show player's faction badge in TopBar / profile
-- Faction-level leaderboard (which faction controls most territory)
-- Faction chat / coordination channel
-- Yield bonuses for owning plots adjacent to faction AI territory
-- Distribute faction ASA tokens to members on join
+> Session logs are stored in [`session-notes/`](session-notes/). See [session-notes/README.md](session-notes/README.md) for the full index.
+>
+> Claude must create a new dated file in `session-notes/` at the end of each session instead of appending here.
