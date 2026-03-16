@@ -192,7 +192,6 @@ raw game state
 - [ ] 3D landmark models for globe rendering
 - [ ] Landmark construction animation
 - [ ] Landmark glow effects on globe
-- [ ] Landmark icons on 2D flat map
 
 ---
 
@@ -255,7 +254,6 @@ raw game state
 - [ ] 3×3 grid overlay on globe (zoom-dependent visibility)
 - [ ] Sub-parcel ownership coloring on globe
 - [ ] Sub-parcel detail panel in LandSheet
-- [ ] Sub-parcel grid view in 2D flat map
 
 ### 5.4 Sub-Parcel Balance
 
