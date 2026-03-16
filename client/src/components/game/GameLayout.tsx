@@ -722,6 +722,7 @@ export function GameLayout() {
             onAttack={handleAttackClick}
             onMine={handleMine}
             onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+            onPurchase={handlePurchase}
             className="absolute inset-0 w-full h-full"
             battles={gameState.battles}
             livePulses={livePulses}

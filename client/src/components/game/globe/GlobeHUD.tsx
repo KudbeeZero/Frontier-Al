@@ -165,11 +165,13 @@ interface ParcelHUDProps {
   onAttack?: () => void;
   onMine?: () => void;
   onBuild?: () => void;
+  onPurchase?: () => void;
   onParcelSelect: (id: string) => void;
 }
 
-export function ParcelHUD({ parcel, currentPlayerId, onAttack, onMine, onBuild, onParcelSelect }: ParcelHUDProps) {
+export function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine, onBuild, onPurchase, onParcelSelect }: ParcelHUDProps) {
   const isPlayer = parcel.ownerId === currentPlayerId;
+  const isUnclaimed = !parcel.ownerId;
 
   const accentColor = isPlayer ? "#00ff6a"
     : parcel.ownerId ? "#ff6e40"
@@ -179,25 +181,32 @@ export function ParcelHUD({ parcel, currentPlayerId, onAttack, onMine, onBuild, 
     : parcel.ownerId ? "HOSTILE"
     : "UNCLAIMED";
 
+  const hasSubParcels = parcel.isSubdivided && Array.isArray(parcel.subParcelOwnerIds);
+
   return (
-    <div className="absolute z-30 pointer-events-none"
+    <div
+      className="absolute z-30 pointer-events-none"
       style={{
-        bottom: "calc(50% + 20px)",
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "min(320px, calc(100vw - 32px))",
-        maxWidth: "100%",
+        top: 72,
+        right: 16,
+        width: "min(300px, calc(100vw - 32px))",
+        maxHeight: "calc(100vh - 160px)",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <div
         className="pointer-events-auto flex flex-col gap-3 rounded-2xl p-4 backdrop-blur-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         style={{
-          background: "rgba(4, 8, 20, 0.88)",
+          background: "rgba(4, 8, 20, 0.92)",
           border: `1px solid ${accentColor}40`,
           boxShadow: `0 0 40px ${accentColor}18, inset 0 1px 0 ${accentColor}20`,
+          overflowY: "auto",
+          maxHeight: "inherit",
         }}
       >
-        <div className="flex justify-between items-start">
+        {/* Header */}
+        <div className="flex justify-between items-start flex-shrink-0">
           <div>
             <div className="text-[9px] tracking-[0.3em] uppercase mb-0.5" style={{ color: `${accentColor}99` }}>
               Plot #{parcel.plotId}
@@ -206,15 +215,23 @@ export function ParcelHUD({ parcel, currentPlayerId, onAttack, onMine, onBuild, 
               {parcel.biome} Zone
             </div>
           </div>
-          <div
-            className="text-[9px] px-2 py-1 rounded tracking-widest uppercase font-mono"
-            style={{ color: accentColor, background: `${accentColor}15`, border: `1px solid ${accentColor}40` }}
-          >
-            {statusLabel}
+          <div className="flex items-center gap-2">
+            <div
+              className="text-[9px] px-2 py-1 rounded tracking-widest uppercase font-mono"
+              style={{ color: accentColor, background: `${accentColor}15`, border: `1px solid ${accentColor}40` }}
+            >
+              {statusLabel}
+            </div>
+            <button
+              onClick={() => onParcelSelect("")}
+              className="text-white/40 hover:text-white/80 transition-colors text-base leading-none font-mono"
+              style={{ lineHeight: 1 }}
+            >✕</button>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-center">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2 text-center flex-shrink-0">
           {[
             { label: "Defense",  value: parcel.defenseLevel },
             { label: "Richness", value: parcel.richness },
@@ -228,7 +245,50 @@ export function ParcelHUD({ parcel, currentPlayerId, onAttack, onMine, onBuild, 
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        {/* Price row for unclaimed parcels */}
+        {isUnclaimed && parcel.purchasePriceAlgo !== null && parcel.purchasePriceAlgo !== undefined && (
+          <div
+            className="flex items-center justify-between px-3 py-2 rounded-lg flex-shrink-0"
+            style={{ background: "#4fc3f70a", border: "1px solid #4fc3f725" }}
+          >
+            <span className="text-[9px] uppercase tracking-widest font-mono" style={{ color: "#4fc3f799" }}>Acquisition Cost</span>
+            <span className="text-sm font-mono font-bold" style={{ color: "#4fc3f7" }}>
+              {parcel.purchasePriceAlgo} ALGO
+            </span>
+          </div>
+        )}
+
+        {/* Sub-parcel grid */}
+        {hasSubParcels && (
+          <div className="flex-shrink-0">
+            <div className="text-[9px] uppercase tracking-widest mb-2 font-mono" style={{ color: `${accentColor}70` }}>
+              Sub-Parcels (3×3)
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {(parcel.subParcelOwnerIds ?? []).map((ownerId, idx) => {
+                const owner = ownerId ? playerMap.get(ownerId) : null;
+                const isMe = ownerId === currentPlayerId;
+                const cellColor = !ownerId ? "#334466"
+                  : isMe ? "#00ff6a"
+                  : "#ff6e40";
+                return (
+                  <div
+                    key={idx}
+                    className="rounded py-1.5 text-center"
+                    style={{ background: `${cellColor}18`, border: `1px solid ${cellColor}40` }}
+                  >
+                    <div className="text-[8px] font-mono uppercase truncate px-1" style={{ color: cellColor }}>
+                      {!ownerId ? "FREE" : isMe ? "MINE" : (owner?.name?.slice(0, 6) ?? "TAKEN")}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons — always at the end, always reachable */}
+        <div className="grid grid-cols-2 gap-2 flex-shrink-0">
           {isPlayer ? (
             <>
               <button onClick={onMine}
@@ -249,10 +309,17 @@ export function ParcelHUD({ parcel, currentPlayerId, onAttack, onMine, onBuild, 
               <Sword className="w-4 h-4" /> Initiate Invasion
             </button>
           ) : (
-            <button onClick={() => onParcelSelect(parcel.id)}
-              className="col-span-2 flex items-center justify-center gap-2 h-10 rounded-lg text-[11px] font-mono uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
-              style={{ background: "#4fc3f712", border: "1px solid #4fc3f740", color: "#4fc3f7" }}>
-              <Zap className="w-4 h-4" /> Acquire Territory
+            <button
+              onClick={onPurchase}
+              className="col-span-2 flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg text-[11px] font-mono uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+              style={{ background: "#4fc3f712", border: "1px solid #4fc3f740", color: "#4fc3f7" }}
+            >
+              <span className="flex items-center gap-2">
+                <Zap className="w-4 h-4" /> Acquire Territory
+              </span>
+              {parcel.purchasePriceAlgo !== null && parcel.purchasePriceAlgo !== undefined && (
+                <span className="text-[10px] opacity-70">{parcel.purchasePriceAlgo} ALGO</span>
+              )}
             </button>
           )}
         </div>

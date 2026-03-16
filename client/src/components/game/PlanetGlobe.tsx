@@ -128,6 +128,7 @@ interface PlanetGlobeProps {
   onAttack?: () => void;
   onMine?: () => void;
   onBuild?: () => void;
+  onPurchase?: () => void;
   className?: string;
   battles?: Battle[];
   livePulses?: LivePulse[];
@@ -149,6 +150,7 @@ export default function PlanetGlobe({
   onAttack,
   onMine,
   onBuild,
+  onPurchase,
   className,
   battles = [],
   livePulses = [],
@@ -243,6 +245,7 @@ export default function PlanetGlobe({
           onAttack={onAttack}
           onMine={onMine}
           onBuild={onBuild}
+          onPurchase={onPurchase}
           onParcelSelect={onParcelSelect}
         />
       )}
