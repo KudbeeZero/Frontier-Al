@@ -74,10 +74,10 @@ function Scene({
       />
       <StarField />
       <GlobeAtmosphere />
-      <ambientLight intensity={1.8} color="#d8eaff" />
-      <directionalLight position={[8, 4, 5]}   intensity={1.6} color="#fff4e0" />
-      <directionalLight position={[-6, -2, -4]} intensity={1.2} color="#c0d4ff" />
-      <directionalLight position={[0,  8, 0]}   intensity={0.7} color="#e0eeff" />
+      <ambientLight intensity={1.4} color="#b0c8ff" />
+      <directionalLight position={[10, 5, 6]}   intensity={2.2} color="#fff8e8" />
+      <directionalLight position={[-5, -3, -6]} intensity={0.9} color="#8ab4ff" />
+      <directionalLight position={[0,  10, -2]} intensity={0.5} color="#d0e8ff" />
       <group>
         <GlobeTerrain />
         <PlotOverlay
@@ -105,7 +105,7 @@ function Scene({
       <OrbitalZoneLayer events={orbitalEvents} />
       <SatelliteOrbitLayer players={players} />
       <EffectComposer>
-        <Bloom intensity={1.2} luminanceThreshold={0.25} luminanceSmoothing={0.9} mipmapBlur />
+        <Bloom intensity={1.6} luminanceThreshold={0.18} luminanceSmoothing={0.85} mipmapBlur />
       </EffectComposer>
       <OrbitControls
         ref={controlsRef as any}
@@ -179,11 +179,11 @@ export default function PlanetGlobe({
   );
 
   return (
-    <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#010306" }}>
+    <div className={className} style={{ position: "relative", width: "100%", height: "100%", background: "#000b1e" }}>
       <Canvas
         camera={{ position: [0, 0, GLOBE_RADIUS * 3.8], fov: 45 }}
         gl={{ antialias: true, alpha: false, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-        style={{ background: "#010306", touchAction: "none" }}
+        style={{ background: "#000b1e", touchAction: "none" }}
       >
         <Scene
           parcels={parcels}

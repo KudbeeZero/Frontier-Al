@@ -14,6 +14,7 @@ import {
   PLOT_COUNT,
   COLOR_PLAYER,
   COLOR_BATTLE,
+  COLOR_SELECTED,
   COLOR_BORDER_OWNED,
   COLOR_BORDER_UNOWNED,
   COLOR_SUBDIVIDED,
@@ -146,13 +147,14 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
 
       let fillColor: THREE.Color;
 
-      if (isHovered) {
-        fillColor = COLOR_PLAYER.clone().multiplyScalar(0.6);
+      if (isSelected && isHovered) {
+        const pulse = 1.0 + Math.sin(pulseRef.current * 3) * 0.12;
+        fillColor = COLOR_SELECTED.clone().multiplyScalar(pulse * 1.1);
       } else if (isSelected) {
-        const pulse = 1.0 + Math.sin(pulseRef.current * 2) * 0.08;
-        fillColor = isOwned
-          ? COLOR_PLAYER.clone().multiplyScalar(pulse)
-          : COLOR_PLAYER.clone().multiplyScalar(pulse * 0.75);
+        const pulse = 1.0 + Math.sin(pulseRef.current * 2.5) * 0.15;
+        fillColor = COLOR_SELECTED.clone().multiplyScalar(pulse);
+      } else if (isHovered) {
+        fillColor = COLOR_SELECTED.clone().multiplyScalar(0.65);
       } else if (parcel?.activeBattleId) {
         const bp = 0.75 + Math.sin(pulseRef.current * 3) * 0.25;
         fillColor = COLOR_BATTLE.clone().multiplyScalar(bp);
@@ -162,14 +164,16 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      const borderColor = isSelected || isHovered
-        ? COLOR_PLAYER.clone()
-        : isOwned
-          ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
+      const borderColor = isSelected
+        ? COLOR_SELECTED.clone().multiplyScalar(1.5)
+        : isHovered
+          ? COLOR_SELECTED.clone()
+          : isOwned
+            ? COLOR_BORDER_OWNED.clone()
+            : COLOR_BORDER_UNOWNED.clone();
 
-      const fillScale   = isOwned || isSelected || isHovered ? 1.0 : 0.85;
-      const borderScale = isOwned || isSelected || isHovered ? 1.0 : 0.85;
+      const fillScale   = isSelected ? 1.12 : isHovered ? 1.06 : isOwned ? 1.0 : 0.85;
+      const borderScale = isSelected ? 1.15 : isHovered ? 1.08 : isOwned ? 1.0 : 0.85;
 
       applyInstance(fillMeshRef.current,   i, fillPos,   FILL_SIZE   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, BORDER_SIZE * sizeVar * borderScale, borderColor);
@@ -205,7 +209,7 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
 
       let fillColor: THREE.Color;
       if (isSelected) {
-        fillColor = isOwned ? COLOR_PLAYER.clone() : COLOR_PLAYER.clone().multiplyScalar(0.75);
+        fillColor = COLOR_SELECTED.clone();
       } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else if (isSubdivided) {
@@ -215,13 +219,13 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       }
 
       const borderColor = isSelected
-        ? COLOR_PLAYER.clone()
+        ? COLOR_SELECTED.clone().multiplyScalar(1.5)
         : isOwned
           ? COLOR_BORDER_OWNED.clone()
           : COLOR_BORDER_UNOWNED.clone();
 
-      const fillScale   = isOwned || isSelected ? 1.0 : 0.85;
-      const borderScale = isOwned || isSelected ? 1.0 : 0.85;
+      const fillScale   = isSelected ? 1.12 : isOwned ? 1.0 : 0.85;
+      const borderScale = isSelected ? 1.15 : isOwned ? 1.0 : 0.85;
       applyInstance(fillMeshRef.current,   i, fillPos,   FILL_SIZE   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, BORDER_SIZE * sizeVar * borderScale, borderColor);
     }
@@ -272,12 +276,12 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       </mesh>
 
       {/* Border frame — thin square outline for grid tile look */}
-      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, PLOT_COUNT]} renderOrder={1}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.65}
+          opacity={0.75}
           depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
@@ -285,13 +289,13 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       </instancedMesh>
 
       {/* Fill layer — square tile */}
-      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]}>
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, PLOT_COUNT]} renderOrder={2}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.72}
-          depthWrite={true}
+          opacity={0.88}
+          depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
         />

@@ -15,6 +15,7 @@ export const POLAR_EXCLUSION_LAT = 75;
 export const COLOR_PLAYER         = new THREE.Color("#00ffaa"); // bright mint-green — your territory
 export const COLOR_ENEMY          = new THREE.Color("#ff4400"); // hot orange-red — enemy territory
 export const COLOR_BATTLE         = new THREE.Color("#ff0055"); // hot pink-red — active battle
+export const COLOR_SELECTED       = new THREE.Color("#ffe566"); // bright gold — selected plot highlight
 export const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
 export const COLOR_BORDER_UNOWNED = new THREE.Color("#4fc3f7"); // bright cyan grid — visible on all terrain
 export const COLOR_SUBDIVIDED     = new THREE.Color(0x111820); // neutral dark for subdivided macro-plots

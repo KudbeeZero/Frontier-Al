@@ -35,8 +35,8 @@ export function GlobeTerrain() {
 
     void main() {
       vec4 dayCol = texture2D(albedoMap, vUv);
-      // Fully lit — no dark side, terrain visible everywhere
-      gl_FragColor = vec4(boostSat(dayCol.rgb, 1.25) * 1.05, 1.0);
+      vec3 boosted = boostSat(dayCol.rgb, 1.35) * 1.1;
+      gl_FragColor = vec4(boosted, 1.0);
     }
   `;
 

@@ -3,20 +3,26 @@ import { useMemo } from "react";
 import { GLOBE_RADIUS } from "@/lib/globe/globeConstants";
 
 /**
- * Two concentric BackSide spheres with additive blending create a faint blue
- * atmospheric rim — occluded by the planet at the center, visible at the limb.
+ * Three concentric BackSide spheres: a tight electric-blue rim, a mid cyan
+ * haze, and a wide purple-indigo corona — all additive, depthWrite off.
  */
 export function GlobeAtmosphere() {
   const innerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.12, 0.48, 1.0) },
-    coefficient: { value: 0.62 },
-    power:       { value: 3.2 },
+    glowColor:   { value: new THREE.Color(0.1, 0.55, 1.0) },
+    coefficient: { value: 0.55 },
+    power:       { value: 2.8 },
+  }), []);
+
+  const midUniforms = useMemo(() => ({
+    glowColor:   { value: new THREE.Color(0.04, 0.75, 1.0) },
+    coefficient: { value: 0.42 },
+    power:       { value: 4.2 },
   }), []);
 
   const outerUniforms = useMemo(() => ({
-    glowColor:   { value: new THREE.Color(0.05, 0.68, 0.9) },
-    coefficient: { value: 0.48 },
-    power:       { value: 4.8 },
+    glowColor:   { value: new THREE.Color(0.18, 0.08, 0.6) },
+    coefficient: { value: 0.32 },
+    power:       { value: 6.0 },
   }), []);
 
   const vertShader = `
@@ -37,15 +43,15 @@ export function GlobeAtmosphere() {
     varying vec3 vPositionNormal;
     void main() {
       float intensity = pow(coefficient + dot(vPositionNormal, vNormal), power);
-      gl_FragColor = vec4(glowColor, intensity * 0.6);
+      gl_FragColor = vec4(glowColor, intensity * 0.85);
     }
   `;
 
   return (
     <>
-      {/* Inner tight rim — fresnel blue at planet limb */}
-      <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.05, 64, 32]} />
+      {/* Inner tight rim — electric blue at planet limb */}
+      <mesh renderOrder={-1}>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.04, 64, 32]} />
         <shaderMaterial
           uniforms={innerUniforms}
           vertexShader={vertShader}
@@ -57,9 +63,23 @@ export function GlobeAtmosphere() {
         />
       </mesh>
 
-      {/* Outer wide haze — softer cyan-teal corona */}
-      <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS * 1.18, 64, 32]} />
+      {/* Mid cyan haze */}
+      <mesh renderOrder={-2}>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.12, 64, 32]} />
+        <shaderMaterial
+          uniforms={midUniforms}
+          vertexShader={vertShader}
+          fragmentShader={fragShader}
+          transparent
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Outer wide purple-indigo corona */}
+      <mesh renderOrder={-3}>
+        <sphereGeometry args={[GLOBE_RADIUS * 1.28, 64, 32]} />
         <shaderMaterial
           uniforms={outerUniforms}
           vertexShader={vertShader}
