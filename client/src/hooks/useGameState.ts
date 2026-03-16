@@ -117,7 +117,7 @@ export function useClaimFrontier() {
 
 export function useMintAvatar() {
   return useMutation({
-    mutationFn: async (action: MintAvatarAction) => {
+    mutationFn: async (action: MintAvatarAction & { algoPaymentTxId?: string }) => {
       const response = await apiRequest("POST", "/api/actions/mint-avatar", action);
       return response.json();
     },

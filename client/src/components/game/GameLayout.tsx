@@ -36,6 +36,8 @@ import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 import { StreamOverlay } from "./StreamOverlay";
+import { sendPaymentTransaction } from "@/lib/algorand";
+import algosdk from "algosdk";
 
 export function GameLayout() {
   const wallet = useWallet();
@@ -493,16 +495,99 @@ export function GameLayout() {
     }
   };
 
-  const handleMintAvatar = (tier: CommanderTier) => {
+  const [isClaimingCommanderNft, setIsClaimingCommanderNft] = useState(false);
+
+  const handleMintAvatar = async (tier: CommanderTier) => {
     if (!player) return;
+
+    const isRealWallet =
+      wallet.isConnected &&
+      wallet.address &&
+      wallet.address !== "PLAYER_WALLET" &&
+      algosdk.isValidAddress(wallet.address);
+
+    let algoPaymentTxId: string | undefined;
+
+    if (isRealWallet && wallet.address) {
+      try {
+        const priceRes = await fetch(`/api/nft/commander-price/${tier}`);
+        if (!priceRes.ok) throw new Error("Could not fetch commander price");
+        const priceData: { algoPrice: number; adminAddress: string; usdPrice: number } = await priceRes.json();
+        const microAlgos = Math.floor(priceData.algoPrice * 1_000_000);
+
+        toast({
+          title: "ALGO Payment Required",
+          description: `Approve ${priceData.algoPrice.toFixed(3)} ALGO (~$${priceData.usdPrice.toFixed(2)}) in your wallet to mint your Commander NFT.`,
+        });
+
+        algoPaymentTxId = await sendPaymentTransaction(
+          wallet.address,
+          priceData.adminAddress,
+          microAlgos,
+          `FRONTIER Commander NFT mint - ${tier}`
+        );
+
+        toast({ title: "Payment Confirmed", description: "Minting your Commander NFT on Algorand..." });
+      } catch (payErr) {
+        toast({
+          title: "Payment Failed",
+          description: payErr instanceof Error ? payErr.message : "Payment could not be completed",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     queueMintAvatarAction(tier);
     mintAvatarMutation.mutate(
-      { playerId: player.id, tier },
+      { playerId: player.id, tier, algoPaymentTxId },
       {
-        onSuccess: (data: any) => toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` }),
+        onSuccess: (data: any) => {
+          const nft = data.nft;
+          if (nft?.assetId) {
+            toast({
+              title: "Commander Minted + NFT Created!",
+              description: `${data.avatar?.name || tier} Commander is ready. NFT ASA ${nft.assetId} is held in custody — claim it from the Commander page once opted in.`,
+            });
+          } else {
+            toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` });
+          }
+        },
         onError: (error) => toast({ title: "Mint Failed", description: error.message, variant: "destructive" }),
       }
     );
+  };
+
+  const handleClaimCommanderNft = async (commanderId: string) => {
+    if (!wallet.address) return;
+    setIsClaimingCommanderNft(true);
+    try {
+      const res = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        toast({ title: "Commander NFT Delivered!", description: `Your NFT is now in your wallet. TX: ${data.txId?.slice(0, 8)}...` });
+        queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+      } else if (data.reason === "not_opted_in") {
+        toast({
+          title: "Opt-In Required",
+          description: `Add asset ${data.assetId} to your Pera wallet first, then tap Claim again.`,
+          variant: "destructive",
+        });
+      } else if (data.reason === "not_in_custody") {
+        toast({ title: "Already In Your Wallet", description: data.message || "NFT has already been delivered." });
+      } else {
+        toast({ title: "Claim Info", description: data.message || "Unexpected state — try again.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Claim Failed", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsClaimingCommanderNft(false);
+    }
   };
 
   const handleSpecialAttack = (attackType: SpecialAttackType) => {
@@ -974,9 +1059,12 @@ export function GameLayout() {
               onDeployDrone={handleDeployDrone}
               onDeploySatellite={handleDeploySatellite}
               onSwitchCommander={handleSwitchCommander}
+              onClaimCommanderNft={handleClaimCommanderNft}
               isMinting={mintAvatarMutation.isPending}
               isDeployingDrone={deployDroneMutation.isPending}
               isDeployingSatellite={deploySatelliteMutation.isPending}
+              isClaimingCommanderNft={isClaimingCommanderNft}
+              wallet={{ isConnected: wallet.isConnected, address: wallet.address }}
             />
           )}
           {activeTab === "leaderboard" && gameState && (

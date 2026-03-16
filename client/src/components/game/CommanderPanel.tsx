@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock, Satellite } from "lucide-react";
+import { Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock, Satellite, Gift, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import type { Player, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { COMMANDER_INFO, SPECIAL_ATTACK_INFO, DRONE_MINT_COST_FRONTIER, MAX_DRONES, DRONE_SCOUT_DURATION_MS, SATELLITE_DEPLOY_COST_FRONTIER, MAX_SATELLITES, SATELLITE_ORBIT_DURATION_MS, SATELLITE_YIELD_BONUS } from "@shared/schema";
@@ -37,9 +38,12 @@ interface CommanderPanelProps {
   onDeployDrone: (targetParcelId?: string) => void;
   onDeploySatellite: () => void;
   onSwitchCommander?: (index: number) => void;
+  onClaimCommanderNft?: (commanderId: string) => void;
   isMinting: boolean;
   isDeployingDrone: boolean;
   isDeployingSatellite: boolean;
+  isClaimingCommanderNft?: boolean;
+  wallet?: { isConnected: boolean; address: string | null };
   className?: string;
 }
 
@@ -131,9 +135,124 @@ function DroneCard({ drone, index }: { drone: Player["drones"][0]; index: number
   );
 }
 
-export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySatellite, onSwitchCommander, isMinting, isDeployingDrone, isDeployingSatellite, className }: CommanderPanelProps) {
+function CommanderNftStatus({
+  commanderId,
+  onClaim,
+  isClaiming,
+  walletConnected,
+}: {
+  commanderId: string;
+  onClaim?: (commanderId: string) => void;
+  isClaiming?: boolean;
+  walletConnected?: boolean;
+}) {
+  const { data, isLoading } = useQuery<{
+    exists: boolean;
+    status?: string;
+    assetId?: number;
+    txId?: string;
+    tier?: string;
+  }>({
+    queryKey: ["/api/nft/commander", commanderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/nft/commander/${commanderId}`);
+      if (!res.ok) return { exists: false };
+      return res.json();
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-1 text-[9px] text-muted-foreground mt-1.5">
+        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+        <span>Checking NFT…</span>
+      </div>
+    );
+  }
+
+  if (!data?.exists) return null;
+
+  const inCustody = data.status === "minted" || data.status === "pending";
+  const delivered = data.status === "delivered";
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+      {delivered ? (
+        <Badge className="text-[8px] bg-green-500/20 text-green-400 border-green-500/30 gap-1">
+          <Gift className="w-2.5 h-2.5" /> NFT In Wallet
+        </Badge>
+      ) : inCustody ? (
+        <>
+          <Badge variant="outline" className="text-[8px] text-yellow-400 border-yellow-500/30 gap-1">
+            <Gift className="w-2.5 h-2.5" /> NFT Ready — ASA {data.assetId}
+          </Badge>
+          {walletConnected && onClaim && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[9px] h-5 px-2 font-display uppercase tracking-wide border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+              onClick={() => onClaim(commanderId)}
+              disabled={isClaiming}
+            >
+              {isClaiming ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : "Claim NFT"}
+            </Button>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function TierPriceTag({ tier }: { tier: CommanderTier }) {
+  const { data } = useQuery<{ algoPrice: number; usdPrice: number }>({
+    queryKey: ["/api/nft/commander-price", tier],
+    queryFn: async () => {
+      const res = await fetch(`/api/nft/commander-price/${tier}`);
+      if (!res.ok) throw new Error("price unavailable");
+      return res.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  if (!data) return null;
+
+  return (
+    <span className="text-[8px] font-mono text-cyan-400 block mt-0.5">
+      {data.algoPrice.toFixed(3)} ALGO
+    </span>
+  );
+}
+
+export function CommanderPanel({
+  player,
+  onMintAvatar,
+  onDeployDrone,
+  onDeploySatellite,
+  onSwitchCommander,
+  onClaimCommanderNft,
+  isMinting,
+  isDeployingDrone,
+  isDeployingSatellite,
+  isClaimingCommanderNft,
+  wallet,
+  className,
+}: CommanderPanelProps) {
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
   const [showMintSection, setShowMintSection] = useState(false);
+
+  const { data: selectedTierPrice } = useQuery<{ algoPrice: number; usdPrice: number; adminAddress: string }>({
+    queryKey: ["/api/nft/commander-price", selectedTier],
+    queryFn: async () => {
+      const res = await fetch(`/api/nft/commander-price/${selectedTier}`);
+      if (!res.ok) throw new Error("price unavailable");
+      return res.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
 
   if (!player) {
     return (
@@ -153,6 +272,8 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
   });
   const now = Date.now();
   const activeSatellites = (player.satellites ?? []).filter(s => s.status === "active" && s.expiresAt > now);
+  const isRealWallet = wallet?.isConnected && !!wallet?.address;
+  const selectedInfo = COMMANDER_INFO[selectedTier];
 
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="commander-panel">
@@ -206,6 +327,12 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
                             <span className="font-mono font-bold">{cmd.totalKills}</span>
                           </div>
                         </div>
+                        <CommanderNftStatus
+                          commanderId={cmd.id}
+                          onClaim={onClaimCommanderNft}
+                          isClaiming={isClaimingCommanderNft}
+                          walletConnected={isRealWallet}
+                        />
                       </div>
                       {!isActive && onSwitchCommander && (
                         <Button
@@ -266,6 +393,7 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
                       <span className={cn("text-[9px] font-mono block", canAfford ? "text-muted-foreground" : "text-destructive")}>
                         {info.mintCostFrontier} FRNTR
                       </span>
+                      <TierPriceTag tier={tier} />
                     </button>
                   );
                 })}
@@ -276,12 +404,12 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
                   <div className="flex items-center gap-2 mb-2">
                     <img
                       src={COMMANDER_IMAGES[selectedTier]}
-                      alt={COMMANDER_INFO[selectedTier].name}
+                      alt={selectedInfo.name}
                       className="w-10 h-10 rounded-md object-cover"
                     />
                     <div>
                       <span className="text-sm font-display uppercase font-bold block" style={{ color: TIER_COLORS[selectedTier] }}>
-                        {COMMANDER_INFO[selectedTier].name}
+                        {selectedInfo.name}
                       </span>
                       <span className="text-[10px] text-muted-foreground capitalize">{selectedTier} class</span>
                     </div>
@@ -289,25 +417,43 @@ export function CommanderPanel({ player, onMintAvatar, onDeployDrone, onDeploySa
                   <div className="grid grid-cols-2 gap-2 text-[10px] mb-2">
                     <div className="p-1.5 rounded-md bg-muted/50">
                       <span className="text-muted-foreground font-display uppercase block">ATK Bonus</span>
-                      <span className="font-mono font-bold">+{COMMANDER_INFO[selectedTier].baseAttackBonus}</span>
+                      <span className="font-mono font-bold">+{selectedInfo.baseAttackBonus}</span>
                     </div>
                     <div className="p-1.5 rounded-md bg-muted/50">
                       <span className="text-muted-foreground font-display uppercase block">DEF Bonus</span>
-                      <span className="font-mono font-bold">+{COMMANDER_INFO[selectedTier].baseDefenseBonus}</span>
+                      <span className="font-mono font-bold">+{selectedInfo.baseDefenseBonus}</span>
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground mb-2">
                     <span className="font-display uppercase tracking-wide">Ability:</span>{" "}
-                    {COMMANDER_INFO[selectedTier].specialAbility}
+                    {selectedInfo.specialAbility}
                   </p>
+
+                  {isRealWallet && selectedTierPrice && (
+                    <div className="flex items-center gap-2 p-2 rounded-md bg-cyan-500/5 border border-cyan-500/20 mb-2">
+                      <Gift className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-cyan-300 font-display uppercase tracking-wide">Commander NFT included</p>
+                        <p className="text-[9px] text-muted-foreground">
+                          Pay <span className="text-cyan-400 font-mono font-bold">{selectedTierPrice.algoPrice.toFixed(3)} ALGO</span>
+                          {" "}(~${selectedTierPrice.usdPrice.toFixed(2)}) to mint a Blockchain NFT
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <Button
                     onClick={() => onMintAvatar(selectedTier)}
-                    disabled={isMinting || player.frontier < COMMANDER_INFO[selectedTier].mintCostFrontier}
+                    disabled={isMinting || player.frontier < selectedInfo.mintCostFrontier}
                     className="w-full font-display uppercase tracking-wide"
                     data-testid="button-mint-avatar"
                   >
                     <Zap className="w-4 h-4 mr-2" />
-                    {isMinting ? "Minting..." : `Mint for ${COMMANDER_INFO[selectedTier].mintCostFrontier} FRNTR`}
+                    {isMinting
+                      ? "Minting…"
+                      : isRealWallet && selectedTierPrice
+                      ? `Mint · ${selectedInfo.mintCostFrontier} FRNTR + ${selectedTierPrice.algoPrice.toFixed(3)} ALGO`
+                      : `Mint for ${selectedInfo.mintCostFrontier} FRNTR`}
                   </Button>
                 </Card>
               )}
