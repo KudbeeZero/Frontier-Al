@@ -105,16 +105,20 @@ app.use((req, res, next) => {
 
   assertChainConfig();
 
-  // GUARDRAIL: Crash immediately if ALGORAND_NETWORK is missing or invalid.
-  // Prevents silent testnet/mainnet mismatch on deploy.
+  // GUARDRAIL: Warn if ALGORAND_NETWORK is missing or invalid in dev; crash in production.
   const _algodNetwork = process.env.ALGORAND_NETWORK;
   if (!_algodNetwork || !['testnet', 'mainnet', 'localnet'].includes(_algodNetwork)) {
-    throw new Error(
-      `[FATAL] ALGORAND_NETWORK must be "testnet", "mainnet", or "localnet". ` +
-      `Got: "${_algodNetwork ?? 'undefined'}". Set ALGORAND_NETWORK in your environment.`
-    );
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `[FATAL] ALGORAND_NETWORK must be "testnet", "mainnet", or "localnet". ` +
+        `Got: "${_algodNetwork ?? 'undefined'}". Set ALGORAND_NETWORK in your environment.`
+      );
+    }
+    console.warn(`[startup] ALGORAND_NETWORK not set or invalid ("${_algodNetwork ?? 'undefined'}"). Defaulting to testnet for development.`);
+    process.env.ALGORAND_NETWORK = 'testnet';
+  } else {
+    console.log(`[startup] ALGORAND_NETWORK=${_algodNetwork} ✓`);
   }
-  console.log(`[startup] ALGORAND_NETWORK=${_algodNetwork} ✓`);
 
   const { initWsServer } = await import("./wsServer");
   initWsServer(httpServer, storage);
