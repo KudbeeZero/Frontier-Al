@@ -16,17 +16,19 @@ function Rocket() {
           filter: "blur(4px)",
         }} />
       ))}
-      {/* Flame */}
-      <div style={{
-        position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)",
-        width: 14, height: 28, borderRadius: "0 0 50% 50%",
-        background: "linear-gradient(180deg, #fff7a0 0%, #ff9800 40%, #ff4400 80%, transparent 100%)",
-        animation: "flame-flicker 0.15s ease-in-out infinite",
-        filter: "blur(1px)",
-        boxShadow: "0 0 12px 6px rgba(255,120,0,0.4), 0 0 25px 10px rgba(255,60,0,0.2)",
-      }} />
-      {/* Rocket body */}
-      <svg width="54" height="90" viewBox="0 0 54 90" style={{ position: "relative", zIndex: 2, animation: "rocket-lift 6s ease-in 2s infinite" }}>
+      {/* Flame + Rocket body — wrapped so both move together on lift */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", animation: "rocket-lift 6s ease-in 2s infinite" }}>
+        {/* Flame */}
+        <div style={{
+          position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)",
+          width: 14, height: 28, borderRadius: "0 0 50% 50%",
+          background: "linear-gradient(180deg, #fff7a0 0%, #ff9800 40%, #ff4400 80%, transparent 100%)",
+          animation: "flame-flicker 0.15s ease-in-out infinite",
+          filter: "blur(1px)",
+          boxShadow: "0 0 12px 6px rgba(255,120,0,0.4), 0 0 25px 10px rgba(255,60,0,0.2)",
+        }} />
+        {/* Rocket body */}
+      <svg width="54" height="90" viewBox="0 0 54 90" style={{ position: "relative", zIndex: 2 }}>
         {/* Body */}
         <ellipse cx="27" cy="55" rx="13" ry="30" fill="rgba(180,210,255,0.9)" />
         {/* Nose */}
@@ -46,6 +48,7 @@ function Rocket() {
         <ellipse cx="27" cy="85" rx="9" ry="4" fill="rgba(120,150,200,0.8)" />
         <ellipse cx="27" cy="82" rx="7" ry="3" fill="rgba(90,120,180,0.6)" />
       </svg>
+      </div>{/* end rocket-lift wrapper */}
     </div>
   );
 }
