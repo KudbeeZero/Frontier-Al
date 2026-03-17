@@ -20,7 +20,7 @@ function Rocket() {
       <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", animation: "rocket-lift 6s ease-in 2s infinite" }}>
         {/* Flame */}
         <div style={{
-          position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)",
+          position: "absolute", bottom: -18, left: "50%", transform: "translateX(-50%)",
           width: 14, height: 28, borderRadius: "0 0 50% 50%",
           background: "linear-gradient(180deg, #fff7a0 0%, #ff9800 40%, #ff4400 80%, transparent 100%)",
           animation: "flame-flicker 0.15s ease-in-out infinite",
