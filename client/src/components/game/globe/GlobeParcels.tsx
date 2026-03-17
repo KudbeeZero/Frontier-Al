@@ -59,6 +59,17 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     return m;
   }, [parcels]);
 
+  const plotIdToParcelRef = useRef(plotIdToParcel);
+  plotIdToParcelRef.current = plotIdToParcel;
+
+  const parcelsRevision = useMemo(() => {
+    return parcels
+      .filter(p => p.ownerId || p.activeBattleId || p.isSubdivided)
+      .map(p => `${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${Number(!!p.isSubdivided)}`)
+      .sort()
+      .join("|");
+  }, [parcels]);
+
   // Flat Float32Array of every plot's 3D position — used for O(n) nearest-neighbor on clicks/hover
   const plotPositions3D = useMemo(() => {
     const arr = new Float32Array(plotCoords.length * 3);
@@ -195,9 +206,12 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
 
+    const idToParcel = plotIdToParcelRef.current;
+    const t0 = performance.now();
+
     for (let i = 0; i < plotCoords.length; i++) {
       const coord  = plotCoords[i];
-      const parcel = plotIdToParcel.get(coord.plotId);
+      const parcel = idToParcel.get(coord.plotId);
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
       const fillPos   = fillPositions3D[i];
@@ -235,8 +249,9 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
 
-    if (parcels.length > 0) readyRef.current = true;
-  }, [parcels, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
+    if (idToParcel.size > 0) readyRef.current = true;
+    console.log(`[PLOT-OVERLAY] full update: ${(performance.now() - t0).toFixed(1)}ms (${parcelsRevision.split("|").length} active parcels)`);
+  }, [parcelsRevision, currentPlayerId, selectedPlotId, plotCoords,
       fillPositions3D, borderPositions3D]);
 
   const handlePointerMove = useCallback((e: any) => {
