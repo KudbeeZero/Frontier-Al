@@ -1139,6 +1139,7 @@ export function GameLayout() {
           onPurchase={handlePurchase}
           onSpecialAttack={handleSpecialAttack}
           onClose={() => setSelectedParcelId(null)}
+          onNavigateToPlot={selectedParcel ? () => flyToParcelOnMap(selectedParcel.id) : undefined}
           isMining={mineMutation.isPending}
           isUpgrading={upgradeMutation.isPending}
           isBuilding={buildMutation.isPending}
