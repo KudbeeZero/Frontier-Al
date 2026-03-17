@@ -1,0 +1,208 @@
+PASS: SECURITY-AUDIT — TypeScript Deep Analysis + Security Report
+
+CONTEXT:
+This is a standalone, non-destructive security and type-safety audit for the FRONTIER
+codebase. Nothing is fixed or modified in this pass. The sole output is a written
+report file saved to the project root as SECURITY_AUDIT_REPORT.md.
+
+This pass runs professional-grade tooling used in production Web3/Node.js pre-launch
+audits: strict TypeScript analysis, dependency CVE scanning, hardcoded secret detection,
+CORS/session misconfiguration checks, input validation gaps, and WebSocket attack surface
+review. All findings are severity-classified and written to the report.
+
+DO NOT modify any source files. DO NOT run npm audit fix. DO NOT alter tsconfig.json.
+Report findings only.
+
+---
+
+STEP 1 — Strict TypeScript Diagnostic Pass
+
+Run a full strict-mode TypeScript check beyond the project's current tsconfig:
+
+  npx tsc --noEmit --strict --strictNullChecks --strictFunctionTypes \
+    --strictBindCallApply --noImplicitAny --noImplicitReturns \
+    --noFallthroughCasesInSwitch --noUncheckedIndexedAccess 2>&1
+
+This may produce more errors than the base tsconfig — that is expected and intentional.
+Capture all output. Categorize errors by:
+  - IMPLICIT_ANY       (noImplicitAny violations)
+  - NULL_UNSAFE        (strictNullChecks violations)
+  - RETURN_MISSING     (noImplicitReturns violations)
+  - INDEX_UNSAFE       (noUncheckedIndexedAccess violations)
+  - OTHER
+
+Count totals per category and list the top 10 most severe by file.
+
+---
+
+STEP 2 — Dependency CVE Scan
+
+Run the full dependency audit:
+
+  npm audit --json > /tmp/audit_raw.json 2>&1
+
+Parse /tmp/audit_raw.json and extract:
+  - CRITICAL severity advisories (full package name, CVE ID if present, description)
+  - HIGH severity advisories
+  - MODERATE severity advisories
+  - Total vulnerable package count
+
+For each CRITICAL and HIGH: note whether it is in dependencies or devDependencies.
+devDependencies vulnerabilities are lower risk for production — flag but distinguish.
+
+Also run:
+  npm outdated 2>&1 | head -40
+
+Capture packages that are significantly behind (major version gap) — these are
+architectural debt, not just security risk.
+
+---
+
+STEP 3 — Hardcoded Secret Scan
+
+Scan all .ts and .tsx files (excluding node_modules, dist, .git) for patterns
+that indicate hardcoded credentials or private keys:
+
+Patterns to grep for (case-insensitive):
+  - password\s*[:=]\s*['"][^'"]{4,}
+  - secret\s*[:=]\s*['"][^'"]{8,}
+  - api_key\s*[:=]\s*['"][^'"]{8,}
+  - token\s*[:=]\s*['"][^'"]{8,}
+  - mnemonic\s*[:=]\s*['"][^'"]{10,}
+  - AAAA[0-9A-Za-z+/]{60,}  (Algorand base64 key pattern)
+  - BEGIN.*PRIVATE KEY
+  - process\.env\.[A-Z_]+\s*\|\|\s*['"][^'"]{6,}  (env var with hardcoded fallback)
+
+For each match: report file, line number, matched pattern type (redact the actual value
+— show only first 4 chars + ***).
+
+This last pattern is especially important for FRONTIER: any process.env.X || "hardcoded"
+fallback is a security vulnerability in production.
+
+---
+
+STEP 4 — Express Security Configuration Review
+
+Grep server/ for the following anti-patterns:
+
+4a. Missing helmet middleware:
+  grep -r "helmet" server/ -- if NOT found, flag as MISSING
+
+4b. CORS wildcard:
+  grep -rn "origin.*\*\|cors.*true\|Access-Control-Allow-Origin.*\*" server/
+
+4c. Rate limiting:
+  grep -rn "rateLimit\|rate-limit\|express-rate" server/ -- if NOT found, flag as MISSING
+
+4d. Session cookie security flags:
+  grep -rn "secure.*false\|httpOnly.*false\|sameSite" server/
+  Check: is SESSION_SECRET pulled purely from env var with no hardcoded fallback?
+
+4e. SQL injection surface:
+  grep -rn "db\.execute\|db\.run\|raw SQL\|\`SELECT\|\`INSERT\|\`UPDATE\|\`DELETE" server/
+  Flag any template literal SQL that interpolates variables directly without parameterization.
+
+4f. Request body size limits:
+  grep -rn "express.json\|bodyParser" server/
+  Check if a size limit (limit: '..') is set. Flag if missing.
+
+For each: ✅ SECURE / ⚠️ REVIEW NEEDED / ❌ VULNERABILITY with file + line.
+
+---
+
+STEP 5 — WebSocket Attack Surface Review
+
+Read server/wsServer.ts in full.
+
+Check for:
+  5a. Authentication on WS upgrade — is the session or wallet address validated
+      before the WebSocket connection is accepted?
+      → ✅ AUTHENTICATED / ❌ UNAUTHENTICATED (any client can connect)
+
+  5b. Message size limits — is there a max message size or payload cap?
+      → ✅ CAPPED / ❌ UNCAPPED (DoS risk)
+
+  5c. Message type validation — are incoming ws message types validated against
+      an allowlist before being processed?
+      → ✅ VALIDATED / ❌ UNVALIDATED (arbitrary message types accepted)
+
+  5d. Broadcast scope — can a player trigger a broadcast that reaches ALL clients?
+      → Flag any route or action that calls ws.broadcast() or equivalent
+        without scope restriction.
+
+---
+
+STEP 6 — Input Validation Review (OWASP A03)
+
+Grep server/routes.ts for all req.body and req.params usages.
+
+Check for:
+  - Direct use of req.body.X without any type guard, schema validation (zod/joi),
+    or typeof check before passing to storage layer or DB.
+  - req.params.id used directly in DB queries without parseInt / UUID validation.
+
+Sample the top 10 routes with the most req.body accesses and flag any that pass
+values directly to storage functions without validation.
+
+This is a Web3 game — unvalidated integer inputs to battle/mining/attack endpoints
+can be exploited to drain resources or overflow values.
+
+---
+
+STEP 7 — Algorand Key Exposure Check
+
+Read server/services/chain/ directory in full.
+
+Check:
+  7a. Are any Algorand mnemonics present in source files? (grep for 25-word patterns
+      or base64 strings of length 88+)
+  7b. Is the admin/signing mnemonic loaded exclusively from process.env?
+  7c. Are transaction signing operations wrapped in try/catch?
+  7d. Is there any logging of mnemonic, privateKey, or sk values?
+      grep -rn "console.log.*mnemonic\|console.log.*sk\|console.log.*privateKey" server/
+
+For each: ✅ SECURE / ❌ EXPOSED
+
+---
+
+STEP 8 — Dead Code & Duplicate Logic Surface
+
+Run:
+  grep -rn "TODO\|FIXME\|HACK\|XXX\|TEMP\|console\.log\|console\.error" \
+    server/ client/src/ shared/ \
+    --include="*.ts" --include="*.tsx" | grep -v node_modules | wc -l
+
+Then list the top 15 console.log statements in server/ (these are information leaks
+in production — stack traces, player data, internal state).
+
+Also grep for duplicate battle math patterns that indicate the battle engine is NOT
+being used (the known Pass A issue):
+  grep -rn "troopPower\|attackPower\|defensePower\|resolveB" server/storage/db.ts
+
+If inline battle math is still present in db.ts alongside the engine import,
+flag as ❌ BATTLE ENGINE NOT WIRED (known pre-mainnet blocker).
+
+---
+
+STEP 9 — Git History Secret Scan
+
+Run:
+  git log --oneline | head -20
+
+Then check if any of these dangerous patterns appear in recent commit messages
+or if any .env files were ever committed:
+  git log --all --full-history -- "*.env" "*.pem" ".env.local"
+  git log --all --full-history -- "*mnemonic*" "*secret*"
+
+Report: any commits that touched credential-adjacent files, even if later removed.
+Note: if a secret was ever in git history, it must be considered compromised
+regardless of current state.
+
+---
+
+FINAL OUTPUT: Write everything above into a file at the project root:
+
+  SECURITY_AUDIT_REPORT.md
+
+Format the file as follows:
+
