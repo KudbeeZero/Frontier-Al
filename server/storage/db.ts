@@ -2385,6 +2385,7 @@ export class DbStorage implements IStorage {
       const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 
       let updates: Partial<typeof parcelRow> = {};
+      let isVisualChange = false;
 
       switch (action.type) {
         case "convert_biome": {
@@ -2392,6 +2393,7 @@ export class DbStorage implements IStorage {
           if (mapped === parcelRow.biome) return { parcel: rowToParcel(parcelRow), error: "Plot already has that biome" };
           updates.biome     = mapped;
           updates.stability = clamp((parcelRow.stability ?? 100) - 5);
+          isVisualChange    = true;
           break;
         }
         case "reduce_hazard":
@@ -2406,11 +2408,30 @@ export class DbStorage implements IStorage {
         case "corrupt_land":
           updates.hazardLevel = clamp((parcelRow.hazardLevel ?? 0) + action.amount);
           updates.stability   = clamp((parcelRow.stability   ?? 100) - action.amount);
-          if (parcelRow.biome === "plains") updates.biome = "volcanic";
+          if (parcelRow.biome === "plains") { updates.biome = "volcanic"; isVisualChange = true; }
           break;
         default:
           return { parcel: rowToParcel(parcelRow), error: "Unknown terraform action" };
       }
+
+      const now = Date.now();
+      const prevTerraformLevel = (parcelRow as any).terraformLevel ?? 0;
+      const prevMetadataVersion = (parcelRow as any).metadataVersion ?? 1;
+      const prevVisualRevision = (parcelRow as any).visualStateRevision ?? 0;
+
+      // Derive terraform status from hazard + stability after update.
+      const newHazard    = (updates as any).hazardLevel  ?? (parcelRow as any).hazardLevel  ?? 0;
+      const newStability = (updates as any).stability    ?? (parcelRow as any).stability    ?? 100;
+      const newStatus: "none" | "active" | "degraded" =
+        newHazard > 60 || newStability < 30 ? "degraded" : "active";
+
+      // Attach terraform tracking fields to the same DB update.
+      (updates as any).terraformStatus      = newStatus;
+      (updates as any).terraformedAt        = now;
+      (updates as any).terraformLevel       = prevTerraformLevel + 1;
+      (updates as any).terraformType        = action.type;
+      (updates as any).metadataVersion      = prevMetadataVersion + 1;
+      (updates as any).visualStateRevision  = isVisualChange ? prevVisualRevision + 1 : prevVisualRevision;
 
       const costMicro = toMicroFRNTR(costFrontier);
       await Promise.all([
@@ -2420,12 +2441,11 @@ export class DbStorage implements IStorage {
           .where(eq(playersTable.id, playerId)),
       ]);
 
-      const now = Date.now();
       await this.addEvent({
         type:        "terraform",
         playerId,
         parcelId:    parcelRow.id,
-        description: `Terraform action "${action.type}" applied to plot #${plotId}`,
+        description: `Terraform action "${action.type}" applied to plot #${plotId} (level ${prevTerraformLevel + 1})`,
         timestamp:   now,
       }, tx);
       await this.bumpLastTs(now, tx);

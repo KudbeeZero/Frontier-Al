@@ -101,6 +101,12 @@ export function rowToParcel(row: ParcelRow): LandParcel {
     handoverCount:       (row as any).handoverCount ?? 0,
     hazardLevel:         (row as any).hazardLevel ?? 0,
     stability:           (row as any).stability ?? 100,
+    terraformStatus:     ((row as any).terraformStatus ?? "none") as "none" | "active" | "degraded",
+    terraformedAt:       (row as any).terraformedAt ? Number((row as any).terraformedAt) : null,
+    terraformLevel:      (row as any).terraformLevel ?? 0,
+    terraformType:       (row as any).terraformType ?? null,
+    metadataVersion:     (row as any).metadataVersion ?? 1,
+    visualStateRevision: (row as any).visualStateRevision ?? 0,
   };
 }
 

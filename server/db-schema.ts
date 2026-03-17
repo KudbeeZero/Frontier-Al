@@ -196,6 +196,16 @@ export const parcels = pgTable(
     // ── Terraforming ────────────────────────────────────────────────────────
     hazardLevel:          integer("hazard_level").notNull().default(0),       // 0–100
     stability:            integer("stability").notNull().default(100),        // 0–100
+
+    // ── Terraform State Tracking (migration 0002) ────────────────────────────
+    // Canonical source of truth for terraforming progression.
+    // Metadata endpoint reads these to reflect state without ASA burn/remint.
+    terraformStatus:      varchar("terraform_status", { length: 20 }).notNull().default("none"),  // 'none' | 'active' | 'degraded'
+    terraformedAt:        bigint("terraformed_at", { mode: "number" }),                            // Unix ms of last terraform action
+    terraformLevel:       integer("terraform_level").notNull().default(0),                         // cumulative actions applied
+    terraformType:        varchar("terraform_type", { length: 30 }),                               // last action type
+    metadataVersion:      integer("metadata_version").notNull().default(1),                        // bumped on every state change
+    visualStateRevision:  integer("visual_state_revision").notNull().default(0),                   // bumped on biome/visual changes
   },
   (t) => ({
     /** Fast lookup of all plots owned by a given player. */

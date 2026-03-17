@@ -228,6 +228,18 @@ export interface LandParcel {
   hazardLevel: number;
   /** Terraforming: terrain stability (0–100, 100 = fully stable) */
   stability: number;
+  /** Terraform lifecycle: 'none' | 'active' | 'degraded' */
+  terraformStatus: "none" | "active" | "degraded";
+  /** Unix ms timestamp of the last terraform action applied to this plot */
+  terraformedAt: number | null;
+  /** Cumulative count of terraform actions applied (drives visual progression) */
+  terraformLevel: number;
+  /** Action type of the most recent terraform operation */
+  terraformType: string | null;
+  /** Monotonic counter — incremented on every state change; used by metadata consumers to detect updates */
+  metadataVersion: number;
+  /** Monotonic counter — incremented on biome or visual changes; drives render refresh */
+  visualStateRevision: number;
 }
 
 export interface Player {

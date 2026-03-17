@@ -674,6 +674,7 @@ export function LandSheet({
   const [expanded, setExpanded] = useState(false);
   const [showTerraformPanel, setShowTerraformPanel] = useState(false);
   const [pendingBiome, setPendingBiome] = useState<string | null>(null);
+  const [lastTerraformResult, setLastTerraformResult] = useState<{ fromBiome: string; toBiome: string; level: number } | null>(null);
 
   const TERRAFORM_COST = TERRAFORM_COSTS.convert_biome;
 
@@ -683,7 +684,13 @@ export function LandSheet({
         playerId: player?.id,
         action: { type: "convert_biome", targetBiome },
       }),
-    onSuccess: () => {
+    onSuccess: (_data, targetBiome) => {
+      const toBiome = TERRAFORM_BIOME_MAP[targetBiome] ?? targetBiome;
+      setLastTerraformResult({
+        fromBiome: parcel?.biome ?? "unknown",
+        toBiome,
+        level: (parcel?.terraformLevel ?? 0) + 1,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
       setShowTerraformPanel(false);
       setPendingBiome(null);
@@ -766,12 +773,37 @@ export function LandSheet({
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-display uppercase tracking-wide mb-1">
               <span style={{ color: biomeColors[parcel.biome] }}>■</span>
               <span>{parcel.biome} zone</span>
+              {(parcel.terraformStatus && parcel.terraformStatus !== "none") && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[8px] px-1.5 py-0 ml-auto font-display uppercase tracking-wide",
+                    parcel.terraformStatus === "active"   && "border-emerald-500/60 text-emerald-400",
+                    parcel.terraformStatus === "degraded" && "border-orange-500/60 text-orange-400"
+                  )}
+                >
+                  <Layers className="w-2 h-2 mr-0.5 inline" />
+                  Lvl {parcel.terraformLevel ?? 0}
+                  {parcel.terraformStatus === "degraded" ? " ⚠ Degraded" : " Terraformed"}
+                </Badge>
+              )}
             </div>
             <div className="flex gap-3 font-mono text-[9px] text-muted-foreground">
               <span className="text-iron">⛏ ×{biomeBonus.ironMod.toFixed(1)} iron</span>
               <span className="text-fuel">⛽ ×{biomeBonus.fuelMod.toFixed(1)} fuel</span>
               <span className="text-purple-400">💎 ×{biomeBonus.crystalMod.toFixed(1)} crystal</span>
             </div>
+            {(parcel.terraformStatus && parcel.terraformStatus !== "none" && parcel.terraformedAt) && (
+              <div className="mt-1 text-[8px] text-muted-foreground font-mono flex gap-2 flex-wrap">
+                <span>Last: {parcel.terraformType?.replace(/_/g, " ") ?? "—"}</span>
+                <span>·</span>
+                <span>{new Date(parcel.terraformedAt).toLocaleDateString()}</span>
+                <span>·</span>
+                <span>Hazard {parcel.hazardLevel ?? 0}%</span>
+                <span>·</span>
+                <span>Stability {parcel.stability ?? 100}%</span>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2 mb-2">
             <div className="p-2.5 rounded-lg bg-gradient-to-br from-muted/60 to-muted/30 border border-border/40 text-center hover:border-primary/40 transition-colors">
@@ -1049,6 +1081,25 @@ export function LandSheet({
               </div>
             );
           })()}
+
+          {/* Terraform success confirmation */}
+          {lastTerraformResult && (
+            <div className="mt-2 p-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between gap-2">
+              <div className="text-[9px] font-mono text-emerald-400">
+                <Layers className="w-3 h-3 inline mr-1" />
+                <span className="capitalize">{lastTerraformResult.fromBiome}</span>
+                <span className="mx-1 text-muted-foreground">→</span>
+                <span className="capitalize font-bold" style={{ color: biomeColors[lastTerraformResult.toBiome as BiomeType] ?? undefined }}>
+                  {lastTerraformResult.toBiome}
+                </span>
+                <span className="ml-1.5 text-muted-foreground">Lvl {lastTerraformResult.level}</span>
+              </div>
+              <button
+                className="text-[8px] text-muted-foreground hover:text-foreground"
+                onClick={() => setLastTerraformResult(null)}
+              >✕</button>
+            </div>
+          )}
 
           {expanded && isOwned && (
             <div className="mt-3 pt-3 border-t border-border space-y-3">
