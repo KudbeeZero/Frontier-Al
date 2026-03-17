@@ -345,3 +345,37 @@ pera-wallet-sign-txn-modal {
   from { opacity: 1; }
   to { opacity: 0; }
 }
+
+/* ── Landing Page Mobile Responsiveness ───────────────────────────────── */
+@media (max-width: 768px) {
+  /* Reduce hero section gap on mobile */
+  .hero-section {
+    gap: 20px !important;
+  }
+  
+  /* Scale down planet on mobile */
+  .planet-wrap {
+    flex: 1 1 auto !important;
+    max-width: 240px !important;
+    margin: 0 auto !important;
+    padding: 0 10px;
+  }
+  
+  /* Adjust Planet component size */
+  .float-anim {
+    width: 240px !important;
+    height: 240px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Even smaller on phones */
+  .planet-wrap {
+    max-width: 200px !important;
+  }
+  
+  .float-anim {
+    width: 200px !important;
+    height: 200px !important;
+  }
+}

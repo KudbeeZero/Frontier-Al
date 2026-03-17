@@ -577,12 +577,6 @@ export default function LandingPage() {
                 cursor: "pointer", fontWeight: 700, fontFamily: "inherit",
                 boxShadow: "0 0 24px rgba(60,100,255,0.2)",
               }}>▶ Enter Game</button>
-              <button onClick={() => setLocation("/info/features")} style={{
-                background: "transparent", border: "1px solid rgba(60,90,180,0.35)",
-                borderRadius: 8, padding: "13px 24px", color: "rgba(150,185,255,0.75)",
-                fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase",
-                cursor: "pointer", fontFamily: "inherit",
-              }}>Learn More →</button>
             </div>
           </div>
 
