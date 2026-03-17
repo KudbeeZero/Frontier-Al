@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { initSeasonManager } from "./engine/season/manager";
 import { hydrateWorldEventsFromRedis } from "./worldEventStore";
@@ -28,6 +29,9 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Security headers (helmet middleware)
+app.use(helmet());
 
 // CORS — allow cross-origin requests from the Vercel frontend in production
 app.use((req, res, next) => {
