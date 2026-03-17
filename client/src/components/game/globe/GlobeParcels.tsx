@@ -92,18 +92,35 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     return best;
   }, [plotPositions3D]);
 
+  // O(1) reverse-lookup: plotId → index in plotCoords array — built once, never changes
+  const plotIdToIndex = useMemo(() => {
+    const m = new Map<number, number>();
+    plotCoords.forEach((c, i) => m.set(c.plotId, i));
+    return m;
+  }, [plotCoords]);
+
+  // Quickly derive which indices need per-frame animation WITHOUT looping 21k entries
   const animatedIndices = useMemo(() => {
+    const idxSet = new Set<number>();
     const currentMap = plotIdToParcelRef.current;
-    const indices: number[] = [];
-    for (let i = 0; i < plotCoords.length; i++) {
-      const coord = plotCoords[i];
-      const parcel = currentMap.get(coord.plotId);
-      if (parcel?.id === selectedPlotId || parcel?.ownerId === currentPlayerId || parcel?.activeBattleId) {
-        indices.push(i);
-      }
+    // Add the selected plot
+    if (selectedPlotId) {
+      currentMap.forEach((parcel, plotId) => {
+        if (parcel.id === selectedPlotId) {
+          const idx = plotIdToIndex.get(plotId);
+          if (idx !== undefined) idxSet.add(idx);
+        }
+      });
     }
-    return indices;
-  }, [plotCoords, plotVisualFingerprint, selectedPlotId, currentPlayerId]);
+    // Add owned and battle plots
+    currentMap.forEach((parcel, plotId) => {
+      if (parcel.ownerId === currentPlayerId || parcel.activeBattleId) {
+        const idx = plotIdToIndex.get(plotId);
+        if (idx !== undefined) idxSet.add(idx);
+      }
+    });
+    return Array.from(idxSet);
+  }, [plotIdToIndex, plotVisualFingerprint, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -383,7 +400,7 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
             .addScaledVector(right, offsetRight)
             .addScaledVector(up, offsetUp)
             .normalize()
-            .multiplyScalar(GLOBE_RADIUS * 1.007);
+            .multiplyScalar(GLOBE_RADIUS * 1.028); // above main tiles (1.012/1.018)
 
           // Flat static colors — no clone/multiplyScalar to keep this loop cheap
           const fillColor = new THREE.Color(
@@ -422,25 +439,28 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
 
   return (
     <>
-      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+      {/* renderOrder 3/4 so sub-tiles render above main plot layer (1/2) */}
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} renderOrder={3}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.70}
+          opacity={0.80}
+          depthTest={false}
           depthWrite={false}
-          side={THREE.DoubleSide}
+          side={THREE.FrontSide}
           toneMapped={false}
         />
       </instancedMesh>
-      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} renderOrder={4}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
           transparent
-          opacity={0.85}
+          opacity={0.90}
+          depthTest={false}
           depthWrite={false}
-          side={THREE.DoubleSide}
+          side={THREE.FrontSide}
           toneMapped={false}
         />
       </instancedMesh>
