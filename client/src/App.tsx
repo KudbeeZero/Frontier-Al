@@ -22,48 +22,50 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <Toaster />
-          <Switch>
-            <Route path="/game">
-              <WalletProvider enableAutoConnect={true}>
-                <GamePage />
-              </WalletProvider>
-            </Route>
-            <Route path="/">
-              <WalletProvider enableAutoConnect={false}>
-                <LandingPage />
-              </WalletProvider>
-            </Route>
-            <Route path="/info/economics">
-              <WalletProvider enableAutoConnect={false}>
-                <LandingEconomics />
-              </WalletProvider>
-            </Route>
-            <Route path="/info/gameplay">
-              <WalletProvider enableAutoConnect={false}>
-                <LandingGameplay />
-              </WalletProvider>
-            </Route>
-            <Route path="/info/features">
-              <WalletProvider enableAutoConnect={false}>
-                <LandingFeatures />
-              </WalletProvider>
-            </Route>
-            <Route path="/info/updates">
-              <WalletProvider enableAutoConnect={false}>
-                <LandingUpdates />
-              </WalletProvider>
-            </Route>
-            <Route path="/testnet">
-              <WalletProvider enableAutoConnect={false}>
-                <TestnetPage />
-              </WalletProvider>
-            </Route>
-            <Route>
-              <WalletProvider enableAutoConnect={false}>
-                <NotFound />
-              </WalletProvider>
-            </Route>
-          </Switch>
+          <UseWalletProvider manager={walletManager}>
+            <Switch>
+              <Route path="/game">
+                <WalletProvider enableAutoConnect={true}>
+                  <GamePage />
+                </WalletProvider>
+              </Route>
+              <Route path="/">
+                <WalletProvider enableAutoConnect={false}>
+                  <LandingPage />
+                </WalletProvider>
+              </Route>
+              <Route path="/info/economics">
+                <WalletProvider enableAutoConnect={false}>
+                  <LandingEconomics />
+                </WalletProvider>
+              </Route>
+              <Route path="/info/gameplay">
+                <WalletProvider enableAutoConnect={false}>
+                  <LandingGameplay />
+                </WalletProvider>
+              </Route>
+              <Route path="/info/features">
+                <WalletProvider enableAutoConnect={false}>
+                  <LandingFeatures />
+                </WalletProvider>
+              </Route>
+              <Route path="/info/updates">
+                <WalletProvider enableAutoConnect={false}>
+                  <LandingUpdates />
+                </WalletProvider>
+              </Route>
+              <Route path="/testnet">
+                <WalletProvider enableAutoConnect={false}>
+                  <TestnetPage />
+                </WalletProvider>
+              </Route>
+              <Route>
+                <WalletProvider enableAutoConnect={false}>
+                  <NotFound />
+                </WalletProvider>
+              </Route>
+            </Switch>
+          </UseWalletProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

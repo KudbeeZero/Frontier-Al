@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useWallet as useWalletLib } from "@txnlab/use-wallet-react";
 import {
   getAccountBalance,
@@ -46,77 +46,38 @@ interface WalletProviderProps {
 }
 
 export function WalletProvider({ children, enableAutoConnect = false }: WalletProviderProps) {
-  const hasSavedWallet = !!(localStorage.getItem("frontier_wallet_type"));
-
-  const [state, setState] = useState<WalletState>({
-    isConnected: false,
-    walletStatus: hasSavedWallet && enableAutoConnect ? "restoring" : "disconnected",
-    address: null,
-    displayAddress: null,
-    balance: 0,
-    isConnecting: false,
-    error: null,
-    walletType: null,
-    signerReady: false,
-    blockchainReady: false,
-  });
+  const { wallets, activeAddress, signTransactions } = useWalletLib();
 
   const [balance, setBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blockchainReady, setBlockchainReady] = useState(false);
-  // Brief restoring window so GameLayout can show the reconnecting spinner
   const [isInitialized, setIsInitialized] = useState(false);
+  const isReconnecting = useRef(false);
 
   useEffect(() => {
     fetchBlockchainStatus().then((status) => {
       setBlockchainReady(status.ready || !!status.adminAddress);
     });
-    // Give use-wallet ~800ms to restore any saved session before we declare "disconnected"
     const timer = setTimeout(() => setIsInitialized(true), 800);
     return () => clearTimeout(timer);
   }, []);
 
-  // Register/unregister the signer whenever the active wallet changes
+  // Register the signer whenever the active wallet changes
   useEffect(() => {
-    if (!enableAutoConnect || isReconnecting.current) return;
-    isReconnecting.current = true;
-
-    const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;
-    const savedAddress = localStorage.getItem("frontier_wallet_address");
-
-    if (savedType === "lute" && savedAddress) {
-      luteWallet
-        .connect(ALGORAND_TESTNET.genesisID)
-        .then((accounts) => {
-          const addr = accounts.length > 0 ? accounts[0] : savedAddress;
-          setActiveWalletType("lute");
-          localStorage.setItem("frontier_wallet_address", addr);
-          localStorage.setItem("frontier_onboarded_v1", "1");
-          setState((prev) => ({
-            ...prev,
-            isConnected: true,
-            walletStatus: "connected",
-            address: addr,
-            displayAddress: formatAddress(addr),
-            balance: 0,
-            isConnecting: false,
-            error: null,
-            walletType: "lute",
-            signerReady: true,
-          }));
-          updateBalance(addr);
-        })
-        .catch((err) => {
-          console.warn("LUTE reconnection failed, clearing saved state:", err);
-          localStorage.removeItem("frontier_wallet_type");
-          localStorage.removeItem("frontier_wallet_address");
-          setState((prev) => ({ ...prev, walletStatus: "disconnected" }));
-        })
-        .finally(() => {
-          isReconnecting.current = false;
-        });
-      return;
+    if (activeAddress && signTransactions) {
+      registerWalletSigner(async (txns) => {
+        const results = await signTransactions([txns]);
+        return results.map((r) => (r === null ? new Uint8Array() : r));
+      });
+      localStorage.setItem("frontier_wallet_type", "use-wallet");
+      localStorage.setItem("frontier_wallet_address", activeAddress);
+    } else {
+      registerWalletSigner(null);
+      if (!activeAddress) {
+        localStorage.removeItem("frontier_wallet_type");
+        localStorage.removeItem("frontier_wallet_address");
+      }
     }
   }, [activeAddress, signTransactions]);
 
@@ -146,7 +107,6 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
     } catch (err: unknown) {
       const e = err as { message?: string; data?: { type?: string } };
       const msg = e?.message || "";
-      // Ignore modal-closed / user-cancelled errors
       if (!msg.toLowerCase().includes("cancel") && e?.data?.type !== "CONNECT_MODAL_CLOSED") {
         setError(msg || "Failed to connect wallet");
       }
@@ -207,10 +167,6 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
       {children}
     </WalletContext.Provider>
   );
-}
-
-export function WalletProvider({ children }: { children: ReactNode }) {
-  return <InnerWalletProvider>{children}</InnerWalletProvider>;
 }
 
 export function useWallet() {

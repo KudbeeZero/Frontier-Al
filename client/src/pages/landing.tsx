@@ -503,7 +503,7 @@ export default function LandingPage() {
             </div>
             <div style={{
               fontSize: 11, color: "rgba(150,200,255,0.7)", lineHeight: 1.8, fontFamily: "monospace",
-              textAlign: "left", space: "pre-wrap",
+              textAlign: "left", whiteSpace: "pre-wrap",
             }}>
               <div style={{ marginBottom: 6, animation: countdown > 2 ? "none" : "fadeInUp 0.6s ease-out" }}>
                 <span style={{ color: "rgba(100,200,100,0.8)" }}>✓</span> Initializing frontier access…
