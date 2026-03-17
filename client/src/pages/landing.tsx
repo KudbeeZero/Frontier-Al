@@ -56,7 +56,7 @@ function Rocket() {
 // ─── Animated Planet ─────────────────────────────────────────────────────────
 function Planet() {
   return (
-    <div className="float-anim" style={{ position: "relative", width: 260, height: 260, flexShrink: 0 }}>
+    <div className="float-anim" style={{ position: "relative", width: 320, height: 320, flexShrink: 0 }}>
       <div style={{
         position: "absolute", inset: -40, borderRadius: "50%",
         background: "radial-gradient(circle, rgba(60,100,255,0.08) 0%, transparent 70%)",
@@ -491,9 +491,9 @@ export default function LandingPage() {
 
         {/* ── Hero Section ── */}
         <div className="hero-section" style={{
-          width: "100%", maxWidth: 940,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 40, marginBottom: 70, flexWrap: "wrap",
+          width: "100%", maxWidth: 1100,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          gap: 60, marginBottom: 70, flexWrap: "wrap",
         }}>
           {/* Left: Text */}
           <div style={{ flex: "1 1 320px", minWidth: 280, animation: "fadeInLeft 0.9s ease-out forwards" }}>

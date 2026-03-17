@@ -845,13 +845,6 @@ export function GameLayout() {
             </div>
           )}
         </>
-      ) : isLoading ? (
-        <div className="absolute inset-0 flex items-center justify-center z-10">
-          <div className="text-center">
-            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="font-display text-lg uppercase tracking-wide text-muted-foreground">Loading Game World...</p>
-          </div>
-        </div>
       ) : null}
 
       <div className="absolute top-0 left-0 right-0 z-40">
