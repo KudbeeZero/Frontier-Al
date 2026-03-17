@@ -374,15 +374,6 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
       }
     }
 
-    const zeroScale = new THREE.Matrix4().makeScale(0, 0, 0);
-    const blackColor = new THREE.Color(0, 0, 0);
-    for (let i = instanceIdx; i < MAX_SUB_TILES; i++) {
-      fillMeshRef.current.setMatrixAt(i, zeroScale);
-      borderMeshRef.current.setMatrixAt(i, zeroScale);
-      fillMeshRef.current.setColorAt(i, blackColor);
-      borderMeshRef.current.setColorAt(i, blackColor);
-    }
-
     fillMeshRef.current.instanceMatrix.needsUpdate   = true;
     borderMeshRef.current.instanceMatrix.needsUpdate = true;
     if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
@@ -393,7 +384,7 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
 
   return (
     <>
-      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} count={0}>
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
@@ -404,7 +395,7 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
           toneMapped={false}
         />
       </instancedMesh>
-      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} count={0}>
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors

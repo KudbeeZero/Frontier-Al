@@ -1,0 +1,27 @@
+We already applied these fixes but the black screen persists:
+	1.	client/src/components/game/LandSheet.tsx — Removed async/await from subdivide mutation’s onSuccess, added invalidation of /api/plots/${parcel.plotId}/sub-parcels query key
+	2.	client/src/components/game/globe/GlobeParcels.tsx — Added count={0} to both <instancedMesh> elements in SubParcelOverlay
+	3.	client/src/hooks/useGameState.ts — Added placeholderData: keepPreviousData to prevent globe unmount during refetch
+What I need you to do:
+	1.	Reproduce and diagnose — Open the browser console, subdivide a parcel, and capture any errors/warnings (especially Three.js or React errors). Check the Network tab to confirm /api/game/state and /api/plots/:id/sub-parcels requests complete successfully after subdivision.
+	2.	Check if the globe component unmounts — Add temporary console.log statements in the globe’s mount/unmount lifecycle to confirm whether keepPreviousData is actually preventing unmount. Check if any parent component (layout, route wrapper, etc.) is conditionally rendering based on game state and causing a full remount.
+	3.	Check Three.js rendering pipeline — Inspect whether the Three.js canvas/renderer itself goes black. This could be:
+	∙	A camera reset to origin (looking inside geometry)
+	∙	The scene being cleared/disposed
+	∙	A WebGL context loss
+	∙	The canvas being removed from DOM and recreated
+	∙	A CSS/z-index issue where something covers the canvas
+	4.	Check the subdivide API response — Verify /api/plots/:id/subdivide returns the correct data and that the game state returned after invalidation still contains valid parcel/plot data with correct coordinates.
+	5.	Check for React Suspense boundaries or error boundaries — These could be catching errors during the refetch cycle and rendering a fallback (black/empty screen).
+	6.	Check other conditional renders — Search for any component between the root and the globe canvas that conditionally renders based on isLoading, isPending, !data, or similar checks on the game state query. The keepPreviousData fix only helps if nothing else checks isFetching or isPending to hide the globe.
+	7.	Specific files to investigate:
+	∙	Whatever component renders <Canvas> from @react-three/fiber
+	∙	Any layout/wrapper that consumes useGameState() and conditionally renders children
+	∙	GlobeParcels.tsx — check if SubParcelOverlay or PlotOverlay has any effect that disposes/recreates the scene
+	∙	Check if R3F’s <Canvas> has a key prop that changes on state update, forcing a full remount
+The root cause is likely one of:
+	∙	A parent component checking isLoading/isPending instead of !data, causing unmount even with keepPreviousData
+	∙	The Three.js canvas or scene being fully disposed and recreated on state change
+	∙	A React key prop changing on the Canvas or a wrapper, forcing remount
+	∙	A WebGL context loss triggered by DOM manipulation during the refetch cycle
+Please find the actual cause and fix it.

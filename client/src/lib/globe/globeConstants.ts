@@ -82,4 +82,4 @@ export const BORDER_SIZE = GLOBE_RADIUS * 0.026;
 export const SUB_FILL_SIZE   = GLOBE_RADIUS * 0.010;
 export const SUB_BORDER_SIZE = GLOBE_RADIUS * 0.011;
 export const SUB_SPACING     = GLOBE_RADIUS * 0.011;
-export const MAX_SUB_TILES   = 21000 * 9;
+export const MAX_SUB_TILES   = 9 * 500;

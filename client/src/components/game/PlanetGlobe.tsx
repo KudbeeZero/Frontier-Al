@@ -5,7 +5,7 @@
  */
 
 import * as THREE from "three";
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -53,6 +53,11 @@ function Scene({
   controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents,
   replayEvents, replayTime, replayVisibleTypes, streamMode, flyRequestId,
 }: SceneProps) {
+  useEffect(() => {
+    console.log("[GLOBE-SCENE] mounted");
+    return () => console.log("[GLOBE-SCENE] UNMOUNTED ← if this appears after subdivide, globe remount was the root cause");
+  }, []);
+
   const battleHotspots = useMemo(() => {
     if (!streamMode) return [];
     const parcelMap = new Map(parcels.map(p => [p.id, p]));
