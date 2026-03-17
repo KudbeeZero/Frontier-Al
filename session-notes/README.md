@@ -13,3 +13,4 @@ Use these notes to track decisions, context, and progress across sessions.
 - [2026-03-16](./2026-03-16.md) — Checkly removal, session notes setup, base URL status
 - [2026-03-16-faction-alignment](./2026-03-16-faction-alignment.md) — Faction alignment system (backend + frontend)
 - [2026-03-16-faction-todos](./2026-03-16-faction-todos.md) — Faction bug fix, cooldown, TopBar badge, leaderboard
+- [2026-03-17](./2026-03-17.md) — Find Plot button in SubParcelGrid (subdivision UI)
