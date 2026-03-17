@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Package, Pickaxe, Fuel, Gem, MapPin, Shield,
-  ArrowDownToLine, Zap, FlaskConical, Search, Clock, CheckCircle,
+  ArrowDownToLine, Zap, FlaskConical, Search, Clock, CheckCircle, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -224,6 +224,48 @@ export function InventoryPanel({
             <span className="text-[10px] text-muted-foreground font-display uppercase">FRNTR</span>
           </div>
         </div>
+
+        {/* Rare Mineral Vaults */}
+        {((player.xenoriteVault ?? 0) > 0 || (player.voidShardVault ?? 0) > 0 || (player.plasmaCoreVault ?? 0) > 0 || (player.darkMatterVault ?? 0) > 0) && (
+          <div className="rounded-md bg-muted/30 p-2.5 mb-3">
+            <div className="flex items-center gap-1 mb-1.5">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span className="text-[10px] font-display uppercase tracking-wide text-muted-foreground">Rare Minerals</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              <div>
+                <span className="font-mono text-sm font-bold text-amber-400 block">{player.xenoriteVault ?? 0}</span>
+                <span className="text-[9px] text-muted-foreground uppercase">Xenorite</span>
+                <span className="text-[8px] text-muted-foreground block">/50</span>
+              </div>
+              <div>
+                <span className="font-mono text-sm font-bold text-violet-400 block">{player.voidShardVault ?? 0}</span>
+                <span className="text-[9px] text-muted-foreground uppercase">Void Shard</span>
+                <span className="text-[8px] text-muted-foreground block">/50</span>
+              </div>
+              <div>
+                <span className="font-mono text-sm font-bold text-cyan-400 block">{player.plasmaCoreVault ?? 0}</span>
+                <span className="text-[9px] text-muted-foreground uppercase">Plasma Core</span>
+                <span className="text-[8px] text-muted-foreground block">/50</span>
+              </div>
+              <div>
+                <span className="font-mono text-sm font-bold text-rose-400 block">{player.darkMatterVault ?? 0}</span>
+                <span className="text-[9px] text-muted-foreground uppercase">Dark Matter</span>
+                <span className="text-[8px] text-muted-foreground block">/50</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loot Box count */}
+        {(player.lootBoxes?.length ?? 0) > 0 && (
+          <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 mb-3 flex items-center gap-2">
+            <Package className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-[10px] font-display uppercase tracking-wide text-amber-400">
+              {player.lootBoxes!.length} Loot Box{player.lootBoxes!.length !== 1 ? "es" : ""} available
+            </span>
+          </div>
+        )}
 
         {/* Lifetime resource extraction totals */}
         <div className="rounded-md bg-muted/30 p-2.5 mb-3">

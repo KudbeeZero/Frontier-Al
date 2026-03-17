@@ -136,6 +136,11 @@ export function rowToPlayer(row: PlayerRow, ownedParcelIds: string[]): Player {
     testnetProgress:      (row.testnetProgress ?? []) as string[],
     playerFactionId:      (row as any).playerFactionId ?? null,
     factionJoinedAt:      (row as any).factionJoinedAt ? Number((row as any).factionJoinedAt) : null,
+    xenoriteVault:        (row as any).xenoriteVault   ?? 0,
+    voidShardVault:       (row as any).voidShardVault  ?? 0,
+    plasmaCoreVault:      (row as any).plasmaCoreVault ?? 0,
+    darkMatterVault:      (row as any).darkMatterVault ?? 0,
+    lootBoxes:            [],
   };
 }
 

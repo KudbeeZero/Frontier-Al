@@ -66,7 +66,8 @@ import {
   ORBITAL_IMPACT_CHANCE,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType, ImprovementType } from "@shared/schema";
-import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier } from "@shared/schema";
+import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier, RARE_MINERAL_DROP_RATES, RARE_MINERAL_VAULT_CAP } from "@shared/schema";
+import type { RareMineralType } from "@shared/schema";
 import { sphereDistance } from "../sphereUtils";
 import {
   evaluateReconquest,
@@ -642,7 +643,7 @@ export class DbStorage implements IStorage {
 
   // ── IStorage – mutating ────────────────────────────────────────────────────
 
-  async mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number }> {
+  async mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number; mineralDrops: Partial<Record<RareMineralType, number>> }> {
     await this.initialize();
     return this.db.transaction(async (tx) => {
       const [[parcelRow], [playerRow]] = await Promise.all([
@@ -682,7 +683,16 @@ export class DbStorage implements IStorage {
       const finalFuel    = Math.floor(fuelYield    * ratio);
       const finalCrystal = Math.floor(crystalYield * ratio);
 
-      // Richness depletes by 0.5 per mine (applied every other mine via floor).
+      // ── Rare mineral drops ────────────────────────────────────────────────
+      const biomeDropRates = RARE_MINERAL_DROP_RATES[parcel.biome] ?? {};
+      const mineralDrops: Partial<Record<RareMineralType, number>> = {};
+      for (const [mineral, chance] of Object.entries(biomeDropRates) as [RareMineralType, number][]) {
+        if (Math.random() < chance) {
+          mineralDrops[mineral] = 1;
+        }
+      }
+
+      // ── Richness depletes by 0.5 per mine (applied every other mine via floor).
       // Floor raised to 40 so depleted plots still feel worth mining.
       const newRichness = parcel.richness > 40
         ? Math.max(40, Math.floor(parcel.richness - 0.5))
@@ -708,11 +718,18 @@ export class DbStorage implements IStorage {
             totalIronMined:    playerRow.totalIronMined    + finalIron,
             totalFuelMined:    playerRow.totalFuelMined    + finalFuel,
             totalCrystalMined: playerRow.totalCrystalMined + finalCrystal,
+            ...(mineralDrops.xenorite    ? { xenoriteVault:   sql`LEAST(xenorite_vault + 1, ${RARE_MINERAL_VAULT_CAP})` }    : {}),
+            ...(mineralDrops.void_shard  ? { voidShardVault:  sql`LEAST(void_shard_vault + 1, ${RARE_MINERAL_VAULT_CAP})` }  : {}),
+            ...(mineralDrops.plasma_core ? { plasmaCoreVault: sql`LEAST(plasma_core_vault + 1, ${RARE_MINERAL_VAULT_CAP})` } : {}),
+            ...(mineralDrops.dark_matter ? { darkMatterVault: sql`LEAST(dark_matter_vault + 1, ${RARE_MINERAL_VAULT_CAP})` } : {}),
           })
           .where(eq(playersTable.id, player.id)),
       ]);
 
-      console.log(`[mine] plotId=${parcel.plotId} iron=${finalIron} fuel=${finalFuel} crystal=${finalCrystal} stored`);
+      const mineralDropLog = Object.keys(mineralDrops).length > 0
+        ? ` minerals=${JSON.stringify(mineralDrops)}`
+        : "";
+      console.log(`[mine] plotId=${parcel.plotId} iron=${finalIron} fuel=${finalFuel} crystal=${finalCrystal} stored${mineralDropLog}`);
 
       await this.addEvent({
         type:        "mine",
@@ -723,7 +740,7 @@ export class DbStorage implements IStorage {
       }, tx);
       await this.bumpLastTs(now, tx);
 
-      return { iron: finalIron, fuel: finalFuel, crystal: finalCrystal };
+      return { iron: finalIron, fuel: finalFuel, crystal: finalCrystal, mineralDrops };
     });
   }
 

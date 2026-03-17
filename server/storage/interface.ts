@@ -27,6 +27,7 @@ import type {
   MarketPosition,
   MarketOutcome,
   CreateMarketAction,
+  RareMineralType,
 } from "@shared/schema";
 import type { TradeOrder, InsertTradeOrder } from "../db-schema";
 
@@ -44,7 +45,7 @@ export interface IStorage {
   /** Find an existing player by wallet address (case-insensitive), or create a fresh one. */
   getOrCreatePlayerByAddress(address: string): Promise<Player>;
 
-  mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number }>;
+  mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number; mineralDrops: Partial<Record<RareMineralType, number>> }>;
   upgradeBase(action: UpgradeAction): Promise<LandParcel>;
   deployAttack(action: AttackAction): Promise<Battle>;
   buildImprovement(action: BuildAction): Promise<LandParcel>;
