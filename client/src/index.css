@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tutorial highlight ───────────────────────────────────────────────────── */
+/* Applied by TutorialOverlay to the currently targeted UI element            */
+.tutorial-highlight {
+  outline: 2px solid rgba(0, 229, 255, 0.85) !important;
+  outline-offset: 3px !important;
+  box-shadow:
+    0 0 0 6px rgba(0, 229, 255, 0.08),
+    0 0 24px rgba(0, 229, 255, 0.25) !important;
+  transition: outline 0.25s ease, box-shadow 0.25s ease !important;
+}
+
 /* LIGHT MODE - Cyberpunk Military Theme */
 :root {
   --button-outline: rgba(0,0,0, .10);
