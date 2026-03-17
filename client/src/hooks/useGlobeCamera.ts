@@ -17,9 +17,11 @@ interface UseCameraControllerProps {
   controlsRef: React.RefObject<OrbitControlsImpl>;
   streamMode?: boolean;
   battleHotspots?: { lat: number; lng: number }[];
+  /** Increment to force a re-fly even when lat/lng haven't changed. */
+  flyRequestId?: number;
 }
 
-export function CameraController({ targetLat, targetLng, controlsRef, streamMode, battleHotspots }: UseCameraControllerProps) {
+export function CameraController({ targetLat, targetLng, controlsRef, streamMode, battleHotspots, flyRequestId }: UseCameraControllerProps) {
   const { camera } = useThree();
 
   const flyTarget  = useRef<THREE.Vector3 | null>(null);
@@ -37,12 +39,12 @@ export function CameraController({ targetLat, targetLng, controlsRef, streamMode
       return;
     }
     const key = `${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
-    if (key === prevTarget.current) return;
+    if (key === prevTarget.current && flyRequestId === undefined) return;
     prevTarget.current = key;
 
     const surfaceVec = latLngToVec3(targetLat, targetLng, 1);
     flyTarget.current = surfaceVec.clone().multiplyScalar(FLY_DISTANCE);
-  }, [targetLat, targetLng]);
+  }, [targetLat, targetLng, flyRequestId]);
 
   useEffect(() => {
     const resetIdle = () => {

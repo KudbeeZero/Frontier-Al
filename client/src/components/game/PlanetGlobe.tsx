@@ -43,6 +43,7 @@ interface SceneProps {
   replayTime?: number;
   replayVisibleTypes?: Set<string>;
   streamMode?: boolean;
+  flyRequestId?: number;
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ interface SceneProps {
 function Scene({
   parcels, players, currentPlayerId, selectedPlotId, onPlotSelect,
   controlsRef, targetLat, targetLng, battles, livePulses, orbitalEvents,
-  replayEvents, replayTime, replayVisibleTypes, streamMode,
+  replayEvents, replayTime, replayVisibleTypes, streamMode, flyRequestId,
 }: SceneProps) {
   const battleHotspots = useMemo(() => {
     if (!streamMode) return [];
@@ -70,6 +71,7 @@ function Scene({
         controlsRef={controlsRef}
         streamMode={streamMode}
         battleHotspots={battleHotspots}
+        flyRequestId={flyRequestId}
       />
       <StarField />
       <GlobeAtmosphere />
@@ -139,6 +141,8 @@ interface PlanetGlobeProps {
   activeBattleCount?: number;
   /** Enable stream mode: fullscreen hotspot camera + no HUD chrome. */
   streamMode?: boolean;
+  /** Increment to force a camera re-fly even when coordinates haven't changed. */
+  flyRequestId?: number;
 }
 
 export default function PlanetGlobe({
@@ -160,6 +164,7 @@ export default function PlanetGlobe({
   replayVisibleTypes,
   activeBattleCount = 0,
   streamMode = false,
+  flyRequestId,
 }: PlanetGlobeProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null!);
 
@@ -197,6 +202,7 @@ export default function PlanetGlobe({
           replayTime={replayTime}
           replayVisibleTypes={replayVisibleTypes}
           streamMode={streamMode}
+          flyRequestId={flyRequestId}
         />
       </Canvas>
 
