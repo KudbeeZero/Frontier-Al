@@ -60,23 +60,10 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     return m;
   }, [parcels]);
 
-  // Refs to hold latest data without triggering the heavy 21k effect
   const plotIdToParcelRef = useRef(plotIdToParcel);
   plotIdToParcelRef.current = plotIdToParcel;
-  const parcelsRef = useRef(parcels);
-  parcelsRef.current = parcels;
 
-  // Only changes when visually-relevant parcel fields change (not every WS push)
   const plotVisualFingerprint = useMemo(() => {
-    const parts: string[] = [];
-    for (const p of parcels) {
-      parts.push(`${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${p.isSubdivided ? 1 : 0}:${p.biome}`);
-    }
-    return parts.join("|");
-  const plotIdToParcelRef = useRef(plotIdToParcel);
-  plotIdToParcelRef.current = plotIdToParcel;
-
-  const parcelsRevision = useMemo(() => {
     return parcels
       .filter(p => p.ownerId || p.activeBattleId || p.isSubdivided)
       .map(p => `${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${Number(!!p.isSubdivided)}`)
@@ -234,13 +221,6 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
 
-    console.time("[PlotOverlay] full instance update");
-
-    const currentMap = plotIdToParcelRef.current;
-
-    for (let i = 0; i < plotCoords.length; i++) {
-      const coord  = plotCoords[i];
-      const parcel = currentMap.get(coord.plotId);
     const idToParcel = plotIdToParcelRef.current;
     const t0 = performance.now();
 
@@ -253,10 +233,13 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       const borderPos = borderPositions3D[i];
 
       const isOwned      = !!parcel?.ownerId;
+      const isSelected   = parcel?.id === selectedPlotId;
       const isSubdivided = !!(parcel as LandParcel)?.isSubdivided;
 
       let fillColor: THREE.Color;
-      if (parcel?.activeBattleId) {
+      if (isSelected) {
+        fillColor = COLOR_SELECTED.clone();
+      } else if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else if (isSubdivided) {
         fillColor = COLOR_SUBDIVIDED.clone();
@@ -264,12 +247,14 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      const borderColor = isOwned
-        ? COLOR_BORDER_OWNED.clone()
-        : COLOR_BORDER_UNOWNED.clone();
+      const borderColor = isSelected
+        ? COLOR_SELECTED.clone().multiplyScalar(1.5)
+        : isOwned
+          ? COLOR_BORDER_OWNED.clone()
+          : COLOR_BORDER_UNOWNED.clone();
 
-      const fillScale   = isOwned ? 1.0 : 0.85;
-      const borderScale = isOwned ? 1.0 : 0.85;
+      const fillScale   = isSelected ? 1.12 : isOwned ? 1.0 : 0.85;
+      const borderScale = isSelected ? 1.15 : isOwned ? 1.0 : 0.85;
       applyInstance(fillMeshRef.current,   i, fillPos,   FILL_SIZE   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, BORDER_SIZE * sizeVar * borderScale, borderColor);
     }
@@ -279,13 +264,9 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
 
-    if (parcelsRef.current.length > 0) readyRef.current = true;
-
-    console.timeEnd("[PlotOverlay] full instance update");
-  }, [plotVisualFingerprint, currentPlayerId, plotCoords,
     if (idToParcel.size > 0) readyRef.current = true;
-    console.log(`[PLOT-OVERLAY] full update: ${(performance.now() - t0).toFixed(1)}ms (${parcelsRevision.split("|").length} active parcels)`);
-  }, [parcelsRevision, currentPlayerId, selectedPlotId, plotCoords,
+    console.log(`[PLOT-OVERLAY] full update: ${(performance.now() - t0).toFixed(1)}ms`);
+  }, [plotVisualFingerprint, currentPlayerId, selectedPlotId, plotCoords,
       fillPositions3D, borderPositions3D]);
 
   const handlePointerMove = useCallback((e: any) => {
