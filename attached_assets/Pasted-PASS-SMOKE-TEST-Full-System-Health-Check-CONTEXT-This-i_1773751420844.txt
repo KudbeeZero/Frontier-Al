@@ -1,0 +1,217 @@
+PASS: SMOKE-TEST — Full System Health Check
+
+CONTEXT:
+This is a non-destructive read-only smoke test pass for FRONTIER. Do NOT modify any game logic,
+balance constants, DB schema, battle engine, AI engine, trade system, or WebSocket code.
+The sole purpose is to run a structured diagnostic across every major subsystem and report
+pass/fail with exact error output. No fixes in this pass — report only.
+
+---
+
+STEP 1 — TypeScript Compile Check
+
+Run:
+  npx tsc --noEmit
+
+Capture all errors. Report count and each error with file + line. If zero errors, mark ✅ PASS.
+
+---
+
+STEP 2 — Environment Variable Audit
+
+Check that the following env vars are present (non-empty) in the Replit Secrets or .env:
+
+Required:
+  - DATABASE_URL
+  - UPSTASH_REDIS_REST_URL
+  - UPSTASH_REDIS_REST_TOKEN
+  - SESSION_SECRET
+  - ALGORAND_NETWORK (expected: "testnet")
+  - PUBLIC_BASE_URL (must NOT fall back to req.get("host"))
+
+Optional but flag if missing:
+  - AI_ENABLED
+  - FORCE_NEW_ASA
+
+For each: ✅ PRESENT / ❌ MISSING / ⚠️ SUSPICIOUS VALUE
+
+---
+
+STEP 3 — Database Connectivity
+
+Run a raw Drizzle/Neon connectivity check:
+  SELECT 1 AS ping;
+
+Then verify these tables exist in the DB:
+  - players
+  - parcels
+  - battles
+  - trade_orders
+  - trade_fills
+  - orbital_events
+  - season_state (if exists)
+
+For each: ✅ EXISTS / ❌ MISSING
+
+Also check: does the `battles` table have a `source_parcel_id` column?
+  → ✅ PRESENT (Prompt A migration applied) / ❌ MISSING (Prompt A not yet run)
+
+---
+
+STEP 4 — Redis Connectivity
+
+Using the Upstash REST client (server/services/redis.ts), run:
+  - PING check (getRedis() returns non-null)
+  - Write a test key: SET frontier:smoke_test "ok" EX 60
+  - Read it back: GET frontier:smoke_test
+  - Delete it: DEL frontier:smoke_test
+
+Report: ✅ PASS / ❌ FAIL with error
+
+---
+
+STEP 5 — API Route Smoke Test
+
+Start the dev server if not already running. Hit each of the following endpoints with a
+simple GET/POST and check for HTTP 200 (or expected redirect/auth response — NOT 500):
+
+GET endpoints:
+  /api/blockchain/status
+  /api/economics
+  /api/game/state
+  /api/game/slim-state
+  /api/game/leaderboard
+  /api/factions
+  /api/world/events
+  /api/world/events/recent
+  /api/orbital/active
+  /api/trade/orders
+  /api/trade/history
+  /api/trade/leaderboard
+  /api/markets
+  /api/markets/history
+
+For each: ✅ 200 / ⚠️ 401/403 (auth-gated, acceptable) / ❌ 500 (report full error body)
+
+---
+
+STEP 6 — Battle Engine Unit Smoke
+
+Import resolveBattle from server/engine/battle/resolve.ts and run this fixture:
+
+  const result = resolveBattle({
+    attackerId: "smoke-attacker",
+    defenderId: "smoke-defender",
+    attackerTroops: 100,
+    defenderTroops: 80,
+    attackerIron: 50,
+    defenderIron: 40,
+    attackerFuel: 30,
+    defenderFuel: 20,
+    biome: "plains",
+    defenderImprovementLevel: 2,
+    orbitalHazardActive: false,
+    randomSeed: 42,
+    attackerMorale: 1.0,
+    defenderMorale: 1.0,
+  });
+
+Check:
+  - result is not null/undefined ✅
+  - result.winner is "attacker" or "defender" ✅
+  - result.log is a non-empty array ✅
+  - result is deterministic: run it twice with seed 42, both outputs identical ✅
+
+---
+
+STEP 7 — AI Guard Semantic Check
+
+Read server/routes.ts and server/storage/ai-engine.ts.
+
+Report:
+  - routes.ts scheduler guard: AI_ENABLED !== "false"  → opt-OUT semantics
+  - ai-engine.ts top-level guard: AI_ENABLED !== 'true' → opt-IN semantics
+  ⚠️ MISMATCH CONFIRMED — these are inverted. Flag as known bug, do NOT fix in this pass.
+
+---
+
+STEP 8 — WebSocket Server Check
+
+Verify wsServer.ts loads without error and the WS upgrade path is registered in server/index.ts.
+Check that the WS server broadcasts on: "BATTLE_RESULT", "TRADE_FILL", "WORLD_EVENT"
+(grep for these event type strings).
+
+For each: ✅ FOUND / ❌ MISSING
+
+---
+
+STEP 9 — Trade System Check
+
+Run these API calls in sequence:
+
+1. GET /api/trade/orders → expect array (may be empty) ✅
+2. GET /api/trade/history → expect array ✅
+3. GET /api/trade/leaderboard → expect array ✅
+
+If any return 500, capture full error body.
+
+---
+
+STEP 10 — NFT Metadata Endpoint Check
+
+GET /nft/metadata/1
+  → Expect JSON with: name, description, image, properties
+  → image field must NOT contain a dead Replit subdomain URL
+  → image field should contain PUBLIC_BASE_URL value
+
+Report: ✅ PASS / ❌ FAIL (show actual image URL value)
+
+---
+
+STEP 11 — Algorand Network Safety Check
+
+Read server/services/chain/client.ts (or equivalent).
+Confirm that the Algorand client is pointed at TESTNET, not MAINNET.
+If ALGORAND_NETWORK === "mainnet" with no assertion guard, flag ❌ MAINNET UNGUARDED.
+
+---
+
+STEP 12 — Orbital Engine Check
+
+GET /api/orbital/active → expect array (may be empty) ✅
+Grep shared/orbitalEngine.ts for: resolveOrbitalEvent or equivalent export
+Report: ✅ FOUND / ❌ MISSING
+
+---
+
+FINAL REPORT FORMAT:
+
+Produce a single clean report block:
+
+  ┌─────────────────────────────────────────────────────────┐
+  │              FRONTIER SMOKE TEST REPORT                 │
+  ├──────────────────────────────┬──────────────────────────┤
+  │ STEP                         │ STATUS                   │
+  ├──────────────────────────────┼──────────────────────────┤
+  │ 1. TypeScript Compile        │ ✅ / ❌ N errors         │
+  │ 2. Env Var Audit             │ ✅ / ❌ N missing        │
+  │ 3. Database Connectivity     │ ✅ / ❌                  │
+  │ 4. Redis Connectivity        │ ✅ / ❌                  │
+  │ 5. API Route Smoke           │ ✅ / ❌ N routes failing │
+  │ 6. Battle Engine Unit        │ ✅ / ❌                  │
+  │ 7. AI Guard Semantic         │ ⚠️ MISMATCH (known)     │
+  │ 8. WebSocket Server          │ ✅ / ❌                  │
+  │ 9. Trade System              │ ✅ / ❌                  │
+  │ 10. NFT Metadata             │ ✅ / ❌                  │
+  │ 11. Algorand Network Safety  │ ✅ TESTNET / ❌ UNGUARDED│
+  │ 12. Orbital Engine           │ ✅ / ❌                  │
+  └──────────────────────────────┴──────────────────────────┘
+
+  BLOCKING ISSUES (must fix before mainnet):
+  [list any ❌ items here]
+
+  KNOWN NON-BLOCKING:
+  - Step 7: AI_ENABLED guard inversion (scheduled fix)
+
+DO NOT TOUCH: battle engine constants, DB schema, trade logic, globe rendering,
+AI faction weights, WebSocket broadcast code, Algorand chain service files.
