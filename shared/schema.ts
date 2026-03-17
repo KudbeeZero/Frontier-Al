@@ -223,6 +223,10 @@ export interface LandParcel {
   isSubdivided?: boolean;
   /** Owner IDs for each of the 9 sub-parcels (index 0–8, null = unowned) */
   subParcelOwnerIds?: (string | null)[];
+  /** Terraforming: environmental hazard level (0–100, 0 = safe) */
+  hazardLevel: number;
+  /** Terraforming: terrain stability (0–100, 100 = fully stable) */
+  stability: number;
 }
 
 export interface Player {
@@ -497,6 +501,40 @@ export type BuildAction = z.infer<typeof buildActionSchema>;
 export type PurchaseAction = z.infer<typeof purchaseActionSchema>;
 export type CollectAction = z.infer<typeof collectActionSchema>;
 export type ClaimFrontierAction = z.infer<typeof claimFrontierActionSchema>;
+
+// ── Terraforming ──────────────────────────────────────────────────────────────
+
+/** Biome types the client terraform prototype uses, mapped to server BiomeType. */
+export const TERRAFORM_BIOME_MAP: Record<string, BiomeType> = {
+  desert:  "desert",
+  forest:  "forest",
+  plains:  "plains",
+  ice:     "tundra",    // prototype "ice" → server "tundra"
+  toxic:   "volcanic",  // prototype "toxic" → server "volcanic"
+};
+
+export const terraformActionSchema = z.object({
+  playerId: z.string(),
+  plotId:   z.number().int().min(1),
+  action: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("convert_biome"), targetBiome: z.string() }),
+    z.object({ type: z.literal("reduce_hazard"),      amount: z.number().positive() }),
+    z.object({ type: z.literal("increase_stability"), amount: z.number().positive() }),
+    z.object({ type: z.literal("boost_resources"),    amount: z.number().positive() }),
+    z.object({ type: z.literal("corrupt_land"),       amount: z.number().positive() }),
+  ]),
+});
+
+export type TerraformAction = z.infer<typeof terraformActionSchema>;
+
+/** FRONTIER costs per action type (deducted from player balance). */
+export const TERRAFORM_COSTS: Record<string, number> = {
+  convert_biome:     20,
+  reduce_hazard:     10,
+  increase_stability: 10,
+  boost_resources:   15,
+  corrupt_land:       8,
+};
 
 export const MINE_COOLDOWN_MS = 5 * 60 * 1000;
 export const BATTLE_DURATION_MS = 10 * 60 * 1000;

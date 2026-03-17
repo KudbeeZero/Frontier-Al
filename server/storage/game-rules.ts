@@ -99,6 +99,8 @@ export function rowToParcel(row: ParcelRow): LandParcel {
     capturedFromFaction: (row as any).capturedFromFaction ?? null,
     capturedAt:          (row as any).capturedAt ? Number((row as any).capturedAt) : null,
     handoverCount:       (row as any).handoverCount ?? 0,
+    hazardLevel:         (row as any).hazardLevel ?? 0,
+    stability:           (row as any).stability ?? 100,
   };
 }
 

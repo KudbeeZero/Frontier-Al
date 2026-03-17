@@ -141,6 +141,17 @@ export interface IStorage {
   getPlayerPositions(playerId: string): Promise<(MarketPosition & { market: PredictionMarket })[]>;
   resolveExpiredMarkets(): Promise<void>;
 
+  // ── Terraforming ─────────────────────────────────────────────────────────
+  /**
+   * Apply a terraform action to an owned plot, deducting FRONTIER from the player.
+   * Returns the updated parcel or an error string.
+   */
+  terraformParcel(
+    plotId: number,
+    playerId: string,
+    action: import("@shared/schema").TerraformAction["action"],
+  ): Promise<{ parcel: LandParcel; error?: string }>;
+
   // ── Season System ────────────────────────────────────────────────────────
   /** Get the currently active season, or null if none has been started. */
   getCurrentSeason(): Promise<Season | null>;

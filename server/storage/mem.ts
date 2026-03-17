@@ -1410,6 +1410,7 @@ export class MemStorage implements IStorage {
   async cancelSubParcelListing(_sellerId: string, _listingId: string): Promise<{ error?: string }> { return { error: "Not supported in memory storage" }; }
   async buySubParcelListing(_buyerId: string, _listingId: string): Promise<{ listing: SubParcelListing; error?: string }> { return { listing: null as any, error: "Not supported in memory storage" }; }
   async assignSubParcelArchetype(_subParcelId: string, _playerId: string, _archetype: SubParcelArchetype, _archetypeLevel: number, _energyAlignment?: EnergyAlignment): Promise<{ subParcel: SubParcel; factionBonus: number; error?: string }> { return { subParcel: null as any, factionBonus: 0, error: "Not supported in memory storage" }; }
+  async terraformParcel(_plotId: number, _playerId: string, _action: import("@shared/schema").TerraformAction["action"]): Promise<{ parcel: LandParcel; error?: string }> { return { parcel: null as any, error: "Not supported in memory storage" }; }
 
   // ── Economics stub ────────────────────────────────────────────────────────
   async getTreasuryBalance(): Promise<{ unsettledMicro: number; totalMicro: number }> { return { unsettledMicro: 0, totalMicro: 0 }; }
