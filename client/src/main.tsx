@@ -1,14 +1,11 @@
-import { Buffer } from "buffer";
+import "@/lib/polyfills";
 
 declare global {
   interface Window {
-    Buffer: typeof Buffer;
+    Buffer: typeof import("buffer").Buffer;
     global: typeof globalThis;
   }
 }
-
-window.Buffer = Buffer;
-window.global = globalThis;
 
 import { createRoot } from "react-dom/client";
 import App from "./App";

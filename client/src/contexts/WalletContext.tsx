@@ -60,6 +60,36 @@ function isUserCancellation(msg: string, data?: { type?: string }): boolean {
   );
 }
 
+// Map raw SDK errors to user-friendly messages.
+function friendlyErrorMessage(walletId: string, msg: string): string {
+  const lower = msg.toLowerCase();
+  const isExtensionWallet = walletId === "lute" || walletId === "kibisis";
+  const isNotInstalled =
+    lower.includes("not installed") ||
+    lower.includes("not found") ||
+    lower.includes("not available") ||
+    lower.includes("is not defined") ||
+    lower.includes("cannot read") ||
+    lower.includes("undefined") ||
+    lower.includes("extension") ||
+    lower.includes("failed to load") ||
+    lower.includes("import") ||
+    msg === "" || msg === "undefined";
+
+  if (isExtensionWallet && isNotInstalled) {
+    if (walletId === "lute") {
+      return "LUTE extension not detected. Install it from the Chrome Web Store, then reload this page.";
+    }
+    if (walletId === "kibisis") {
+      return "Kibisis extension not detected. Install it for Chrome or Firefox, then reload this page.";
+    }
+  }
+  if (lower.includes("network") || lower.includes("fetch") || lower.includes("timeout")) {
+    return "Connection timed out — check your internet and try again.";
+  }
+  return msg || "Connection failed — please try again.";
+}
+
 export function WalletProvider({ children, enableAutoConnect = false }: WalletProviderProps) {
   const { wallets, activeAddress, signTransactions } = useWalletLib();
 
@@ -130,7 +160,7 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
       const msg = e?.message || String(err) || "";
       console.error(`[WALLET] Error connecting to ${walletId}:`, { message: msg, data: e?.data, code: e?.code, fullError: err });
       if (!isUserCancellation(msg, e?.data)) {
-        setError(msg || "Connection failed — please try again");
+        setError(friendlyErrorMessage(walletId, msg));
       }
     } finally {
       setIsConnecting(false);
