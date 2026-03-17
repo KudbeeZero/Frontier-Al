@@ -9,7 +9,7 @@
 import { useRef, useEffect } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { LandParcel, Player } from "@shared/schema";
-import { Sword, HardHat, Pickaxe, Zap } from "lucide-react";
+import { Sword, HardHat, Pickaxe, Zap, Gift } from "lucide-react";
 
 // ── GlobeHUD ──────────────────────────────────────────────────────────────────
 
@@ -167,9 +167,12 @@ interface ParcelHUDProps {
   onBuild?: () => void;
   onPurchase?: () => void;
   onParcelSelect: (id: string) => void;
+  nftInfo?: { assetId: number; inCustody: boolean } | null;
+  onDeliverNft?: () => void;
+  isDeliveringNft?: boolean;
 }
 
-export function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine, onBuild, onPurchase, onParcelSelect }: ParcelHUDProps) {
+export function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine, onBuild, onPurchase, onParcelSelect, nftInfo, onDeliverNft, isDeliveringNft }: ParcelHUDProps) {
   const isPlayer = parcel.ownerId === currentPlayerId;
   const isUnclaimed = !parcel.ownerId;
 
@@ -301,6 +304,17 @@ export function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine
                 style={{ background: "#4fc3f712", border: "1px solid #4fc3f735", color: "#4fc3f7" }}>
                 <HardHat className="w-3.5 h-3.5" /> Develop
               </button>
+              {nftInfo?.inCustody && (
+                <button
+                  onClick={onDeliverNft}
+                  disabled={isDeliveringNft}
+                  className="col-span-2 flex items-center justify-center gap-1.5 h-9 rounded-lg text-[11px] font-mono uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  style={{ background: "#00e5ff12", border: "1px solid #00e5ff40", color: "#00e5ff" }}
+                >
+                  <Gift className="w-3.5 h-3.5" />
+                  {isDeliveringNft ? "Delivering..." : "Claim Plot NFT"}
+                </button>
+              )}
             </>
           ) : parcel.ownerId ? (
             <button onClick={onAttack}
@@ -311,6 +325,7 @@ export function ParcelHUD({ parcel, currentPlayerId, playerMap, onAttack, onMine
           ) : (
             <button
               onClick={onPurchase}
+              data-tutorial="acquire-territory"
               className="col-span-2 flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg text-[11px] font-mono uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
               style={{ background: "#4fc3f712", border: "1px solid #4fc3f740", color: "#4fc3f7" }}
             >
