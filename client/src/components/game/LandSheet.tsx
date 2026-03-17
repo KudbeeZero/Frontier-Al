@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS } from "@shared/schema";
+import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel, BiomeType } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier } from "@shared/schema";
 
 // ── SubParcelGrid ─────────────────────────────────────────────────────────────
 // Shows the 3×3 sub-parcel ownership grid for subdivided plots.
@@ -56,10 +56,11 @@ function SubdivisionCountdown({ heldSince }: { heldSince: number }) {
   );
 }
 
-function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
+function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
   sp: SubParcel;
   player: Player;
   parentPlotId: number;
+  biome: BiomeType;
   onClose: () => void;
 }) {
   const buildMutation = useMutation({
@@ -75,14 +76,20 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
 
   const facilityTypes: FacilityType[] = ["electricity", "blockchain_node", "data_centre", "ai_lab"];
   const defenseTypes: DefenseImprovementType[] = ["turret", "shield_gen", "storage_depot", "radar", "fortress"];
+  const biomeColor = biomeColors[biome];
 
   return (
     <div className="mt-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-display uppercase tracking-wide text-primary flex items-center gap-1.5">
-          <Wrench className="w-3 h-3" /> Sub-Parcel #{sp.subIndex} Upgrades
+          <Wrench className="w-3 h-3" /> Sub-Parcel #{sp.subIndex + 1} Upgrades
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-[10px]">✕</button>
+        <div className="flex items-center gap-1">
+          <Badge variant="outline" className="text-[8px] capitalize px-1.5 py-0" style={{ borderColor: biomeColor + "80", color: biomeColor }}>
+            {biome}
+          </Badge>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-[10px]">✕</button>
+        </div>
       </div>
 
       {improvements.length > 0 && (
@@ -103,7 +110,11 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
             const existing = improvements.find(i => i.type === type);
             const atMax = existing && existing.level >= info.maxLevel;
             const level = existing ? existing.level + 1 : 1;
-            const cost = atMax ? 0 : SUB_PARCEL_FACILITY_COSTS[type][level - 1];
+            const rawCost = atMax ? 0 : SUB_PARCEL_FACILITY_COSTS[type][level - 1];
+            const multiplier = getBiomeUpgradeMultiplier(biome, type);
+            const cost = atMax ? 0 : Math.ceil(rawCost * multiplier);
+            const hasDiscount = multiplier < 0.99;
+            const hasPremium = multiplier > 1.01;
             const canAfford = player.frontier >= cost;
             const hasPrereq = !info.prerequisite || improvements.find(i => i.type === info.prerequisite);
             return (
@@ -114,8 +125,20 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
               >
                 <span className="text-[9px] font-display uppercase">{info.name}</span>
                 {existing && <span className="text-[8px] text-primary font-mono">Lv{existing.level}{!atMax ? ` → Lv${level}` : " MAX"}</span>}
-                <span className="text-[8px] text-muted-foreground font-mono">{atMax ? "✓ MAX" : `${cost} FRNTR`}</span>
+                {atMax ? (
+                  <span className="text-[8px] text-muted-foreground font-mono">✓ MAX</span>
+                ) : (
+                  <span className="text-[8px] font-mono flex items-center gap-0.5">
+                    {hasDiscount && <span className="line-through text-muted-foreground/50">{rawCost}</span>}
+                    <span className={cn(hasDiscount ? "text-green-400" : hasPremium ? "text-amber-400" : "text-muted-foreground")}>
+                      {cost} FRNTR
+                    </span>
+                    {hasDiscount && <span className="text-green-400/70">↓{Math.round((1 - multiplier) * 100)}%</span>}
+                    {hasPremium && <span className="text-amber-400/70">↑{Math.round((multiplier - 1) * 100)}%</span>}
+                  </span>
+                )}
                 {!hasPrereq && <span className="text-[7px] text-destructive">🔒 Needs Electricity</span>}
+                {!atMax && !canAfford && <span className="text-[7px] text-destructive/70">Insufficient FRNTR</span>}
               </Button>
             );
           })}
@@ -131,7 +154,11 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
             const atMax = existing && existing.level >= info.maxLevel;
             const level = existing ? existing.level + 1 : 1;
             const baseCost = SUB_PARCEL_DEFENSE_COSTS[type];
-            const cost = { iron: baseCost.iron * level, fuel: baseCost.fuel * level };
+            const multiplier = getBiomeUpgradeMultiplier(biome, type);
+            const rawCost = { iron: baseCost.iron * level, fuel: baseCost.fuel * level };
+            const cost = { iron: Math.ceil(rawCost.iron * multiplier), fuel: Math.ceil(rawCost.fuel * multiplier) };
+            const hasDiscount = multiplier < 0.99;
+            const hasPremium = multiplier > 1.01;
             const canAfford = player.iron >= cost.iron && player.fuel >= cost.fuel;
             return (
               <Button key={type} variant="outline" size="sm"
@@ -141,7 +168,18 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
               >
                 <span className="text-[9px] font-display uppercase">{info.name}</span>
                 {existing && <span className="text-[8px] text-primary font-mono">Lv{existing.level}{!atMax ? ` → Lv${level}` : " MAX"}</span>}
-                <span className="text-[8px] text-muted-foreground font-mono">{atMax ? "✓ MAX" : `${cost.iron}I ${cost.fuel}F`}</span>
+                {atMax ? (
+                  <span className="text-[8px] text-muted-foreground font-mono">✓ MAX</span>
+                ) : (
+                  <span className="text-[8px] font-mono flex items-center gap-0.5">
+                    <span className={cn(hasDiscount ? "text-green-400" : hasPremium ? "text-amber-400" : "text-muted-foreground")}>
+                      {cost.iron}I {cost.fuel}F
+                    </span>
+                    {hasDiscount && <span className="text-green-400/70">↓{Math.round((1 - multiplier) * 100)}%</span>}
+                    {hasPremium && <span className="text-amber-400/70">↑{Math.round((multiplier - 1) * 100)}%</span>}
+                  </span>
+                )}
+                {!atMax && !canAfford && <span className="text-[7px] text-destructive/70">Insufficient resources</span>}
               </Button>
             );
           })}
@@ -282,6 +320,7 @@ function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
             const isYours = sp?.ownerId === player?.id;
             const isEnemy = sp?.ownerId && !isYours;
             const price   = sp?.purchasePriceFrontier;
+            const canAffordBuy = player && price !== undefined && player.frontier >= price;
             const canBuy  = !sp?.ownerId && player && price !== undefined;
             const hasImprovements = (sp?.improvements?.length ?? 0) > 0;
             const isSelected = selectedSubIndex === i;
@@ -324,11 +363,15 @@ function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-5 px-2 text-[9px] font-display uppercase"
-                      onClick={() => purchaseMutation.mutate(sp.id)}
-                      disabled={purchaseMutation.isPending}
+                      className={cn(
+                        "h-5 px-2 text-[9px] font-display uppercase",
+                        canAffordBuy ? "" : "opacity-50 cursor-not-allowed"
+                      )}
+                      onClick={() => canAffordBuy && purchaseMutation.mutate(sp.id)}
+                      disabled={purchaseMutation.isPending || !canAffordBuy}
+                      title={canAffordBuy ? `Buy for ${price} FRNTR` : `Need ${price} FRNTR`}
                     >
-                      Buy
+                      {canAffordBuy ? `Buy ${price}F` : `${price}F`}
                     </Button>
                   )}
                   {isYours && (
@@ -353,6 +396,7 @@ function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
           sp={selectedSp}
           player={player}
           parentPlotId={parcel.plotId}
+          biome={parcel.biome}
           onClose={() => setSelectedSubIndex(null)}
         />
       )}

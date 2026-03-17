@@ -684,6 +684,35 @@ export const SUB_PARCEL_DEFENSE_COSTS: Record<DefenseImprovementType, { iron: nu
   fortress:      { iron: 100, fuel: 75 },
 };
 
+/**
+ * Per-biome cost multipliers for sub-parcel improvements.
+ * < 1.0 = discount (biome affinity), > 1.0 = premium (hostile terrain).
+ * Only overrides listed; unlisted improvements default to 1.0×.
+ */
+export const BIOME_UPGRADE_DISCOUNTS: Record<BiomeType, Partial<Record<ImprovementType, number>>> = {
+  // Volcanic: rich in minerals/crystal → cheaper blockchain nodes & power, but harsh on defense
+  volcanic:  { electricity: 0.80, blockchain_node: 0.70, turret: 1.30, fortress: 1.20 },
+  // Mountain: iron-rich → heavy defense is cheap, high-tech facilities expensive
+  mountain:  { turret: 0.70, shield_gen: 0.70, fortress: 0.70, radar: 0.80, ai_lab: 1.30 },
+  // Desert: fuel-rich → storage cheap, moisture-sensitive data centres expensive
+  desert:    { storage_depot: 0.70, radar: 0.80, data_centre: 1.30, shield_gen: 1.20 },
+  // Forest: biodiversity → AI labs cheap, turrets need extra clearing
+  forest:    { ai_lab: 0.75, blockchain_node: 0.90, turret: 1.15 },
+  // Plains: no terrain advantage (baseline)
+  plains:    {},
+  // Tundra: clear sightlines → radar cheap, shields struggle in cold
+  tundra:    { radar: 0.70, storage_depot: 0.80, shield_gen: 1.20 },
+  // Swamp: guerrilla terrain → turrets cheap, data centres need moisture protection
+  swamp:     { turret: 0.75, storage_depot: 0.80, data_centre: 1.25 },
+  // Water: natural cooling → compute facilities very cheap, heavy defense nearly impossible
+  water:     { data_centre: 0.65, blockchain_node: 0.70, ai_lab: 0.80, turret: 1.40, fortress: 1.50 },
+};
+
+/** Returns the biome cost multiplier for an improvement type (defaults to 1.0 if no override). */
+export function getBiomeUpgradeMultiplier(biome: BiomeType, improvementType: ImprovementType): number {
+  return BIOME_UPGRADE_DISCOUNTS[biome]?.[improvementType] ?? 1.0;
+}
+
 export interface SubParcel {
   id: string;
   parentPlotId: number;      // FK → parcels.plotId

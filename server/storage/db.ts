@@ -66,7 +66,8 @@ import {
   ORBITAL_IMPACT_CHANCE,
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType, ImprovementType } from "@shared/schema";
-import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS } from "@shared/schema";
+import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier } from "@shared/schema";
+import type { BiomeType } from "@shared/schema";
 import { sphereDistance } from "../sphereUtils";
 import {
   evaluateReconquest,
@@ -2092,6 +2093,14 @@ export class DbStorage implements IStorage {
       if (!playerRow) return { subParcel: null as any, error: "Player not found" };
       if (spRow.ownerId !== playerId) return { subParcel: null as any, error: "You don't own this sub-parcel" };
 
+      // Fetch parent plot biome for cost multiplier
+      const [parcelRow] = await tx
+        .select({ biome: parcelsTable.biome })
+        .from(parcelsTable)
+        .where(eq(parcelsTable.plotId, spRow.parentPlotId));
+      const biome = (parcelRow?.biome ?? "plains") as BiomeType;
+      const biomeMultiplier = getBiomeUpgradeMultiplier(biome, improvementType);
+
       const currentImprovements: Improvement[] = Array.isArray(spRow.improvements) ? (spRow.improvements as Improvement[]) : [];
       const existing = currentImprovements.find(i => i.type === improvementType);
 
@@ -2108,7 +2117,8 @@ export class DbStorage implements IStorage {
         if (info.prerequisite && !currentImprovements.find(i => i.type === info.prerequisite)) {
           return { subParcel: null as any, error: `Requires ${FACILITY_INFO[info.prerequisite!].name} first` };
         }
-        const cost = SUB_PARCEL_FACILITY_COSTS[improvementType as FacilityType][level - 1];
+        const rawCost = SUB_PARCEL_FACILITY_COSTS[improvementType as FacilityType][level - 1];
+        const cost = Math.ceil(rawCost * biomeMultiplier);
         const microCost = toMicroFRNTR(cost);
         if (playerRow.frntrBalanceMicro < microCost) return { subParcel: null as any, error: `Insufficient FRONTIER (need ${cost})` };
         playerUpdates = {
@@ -2118,8 +2128,10 @@ export class DbStorage implements IStorage {
       } else {
         const info = DEFENSE_IMPROVEMENT_INFO[improvementType as DefenseImprovementType];
         if (existing && existing.level >= info.maxLevel) return { subParcel: null as any, error: "Improvement already at max level" };
-        const cost = { iron: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].iron * level,
-                       fuel: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].fuel * level };
+        const baseCost = { iron: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].iron * level,
+                           fuel: SUB_PARCEL_DEFENSE_COSTS[improvementType as DefenseImprovementType].fuel * level };
+        const cost = { iron: Math.ceil(baseCost.iron * biomeMultiplier),
+                       fuel: Math.ceil(baseCost.fuel * biomeMultiplier) };
         if (playerRow.iron < cost.iron || playerRow.fuel < cost.fuel) return { subParcel: null as any, error: "Insufficient resources" };
         playerUpdates = { iron: playerRow.iron - cost.iron, fuel: playerRow.fuel - cost.fuel };
       }

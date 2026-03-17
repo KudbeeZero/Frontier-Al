@@ -121,6 +121,32 @@ export async function redisGetWorldEvents(
   }
 }
 
+// ── Sub-Parcel World Events ───────────────────────────────────────────────────
+
+export interface SubParcelWorldEvent {
+  type: "sub_parcel_purchased" | "sub_parcel_upgraded";
+  plotId: number;
+  subIndex: number;
+  biome: string;
+  playerId: string;
+  improvementType?: string;
+  level?: number;
+  price?: number;
+}
+
+/**
+ * Records a sub-parcel purchase or upgrade event in the Upstash world event
+ * stream so it appears in the live world activity feed.
+ * Non-fatal — silently ignored if Redis is unavailable.
+ */
+export async function recordSubParcelWorldEvent(event: SubParcelWorldEvent): Promise<void> {
+  await redisAppendWorldEvent({
+    id:        `sp-${event.plotId}-${event.subIndex}-${Date.now()}`,
+    timestamp: Date.now(),
+    ...event,
+  });
+}
+
 // ── Parcel Animations ─────────────────────────────────────────────────────────
 
 function parcelAnimKey(plotId: number): string {

@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { getBattleReplay } from "./services/redis";
+import { getBattleReplay, recordSubParcelWorldEvent } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
@@ -17,6 +17,7 @@ import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./world
 import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
 import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
 import { mintLandNft, transferLandNft } from "./services/chain/land";
+import { recordUpgradeOnChain } from "./services/chain/upgrades";
 import { mintCommanderNft, transferCommanderNft, forwardLiquiditySplit, verifyAlgoPayment } from "./services/chain/commander";
 import {
   bootstrapFactionIdentities,
@@ -2149,7 +2150,28 @@ export async function registerRoutes(
       const result = await storage.purchaseSubParcel(subParcelId, playerId);
       if (result.error) return res.status(400).json({ error: result.error });
       markDirty();
-      res.json({ success: true, subParcel: result.subParcel });
+
+      const sp = result.subParcel;
+      // Broadcast real-time label update to all connected clients
+      broadcastRaw({
+        type:        "sub_parcel_purchased",
+        subParcelId: sp.id,
+        parentPlotId: sp.parentPlotId,
+        subIndex:    sp.subIndex,
+        ownerId:     playerId,
+      });
+
+      // Persist to Upstash world event stream (fire-and-forget)
+      recordSubParcelWorldEvent({
+        type:     "sub_parcel_purchased",
+        plotId:   sp.parentPlotId,
+        subIndex: sp.subIndex,
+        biome:    "unknown", // biome resolved client-side from parent plot
+        playerId,
+        price:    sp.purchasePriceFrontier,
+      }).catch(() => {});
+
+      res.json({ success: true, subParcel: sp });
     } catch (err) {
       console.error("[sub-parcels] purchaseSubParcel error", err);
       res.status(500).json({ error: "Internal server error" });
@@ -2167,7 +2189,44 @@ export async function registerRoutes(
       const result = await storage.buildSubParcelImprovement(subParcelId, playerId, improvementType);
       if (result.error) return res.status(400).json({ error: result.error });
       markDirty();
-      res.json({ success: true, subParcel: result.subParcel });
+
+      const sp = result.subParcel;
+      const imp = sp.improvements?.find(i => i.type === improvementType);
+      const newLevel = imp?.level ?? 1;
+
+      // Broadcast real-time label update to all connected clients
+      broadcastRaw({
+        type:           "sub_parcel_upgraded",
+        subParcelId:    sp.id,
+        parentPlotId:   sp.parentPlotId,
+        subIndex:       sp.subIndex,
+        improvementType,
+        level:          newLevel,
+        ownerId:        playerId,
+      });
+
+      // Persist to Upstash world event stream (fire-and-forget)
+      recordSubParcelWorldEvent({
+        type:           "sub_parcel_upgraded",
+        plotId:         sp.parentPlotId,
+        subIndex:       sp.subIndex,
+        biome:          "unknown", // biome is on parent plot; client resolves
+        playerId,
+        improvementType,
+        level:          newLevel,
+      }).catch(() => {});
+
+      // Record on-chain via Algorand self-transfer note (fire-and-forget)
+      recordUpgradeOnChain({
+        plotId:         sp.parentPlotId,
+        subIndex:       sp.subIndex,
+        biome:          "unknown",
+        improvementType,
+        level:          newLevel,
+        playerId,
+      }).catch(() => {});
+
+      res.json({ success: true, subParcel: sp });
     } catch (err) {
       console.error("[sub-parcels] buildSubParcelImprovement error", err);
       res.status(500).json({ error: "Internal server error" });

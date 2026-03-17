@@ -13,7 +13,7 @@
 | [Phase 2](#phase-2-rare-minerals--loot-system) | Rare Minerals & Loot System | Planned |
 | [Phase 3](#phase-3-landmarks) | Landmarks | Planned |
 | [Phase 4](#phase-4-season-expansion) | Season Expansion | Planned |
-| [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | Planned |
+| [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | **In Progress** |
 | [Phase 6](#phase-6-visual-polish) | Visual Polish | Planned |
 
 ---
@@ -239,13 +239,16 @@ raw game state
 
 - [ ] Sub-parcel transfer between players
 - [ ] Sub-parcel listing in Trade Station
-- [ ] Sub-parcel pricing model by biome and position
+- [x] Sub-parcel pricing model by biome and position (`purchasePriceFrontier` + 4-way revenue split)
 - [ ] Transfer ownership API endpoints
 
 ### 5.2 Sub-Parcel Improvements
 
-- [ ] Individual sub-parcel defense improvements
-- [ ] Sub-parcel-specific facility bonuses
+- [x] Individual sub-parcel defense improvements (`POST /api/sub-parcels/:id/build`)
+- [x] Sub-parcel-specific facility bonuses (electricity, blockchain_node, data_centre, ai_lab)
+- [x] Biome-based cost multipliers for all improvement types (`BIOME_UPGRADE_DISCOUNTS` in schema)
+- [x] Biome discount/premium UI indicators in `SubParcelUpgradePanel`
+- [x] Affordability enforcement in Buy button + upgrade buttons
 - [ ] Independent sub-parcel battles
 - [ ] Defense inheritance rules from parent plot
 
@@ -253,14 +256,23 @@ raw game state
 
 - [ ] 3×3 grid overlay on globe (zoom-dependent visibility)
 - [ ] Sub-parcel ownership coloring on globe
-- [ ] Sub-parcel detail panel in LandSheet
+- [x] Sub-parcel detail panel in LandSheet (3×3 table + upgrade panel)
+- [x] Biome badge in upgrade panel header
 
 ### 5.4 Sub-Parcel Balance
 
-- [ ] Cost scaling by biome (10–100 FRNTR per sub-parcel)
-- [ ] Full control bonus verification and edge cases
-- [ ] AI faction interaction with sub-parcels (AI cannot subdivide)
+- [x] Cost scaling by biome — `BIOME_UPGRADE_DISCOUNTS` (discounts up to 35%, premiums up to 50%)
+- [x] Full control bonus verification (+50% yield when owning all 9)
+- [x] AI faction interaction with sub-parcels (AI cannot subdivide — enforced)
 - [ ] Reconquest behavior for subdivided plots
+
+### 5.5 Blockchain & Live World Integration
+
+- [x] WebSocket broadcast on sub-parcel purchase (`sub_parcel_purchased` event)
+- [x] WebSocket broadcast on sub-parcel upgrade (`sub_parcel_upgraded` event)
+- [x] Upstash Redis world event stream for purchases + upgrades (`recordSubParcelWorldEvent`)
+- [x] Algorand on-chain upgrade note recording (`server/services/chain/upgrades.ts`)
+- [x] 4-way FRONTIER revenue split on purchase (30% treasury, 20% faction, 30% land tax, 20% burned)
 
 ---
 
