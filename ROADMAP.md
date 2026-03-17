@@ -35,8 +35,10 @@ The game is fully playable. Core systems are live:
 | [Phase 3](#phase-3-landmarks) | Landmarks | Planned |
 | [Phase 4](#phase-4-season-expansion) | Season Expansion | Planned |
 | [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | ✅ Complete |
+| [Phase 5.9](#59-sub-parcel-archetype-system) | Sub-Parcel Archetype System | 🚧 In Progress |
 | [Phase 6](#phase-6-visual-polish) | Visual Polish | Planned |
 | [Phase 7](#phase-7-community--season-systems) | Community & Season Systems | Planned |
+| [Phase 8](#phase-8-commander-dashboard--live-updates-page) | Commander Dashboard & Updates Page | Planned |
 
 ---
 
@@ -297,6 +299,60 @@ client/src/hooks/
 - [x] `/info/features` — deep-dive feature cards (3D Globe, AI Factions, Algorand, Territory Wars, Resource Economy, Commander NFTs)
 - [x] Shared `LandingNav` across all pages; "Enter Game →" CTA throughout
 
+### 5.9 Sub-Parcel Archetype System 🚧 In Progress
+
+> Four strategic archetypes replace generic sub-parcel slots with distinct economic roles, faction bonuses, and interdependencies that force meaningful tradeoffs.
+
+**Archetype Types:**
+
+| Archetype | Role | Faction Bonus | Dependency |
+|-----------|------|---------------|-----------|
+| **Resource** | Raw material extraction — metals, crystals, volatiles, organics, rare | SPECTRE +15% yield | Needs energy to power rigs; needs trade to export |
+| **Trade** | Market hub — stalls, liquidity, tax, trade routes, economic zones | SPECTRE +20% market throughput | Starves without resource supply |
+| **Fortress** | Tiered defense — L1 Outpost / L2 Garrison / L3 Citadel | KRONOS +25% defense rating | Shields offline without adjacent energy parcel |
+| **Energy** | Power grid — fuels all other archetypes; strategic sabotage target | NEXUS-7 +20% distribution | High-value attack target; blackouts cripple fortress |
+
+**Energy Alignment Sub-Types (player specialization):**
+- `helios` — grid efficiency (higher power output per tick)
+- `aegis` — shield uptime and recharge speed for fortress parcels
+- `nexus` — distribution range (powers more distant adjacent parcels)
+
+**Checks & Balances:**
+- Max 3 of the same archetype per 9-cell grid (no mono-stacking)
+- Fortress shields go offline if no energy parcel in grid
+- Resource extraction -30% penalty without trade parcel connection
+- Trade hub throughput capped without resource supply
+
+**Implementation Checklist:**
+- [x] `SubParcelArchetype` type + `EnergyAlignment` type in `shared/schema.ts`
+- [x] `archetype`, `archetypeLevel`, `energyAlignment` columns in `sub_parcels` DB table
+- [x] `canAssignArchetype()`, `computeArchetypeFactionBonus()`, `computeGridPowerDependency()` in `game-rules.ts`
+- [x] `assignSubParcelArchetype()` in `server/storage/db.ts`
+- [x] `POST /api/sub-parcels/:id/archetype` route
+- [x] `recordArchetypeWorldEvent()` in Redis (24h TTL)
+- [x] WebSocket broadcast `sub_parcel_archetype_set`
+- [ ] Frontend archetype selector UI in `SubParcelUpgradePanel`
+- [ ] Grid composition warning (approaching 3-of-same limit)
+- [ ] Power dependency indicator (fortress offline badge)
+- [ ] Faction bonus display per archetype
+
+**Fortress Siege System (planned):**
+- Breach phase → Interior phase → Extraction phase
+- Commander integration (siege perks, rally, morale)
+- Armor loot drops — siege-exclusive sets, commander relics, salvage rewards
+
+**Resource Parcel Depth (planned):**
+- Resource classes: metals / crystals / volatiles / organics / rare+anomalous
+- Extraction nodes with depletion + regrowth curves
+- Mining rig and refinery improvements
+- Convoy raids and interception mechanics
+
+**Trade Parcel Depth (planned):**
+- Trade stalls, warehouse capacity, market liquidity depth
+- Owner-controlled tax bands + faction tariffs
+- Trade route graph (distance/risk affecting transport cost)
+- Economic warfare — embargoes, volatility raids, hub capture objectives
+
 ---
 
 ## Phase 6: Visual Polish
@@ -378,6 +434,49 @@ client/src/hooks/
 - [ ] In-game messaging (parcel-to-parcel challenges)
 - [ ] Battle replay sharing (shareable replay link)
 - [ ] Commander showcase (public profile of minted NFTs)
+
+---
+
+---
+
+## Phase 8: Commander Dashboard & Live Updates Page
+
+> A dedicated in-game analytics hub for commanders and a public-facing live changelog so the community can see what's live, in progress, and backlogged.
+
+### 8.1 Live Updates Landing Page (`/info/updates`)
+
+A public-facing page on the landing site showing transparent development progress.
+
+- [ ] **Active Updates feed** — what is being shipped right now (pulled from session notes or a structured JSON changelog)
+- [ ] **Recent Changes log** — timestamped list of completed features per session
+- [ ] **Upcoming / In Progress** — current phase work with status badges (🚧 / ✅ / Planned)
+- [ ] **Backlog board** — future phases listed as cards with priority indicators
+- [ ] **Live world stats** — parcel count, active players, battles today, FRNTR in circulation (real data from API)
+- [ ] Shared `LandingNav` integration; auto-refreshes live stats every 30s
+
+### 8.2 Commander Dashboard (In-Game)
+
+A full analytics and control hub accessible from within the game for commanders with NFTs.
+
+**Metrics Panels:**
+- [ ] Territory overview — owned parcels, sub-parcels, archetype breakdown per plot
+- [ ] Resource income — iron/fuel/crystal generated per hour with trend sparkline
+- [ ] FRONTIER earnings — daily FRNTR rate, accumulated, burn history
+- [ ] Battle history — win/loss ratio, plots captured vs. lost, power trend
+- [ ] Archetype distribution — pie chart of resource/trade/fortress/energy across holdings
+- [ ] Power grid health — which grids have energy coverage, which fortress parcels are offline
+
+**Control Panels:**
+- [ ] Quick-assign archetype to sub-parcels from dashboard (no need to open each plot)
+- [ ] Batch improvement builder — queue upgrades across multiple sub-parcels
+- [ ] Commander status — NFT tier, companion, active cooldowns, season rank
+- [ ] Faction alignment — current faction, bonus preview per archetype
+
+**Data & Charts:**
+- [ ] Recharts AreaChart for FRNTR earnings over time
+- [ ] Recharts BarChart for resources mined per biome
+- [ ] Recharts RadarChart for defensive rating across owned plots
+- [ ] Leaderboard position tracker (current season rank with delta)
 
 ---
 

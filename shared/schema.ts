@@ -802,6 +802,58 @@ export function getBiomeUpgradeMultiplier(biome: BiomeType, improvementType: Imp
   return BIOME_UPGRADE_DISCOUNTS[biome]?.[improvementType] ?? 1.0;
 }
 
+// ─── Sub-Parcel Archetype System ─────────────────────────────────────────────
+// Each sub-parcel can be assigned one of four strategic archetypes that define
+// its role in the economy and unlock faction-specific bonuses.
+
+export type SubParcelArchetype = "resource" | "trade" | "fortress" | "energy";
+
+/**
+ * Energy sub-parcel alignment sub-type (player-side specialization).
+ * - helios:  grid efficiency — more power output per tick
+ * - aegis:   shield uptime — recharge speed boost for fortress parcels
+ * - nexus:   distribution range — powers more distant adjacent parcels
+ */
+export type EnergyAlignment = "helios" | "aegis" | "nexus";
+
+/**
+ * Faction bonus multipliers per archetype.
+ * Key is faction name as stored in the factions system.
+ */
+export const ARCHETYPE_FACTION_BONUSES: Record<SubParcelArchetype, Partial<Record<string, number>>> = {
+  resource: { SPECTRE: 0.15 },       // +15% extraction yield
+  trade:    { SPECTRE: 0.20 },        // +20% market throughput
+  fortress: { KRONOS: 0.25 },         // +25% composite defense rating
+  energy:   { "NEXUS-7": 0.20 },     // +20% grid distribution range
+};
+
+/**
+ * Max number of sub-parcels sharing the same archetype within a single 3×3 grid.
+ * Prevents mono-stacking (e.g. all 9 as energy).
+ */
+export const MAX_SAME_ARCHETYPE_PER_GRID = 3;
+
+/**
+ * Fortress archetype level labels.
+ * archetypeLevel 1 = Outpost, 2 = Garrison, 3 = Citadel.
+ */
+export const FORTRESS_LEVEL_NAMES: Record<number, string> = {
+  1: "Outpost",
+  2: "Garrison",
+  3: "Citadel",
+};
+
+/**
+ * Assign-archetype Zod schema for the API endpoint.
+ */
+export const assignArchetypeSchema = z.object({
+  archetype:        z.enum(["resource", "trade", "fortress", "energy"]),
+  archetypeLevel:   z.number().int().min(1).max(3).optional().default(1),
+  energyAlignment:  z.enum(["helios", "aegis", "nexus"]).optional(),
+});
+
+export type AssignArchetypeAction = z.infer<typeof assignArchetypeSchema>;
+
 export interface SubParcel {
   id: string;
   parentPlotId: number;      // FK → parcels.plotId
@@ -813,6 +865,10 @@ export interface SubParcel {
   purchasePriceFrontier: number;
   acquiredAt: number | null;     // timestamp when current owner claimed it
   activeBattleId: string | null;
+  // ── Archetype fields ──────────────────────────────────────────────────────
+  archetype: SubParcelArchetype | null;       // strategic role; null = unassigned
+  archetypeLevel: number;                     // 1–3 (fortress tiers); 0 = unassigned
+  energyAlignment: EnergyAlignment | null;    // only set when archetype === "energy"
 }
 
 // ─── Sub-Parcel Listings (Player-to-Player Trading) ──────────────────────────

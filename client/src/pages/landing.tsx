@@ -370,6 +370,7 @@ export default function LandingPage() {
               { label: "Economics", path: "/info/economics" },
               { label: "Gameplay", path: "/info/gameplay" },
               { label: "Features", path: "/info/features" },
+              { label: "Updates", path: "/info/updates" },
             ].map(({ label, path }) => (
               <button
                 key={path}

@@ -147,6 +147,34 @@ export async function recordSubParcelWorldEvent(event: SubParcelWorldEvent): Pro
   });
 }
 
+// ── Archetype World Events ────────────────────────────────────────────────────
+
+export interface ArchetypeWorldEvent {
+  type: "sub_parcel_archetype_set";
+  plotId: number;
+  subIndex: number;
+  biome: string;
+  archetype: "resource" | "trade" | "fortress" | "energy";
+  archetypeLevel: number;
+  energyAlignment?: "helios" | "aegis" | "nexus";
+  playerId: string;
+  factionBonus: number;
+}
+
+/**
+ * Records a sub-parcel archetype assignment in the Upstash world event stream.
+ * Uses the same 24h TTL as all other world events (WORLD_EVENT_TTL_S = 86_400).
+ * Non-fatal — silently ignored if Redis is unavailable.
+ */
+export async function recordArchetypeWorldEvent(event: Omit<ArchetypeWorldEvent, "type">): Promise<void> {
+  await redisAppendWorldEvent({
+    id:        `arch-${event.plotId}-${event.subIndex}-${Date.now()}`,
+    timestamp: Date.now(),
+    type:      "sub_parcel_archetype_set",
+    ...event,
+  });
+}
+
 // ── Parcel Animations ─────────────────────────────────────────────────────────
 
 function parcelAnimKey(plotId: number): string {

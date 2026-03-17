@@ -18,6 +18,8 @@ import {
   SUB_PARCEL_COUNT,
   SUB_PARCEL_YIELD_FRACTION,
   LAND_PURCHASE_ALGO,
+  ARCHETYPE_FACTION_BONUSES,
+  MAX_SAME_ARCHETYPE_PER_GRID,
 } from "@shared/schema";
 import { parcels as parcelsTable, players as playersTable, battles as battlesTable, gameEvents as gameEventsTable, subParcels as subParcelsTable } from "../db-schema";
 
@@ -207,6 +209,81 @@ export function rowToSubParcel(row: SubParcelRow): SubParcel {
     purchasePriceFrontier: row.purchasePriceFrontier,
     acquiredAt:            row.acquiredAt ? Number(row.acquiredAt) : null,
     activeBattleId:        row.activeBattleId ?? null,
+    archetype:             (row.archetype ?? null) as import("../../shared/schema").SubParcelArchetype | null,
+    archetypeLevel:        row.archetypeLevel ?? 0,
+    energyAlignment:       (row.energyAlignment ?? null) as import("../../shared/schema").EnergyAlignment | null,
+  };
+}
+
+// ─── Archetype Assignment Rules ───────────────────────────────────────────────
+
+/**
+ * Validates whether a player can assign the given archetype to a sub-parcel.
+ * Returns null if allowed, or an error string explaining the rejection.
+ *
+ * Rules:
+ * 1. Player must own the sub-parcel
+ * 2. Max MAX_SAME_ARCHETYPE_PER_GRID of the same archetype in the 9-cell grid
+ * 3. Fortress archetype level must be 1–3
+ * 4. energyAlignment only valid when archetype === "energy"
+ */
+export function canAssignArchetype(
+  subParcel: SubParcel,
+  grid: SubParcel[],
+  playerId: string,
+  archetype: import("../../shared/schema").SubParcelArchetype,
+  archetypeLevel: number,
+  energyAlignment?: import("../../shared/schema").EnergyAlignment
+): string | null {
+  if (subParcel.ownerId !== playerId) return "You don't own this sub-parcel";
+
+  const sameCount = grid.filter(
+    sp => sp.id !== subParcel.id && sp.archetype === archetype
+  ).length;
+  if (sameCount >= MAX_SAME_ARCHETYPE_PER_GRID) {
+    return `Maximum ${MAX_SAME_ARCHETYPE_PER_GRID} ${archetype} parcels allowed per grid`;
+  }
+
+  if (archetype === "fortress" && (archetypeLevel < 1 || archetypeLevel > 3)) {
+    return "Fortress level must be 1 (Outpost), 2 (Garrison), or 3 (Citadel)";
+  }
+
+  if (energyAlignment && archetype !== "energy") {
+    return "energyAlignment can only be set on energy archetypes";
+  }
+
+  return null;
+}
+
+/**
+ * Returns the faction bonus multiplier for a given archetype + faction combination.
+ * e.g. KRONOS player with fortress archetype → 0.25 (25% defense bonus)
+ */
+export function computeArchetypeFactionBonus(
+  archetype: import("../../shared/schema").SubParcelArchetype,
+  factionName: string | null | undefined
+): number {
+  if (!factionName) return 0;
+  return ARCHETYPE_FACTION_BONUSES[archetype]?.[factionName] ?? 0;
+}
+
+/**
+ * Inspects a 9-cell grid and returns dependency status:
+ * - fortressOnline: true if at least one energy parcel exists adjacent to fortress parcels
+ * - resourcePowered: true if at least one energy parcel exists to power resource extraction
+ *
+ * Used by the game engine to apply offline penalties for unpowered structures.
+ */
+export function computeGridPowerDependency(grid: SubParcel[]): {
+  fortressOnline: boolean;
+  resourcePowered: boolean;
+} {
+  const hasEnergy   = grid.some(sp => sp.archetype === "energy");
+  const hasFortress = grid.some(sp => sp.archetype === "fortress");
+  const hasResource = grid.some(sp => sp.archetype === "resource");
+  return {
+    fortressOnline:  hasFortress ? hasEnergy : true,  // no fortress = no penalty
+    resourcePowered: hasResource ? hasEnergy : true,  // no resource = no penalty
   };
 }
 

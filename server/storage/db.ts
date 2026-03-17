@@ -112,10 +112,12 @@ import {
   computeSubParcelPrice,
   fromMicroFRNTR,
   toMicroFRNTR,
+  canAssignArchetype,
+  computeArchetypeFactionBonus,
   type ParcelRow,
   type BattleRow,
 } from "./game-rules";
-import type { SubParcel, SubParcelListing, Season, PredictionMarket, MarketPosition, MarketOutcome, CreateMarketAction } from "@shared/schema";
+import type { SubParcel, SubParcelListing, Season, PredictionMarket, MarketPosition, MarketOutcome, CreateMarketAction, SubParcelArchetype, EnergyAlignment } from "@shared/schema";
 import { MARKET_FEE_RATE } from "@shared/schema";
 import {
   SUB_PARCEL_HOLD_HOURS,
@@ -2157,6 +2159,52 @@ export class DbStorage implements IStorage {
       ]);
 
       return { subParcel: rowToSubParcel(updatedSp) };
+    });
+  }
+
+  // ── Sub-Parcel Archetype Assignment ──────────────────────────────────────────
+
+  async assignSubParcelArchetype(
+    subParcelId: string,
+    playerId: string,
+    archetype: SubParcelArchetype,
+    archetypeLevel: number,
+    energyAlignment?: EnergyAlignment
+  ): Promise<{ subParcel: SubParcel; factionBonus: number; error?: string }> {
+    await this.initialize();
+    return this.db.transaction(async (tx) => {
+      const [[spRow], [playerRow]] = await Promise.all([
+        tx.select().from(subParcelsTable).where(eq(subParcelsTable.id, subParcelId)),
+        tx.select().from(playersTable).where(eq(playersTable.id, playerId)),
+      ]);
+      if (!spRow) return { subParcel: null as any, factionBonus: 0, error: "Sub-parcel not found" };
+      if (!playerRow) return { subParcel: null as any, factionBonus: 0, error: "Player not found" };
+
+      // Load full grid for composition limit check
+      const gridRows = await tx
+        .select()
+        .from(subParcelsTable)
+        .where(eq(subParcelsTable.parentPlotId, spRow.parentPlotId));
+      const grid = gridRows.map(rowToSubParcel);
+      const sp   = rowToSubParcel(spRow);
+
+      const err = canAssignArchetype(sp, grid, playerId, archetype, archetypeLevel, energyAlignment);
+      if (err) return { subParcel: null as any, factionBonus: 0, error: err };
+
+      const factionBonus = computeArchetypeFactionBonus(archetype, (playerRow as any).factionId ?? null);
+
+      const [[updated]] = await Promise.all([
+        tx.update(subParcelsTable)
+          .set({
+            archetype,
+            archetypeLevel,
+            energyAlignment: energyAlignment ?? null,
+          })
+          .where(eq(subParcelsTable.id, subParcelId))
+          .returning(),
+      ]);
+
+      return { subParcel: rowToSubParcel(updated), factionBonus };
     });
   }
 
