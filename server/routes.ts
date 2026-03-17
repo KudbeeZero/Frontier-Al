@@ -1038,7 +1038,7 @@ export async function registerRoutes(
 
   app.post("/api/actions/attack", async (req, res) => {
     try {
-      const verifiedId = await assertPlayerOwnership(req, res);
+      const verifiedId = await assertPlayerOwnership(req, res, req.body?.attackerId);
       if (!verifiedId) return;
       const action = attackActionSchema.parse(req.body);
       const battle = await storage.deployAttack(action);
