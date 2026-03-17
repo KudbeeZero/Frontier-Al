@@ -1,17 +1,21 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { useWallet as useWalletLib } from "@txnlab/use-wallet-react";
 import {
-  peraWallet,
-  luteWallet,
   getAccountBalance,
   formatAddress,
-  setActiveWalletType,
-  getActiveWalletType,
-  ALGORAND_TESTNET,
   fetchBlockchainStatus,
-  type WalletType,
+  registerWalletSigner,
 } from "@/lib/algorand";
 
 type WalletStatus = "restoring" | "connected" | "disconnected";
+
+export interface WalletInfo {
+  id: string;
+  name: string;
+  icon: string;
+  isConnected: boolean;
+  isActive: boolean;
+}
 
 interface WalletState {
   isConnected: boolean;
@@ -21,250 +25,143 @@ interface WalletState {
   balance: number;
   isConnecting: boolean;
   error: string | null;
-  walletType: WalletType | null;
+  walletType: string | null;
   signerReady: boolean;
   blockchainReady: boolean;
 }
 
 interface WalletContextValue extends WalletState {
   isReady: boolean;
-  connectPera: () => Promise<void>;
-  connectLute: () => Promise<void>;
+  availableWallets: WalletInfo[];
+  connect: (walletId: string) => Promise<void>;
   disconnect: () => void;
   refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-export function WalletProvider({ children }: { children: ReactNode }) {
-  const hasSavedWallet = !!(localStorage.getItem("frontier_wallet_type"));
+function InnerWalletProvider({ children }: { children: ReactNode }) {
+  const { wallets, activeAddress, signTransactions } = useWalletLib();
 
-  const [state, setState] = useState<WalletState>({
-    isConnected: false,
-    walletStatus: hasSavedWallet ? "restoring" : "disconnected",
-    address: null,
-    displayAddress: null,
-    balance: 0,
-    isConnecting: false,
-    error: null,
-    walletType: null,
-    signerReady: false,
-    blockchainReady: false,
-  });
-
-  const isReconnecting = useRef(false);
+  const [balance, setBalance] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [blockchainReady, setBlockchainReady] = useState(false);
+  // Brief restoring window so GameLayout can show the reconnecting spinner
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     fetchBlockchainStatus().then((status) => {
-      setState((prev) => ({ ...prev, blockchainReady: status.ready || !!status.adminAddress }));
+      setBlockchainReady(status.ready || !!status.adminAddress);
     });
+    // Give use-wallet ~800ms to restore any saved session before we declare "disconnected"
+    const timer = setTimeout(() => setIsInitialized(true), 800);
+    return () => clearTimeout(timer);
   }, []);
 
-  const handleDisconnect = useCallback(() => {
-    setActiveWalletType(null);
-    localStorage.removeItem("frontier_wallet_type");
-    localStorage.removeItem("frontier_wallet_address");
-    setState((prev) => ({
-      ...prev,
-      isConnected: false,
-      walletStatus: "disconnected" as WalletStatus,
-      address: null,
-      displayAddress: null,
-      balance: 0,
-      isConnecting: false,
-      error: null,
-      walletType: null,
-      signerReady: false,
-    }));
-  }, []);
-
-  const updateBalance = useCallback(async (address: string) => {
-    const balance = await getAccountBalance(address);
-    setState((prev) => ({ ...prev, balance }));
-  }, []);
-
-  const setConnected = useCallback((address: string, walletType: WalletType, balance: number) => {
-    setActiveWalletType(walletType);
-    localStorage.setItem("frontier_wallet_type", walletType);
-    localStorage.setItem("frontier_wallet_address", address);
-    localStorage.setItem("frontier_onboarded_v1", "1");
-    setState((prev) => ({
-      ...prev,
-      isConnected: true,
-      walletStatus: "connected" as WalletStatus,
-      address,
-      displayAddress: formatAddress(address),
-      balance,
-      isConnecting: false,
-      error: null,
-      walletType,
-      signerReady: true,
-    }));
-  }, []);
-
+  // Register/unregister the signer whenever the active wallet changes
   useEffect(() => {
-    if (isReconnecting.current) return;
-    isReconnecting.current = true;
-
-    const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;
-    const savedAddress = localStorage.getItem("frontier_wallet_address");
-
-    if (savedType === "lute" && savedAddress) {
-      luteWallet
-        .connect(ALGORAND_TESTNET.genesisID)
-        .then((accounts) => {
-          const addr = accounts.length > 0 ? accounts[0] : savedAddress;
-          setActiveWalletType("lute");
-          localStorage.setItem("frontier_wallet_address", addr);
-          localStorage.setItem("frontier_onboarded_v1", "1");
-          setState((prev) => ({
-            ...prev,
-            isConnected: true,
-            walletStatus: "connected",
-            address: addr,
-            displayAddress: formatAddress(addr),
-            balance: 0,
-            isConnecting: false,
-            error: null,
-            walletType: "lute",
-            signerReady: true,
-          }));
-          updateBalance(addr);
-        })
-        .catch((err) => {
-          console.warn("LUTE reconnection failed, clearing saved state:", err);
-          localStorage.removeItem("frontier_wallet_type");
-          localStorage.removeItem("frontier_wallet_address");
-          setState((prev) => ({ ...prev, walletStatus: "disconnected" }));
-        })
-        .finally(() => {
-          isReconnecting.current = false;
-        });
-      return;
-    }
-
-    if (savedType === "pera") {
-      peraWallet
-        .reconnectSession()
-        .then((accounts) => {
-          peraWallet.connector?.on("disconnect", handleDisconnect);
-
-          if (accounts.length > 0) {
-            const address = accounts[0];
-            setActiveWalletType("pera");
-            localStorage.setItem("frontier_wallet_type", "pera");
-            localStorage.setItem("frontier_wallet_address", address);
-            localStorage.setItem("frontier_onboarded_v1", "1");
-            setState((prev) => ({
-              ...prev,
-              isConnected: true,
-              walletStatus: "connected" as WalletStatus,
-              address,
-              displayAddress: formatAddress(address),
-              balance: 0,
-              isConnecting: false,
-              error: null,
-              walletType: "pera",
-              signerReady: true,
-            }));
-            updateBalance(address);
-          } else {
-            localStorage.removeItem("frontier_wallet_type");
-            localStorage.removeItem("frontier_wallet_address");
-            setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
-          }
-        })
-        .catch((error) => {
-          console.error("Pera session reconnection failed:", error);
-          localStorage.removeItem("frontier_wallet_type");
-          localStorage.removeItem("frontier_wallet_address");
-          setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
-        })
-        .finally(() => {
-          isReconnecting.current = false;
-        });
+    if (activeAddress && signTransactions) {
+      registerWalletSigner(async (txns) => {
+        const results = await signTransactions([txns]);
+        return results.filter((s): s is Uint8Array => s !== null);
+      });
     } else {
-      isReconnecting.current = false;
-      setState((prev) => ({ ...prev, walletStatus: "disconnected" as WalletStatus }));
+      registerWalletSigner(null);
     }
-  }, [handleDisconnect, updateBalance]);
+  }, [activeAddress, signTransactions]);
 
-  const connectPera = useCallback(async () => {
-    setState((prev) => ({ ...prev, isConnecting: true, error: null }));
-
-    try {
-      const accounts = await peraWallet.connect();
-      peraWallet.connector?.on("disconnect", handleDisconnect);
-
-      if (accounts.length > 0) {
-        const address = accounts[0];
-        const balance = await getAccountBalance(address);
-        setConnected(address, "pera", balance);
-      }
-    } catch (error: unknown) {
-      const err = error as { data?: { type?: string }; message?: string };
-      if (err?.data?.type !== "CONNECT_MODAL_CLOSED") {
-        console.error("Pera connection failed:", error);
-        setState((prev) => ({
-          ...prev,
-          isConnecting: false,
-          error: err?.message || "Failed to connect Pera Wallet",
-        }));
-      } else {
-        setState((prev) => ({ ...prev, isConnecting: false }));
-      }
+  // Refresh balance whenever the active address changes
+  useEffect(() => {
+    if (activeAddress) {
+      getAccountBalance(activeAddress).then(setBalance);
+    } else {
+      setBalance(0);
     }
-  }, [handleDisconnect, setConnected]);
-
-  const connectLute = useCallback(async () => {
-    setState((prev) => ({ ...prev, isConnecting: true, error: null }));
-
-    try {
-      const accounts = await luteWallet.connect(ALGORAND_TESTNET.genesisID);
-
-      if (accounts.length > 0) {
-        const address = accounts[0];
-        const balance = await getAccountBalance(address);
-        setConnected(address, "lute", balance);
-      }
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      console.error("LUTE connection failed:", error);
-      setState((prev) => ({
-        ...prev,
-        isConnecting: false,
-        error: err?.message || "Failed to connect LUTE Wallet",
-      }));
-    }
-  }, [setConnected]);
-
-  const disconnect = useCallback(() => {
-    if (state.walletType === "pera") {
-      peraWallet.disconnect();
-    }
-    handleDisconnect();
-  }, [state.walletType, handleDisconnect]);
+  }, [activeAddress]);
 
   const refreshBalance = useCallback(async () => {
-    if (state.address) {
-      await updateBalance(state.address);
+    if (activeAddress) {
+      const b = await getAccountBalance(activeAddress);
+      setBalance(b);
     }
-  }, [state.address, updateBalance]);
+  }, [activeAddress]);
 
-  const isReady = state.isConnected && state.signerReady && !!state.address && !!getActiveWalletType();
+  const connect = useCallback(async (walletId: string) => {
+    setIsConnecting(true);
+    setError(null);
+    try {
+      const wallet = wallets.find((w) => w.id === walletId);
+      if (!wallet) throw new Error(`Wallet ${walletId} not configured`);
+      await wallet.connect();
+    } catch (err: unknown) {
+      const e = err as { message?: string; data?: { type?: string } };
+      const msg = e?.message || "";
+      // Ignore modal-closed / user-cancelled errors
+      if (!msg.toLowerCase().includes("cancel") && e?.data?.type !== "CONNECT_MODAL_CLOSED") {
+        setError(msg || "Failed to connect wallet");
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [wallets]);
+
+  const disconnect = useCallback(() => {
+    const activeWallet = wallets.find((w) => w.isActive);
+    activeWallet?.disconnect();
+    setError(null);
+    setBalance(0);
+    registerWalletSigner(null);
+  }, [wallets]);
+
+  const isConnected = !!activeAddress;
+  const signerReady = isConnected;
+  const activeWallet = wallets.find((w) => w.isActive) ?? null;
+  const walletType = activeWallet?.id ?? null;
+
+  const walletStatus: WalletStatus = !isInitialized
+    ? "restoring"
+    : isConnected
+    ? "connected"
+    : "disconnected";
+
+  const availableWallets: WalletInfo[] = wallets.map((w) => ({
+    id: w.id,
+    name: w.metadata.name,
+    icon: w.metadata.icon,
+    isConnected: w.isConnected,
+    isActive: w.isActive,
+  }));
+
+  const isReady = isConnected && signerReady && !!activeAddress;
 
   return (
-    <WalletContext.Provider value={{
-      ...state,
-      isReady,
-      connectPera,
-      connectLute,
-      disconnect,
-      refreshBalance,
-    }}>
+    <WalletContext.Provider
+      value={{
+        isConnected,
+        walletStatus,
+        address: activeAddress ?? null,
+        displayAddress: activeAddress ? formatAddress(activeAddress) : null,
+        balance,
+        isConnecting,
+        error,
+        walletType,
+        signerReady,
+        blockchainReady,
+        isReady,
+        availableWallets,
+        connect,
+        disconnect,
+        refreshBalance,
+      }}
+    >
       {children}
     </WalletContext.Provider>
   );
+}
+
+export function WalletProvider({ children }: { children: ReactNode }) {
+  return <InnerWalletProvider>{children}</InnerWalletProvider>;
 }
 
 export function useWallet() {

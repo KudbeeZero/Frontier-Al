@@ -4,7 +4,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
+import { WalletProvider as UseWalletProvider } from "@txnlab/use-wallet-react";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { walletManager } from "@/lib/walletManager";
 import NotFound from "@/pages/not-found";
 import GamePage from "@/pages/game";
 import TestnetPage from "@/pages/testnet";
@@ -33,12 +35,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <WalletProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </WalletProvider>
+        <UseWalletProvider manager={walletManager}>
+          <WalletProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </WalletProvider>
+        </UseWalletProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

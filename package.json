@@ -13,6 +13,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@blockshake/defly-connect": "^1.2.1",
     "@datadog/browser-rum": "^6.30.1",
     "@datadog/browser-rum-react": "^6.30.1",
     "@hookform/resolvers": "^3.10.0",
@@ -49,6 +50,8 @@
     "@react-three/fiber": "^8.17.10",
     "@react-three/postprocessing": "^2.16.2",
     "@tanstack/react-query": "^5.60.5",
+    "@txnlab/use-wallet": "^4.6.0",
+    "@txnlab/use-wallet-react": "^4.6.0",
     "@types/three": "^0.170.0",
     "@upstash/redis": "^1.36.4",
     "algosdk": "^3.5.2",

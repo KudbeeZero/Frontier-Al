@@ -1,4 +1,4 @@
-import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2, Smartphone, Monitor } from "lucide-react";
+import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,17 +17,21 @@ import {
 } from "@/components/ui/dialog";
 import { useWallet } from "@/hooks/useWallet";
 import { cn } from "@/lib/utils";
-import { useState, useMemo } from "react";
-
-function useIsMobile() {
-  return useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  }, []);
-}
+import { useState } from "react";
 
 export function WalletConnect({ className }: { className?: string }) {
-  const { isConnected, address, displayAddress, balance, isConnecting, error, walletType, connectPera, connectLute, disconnect } = useWallet();
+  const {
+    isConnected,
+    address,
+    displayAddress,
+    balance,
+    isConnecting,
+    error,
+    walletType,
+    availableWallets,
+    connect,
+    disconnect,
+  } = useWallet();
   const [showPicker, setShowPicker] = useState(false);
 
   if (isConnecting) {
@@ -72,29 +76,31 @@ export function WalletConnect({ className }: { className?: string }) {
         <WalletPickerDialog
           open={showPicker}
           onOpenChange={setShowPicker}
-          onSelectPera={() => { setShowPicker(false); connectPera(); }}
-          onSelectLute={() => { setShowPicker(false); connectLute(); }}
+          wallets={availableWallets}
+          onSelect={(walletId) => {
+            setShowPicker(false);
+            connect(walletId);
+          }}
         />
       </>
     );
   }
 
-  const walletLabel = walletType === "lute" ? "LUTE" : "Pera";
+  const walletName = availableWallets.find((w) => w.id === walletType)?.name ?? walletType ?? "Wallet";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className={cn(
-            "gap-2 font-mono text-sm border-primary/30",
-            className
-          )}
+          className={cn("gap-2 font-mono text-sm border-primary/30", className)}
           data-testid="button-wallet-connected"
         >
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-success" />
-            <span className="hidden sm:inline" data-testid="text-wallet-address">{displayAddress || address}</span>
+            <span className="hidden sm:inline" data-testid="text-wallet-address">
+              {displayAddress || address}
+            </span>
             <Badge variant="secondary" className="font-mono text-xs" data-testid="badge-wallet-balance">
               {balance.toFixed(2)} ALGO
             </Badge>
@@ -104,7 +110,7 @@ export function WalletConnect({ className }: { className?: string }) {
       <DropdownMenuContent align="end" className="w-56">
         <div className="px-2 py-2">
           <p className="text-xs text-muted-foreground uppercase font-display tracking-wide">
-            {walletLabel} Wallet
+            {walletName}
           </p>
           <p className="font-mono text-sm mt-1 break-all">{address}</p>
         </div>
@@ -132,16 +138,14 @@ export function WalletConnect({ className }: { className?: string }) {
 function WalletPickerDialog({
   open,
   onOpenChange,
-  onSelectPera,
-  onSelectLute,
+  wallets,
+  onSelect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectPera: () => void;
-  onSelectLute: () => void;
+  wallets: { id: string; name: string; icon: string }[];
+  onSelect: (walletId: string) => void;
 }) {
-  const isMobile = useIsMobile();
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[85vh] overflow-y-auto rounded-xl">
@@ -154,48 +158,25 @@ function WalletPickerDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 py-4">
-          <button
-            onClick={onSelectPera}
-            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors text-left w-full"
-            data-testid="button-connect-pera"
-          >
-            <div className="w-10 h-10 rounded-md bg-[#ffee55] flex items-center justify-center shrink-0">
-              <span className="text-black font-bold text-lg">P</span>
-            </div>
-            <div className="text-left flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="font-display text-sm uppercase tracking-wide">Pera Wallet</p>
-                <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-display uppercase tracking-wide">
-                  {isMobile ? <Smartphone className="w-2.5 h-2.5" /> : <Monitor className="w-2.5 h-2.5" />}
-                  {isMobile ? "Deep link" : "QR Code"}
-                </span>
+          {wallets.map((wallet) => (
+            <button
+              key={wallet.id}
+              onClick={() => onSelect(wallet.id)}
+              className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors text-left w-full"
+              data-testid={`button-connect-${wallet.id}`}
+            >
+              <div className="w-10 h-10 rounded-md overflow-hidden shrink-0 bg-muted flex items-center justify-center">
+                {wallet.icon ? (
+                  <img src={wallet.icon} alt={wallet.name} className="w-8 h-8 object-contain" />
+                ) : (
+                  <Wallet className="w-5 h-5 text-muted-foreground" />
+                )}
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isMobile
-                  ? "Opens the Pera app directly on this device"
-                  : "Scan QR code with Pera on your phone"}
-              </p>
-            </div>
-          </button>
-          <button
-            onClick={onSelectLute}
-            className="flex items-center gap-4 p-4 rounded-md border border-border hover-elevate transition-colors text-left w-full"
-            data-testid="button-connect-lute"
-          >
-            <div className="w-10 h-10 rounded-md bg-[#6366f1] flex items-center justify-center shrink-0">
-              <span className="text-white font-bold text-lg">L</span>
-            </div>
-            <div className="text-left flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="font-display text-sm uppercase tracking-wide">LUTE Wallet</p>
-                <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-display uppercase tracking-wide">
-                  <Monitor className="w-2.5 h-2.5" />
-                  Browser
-                </span>
+              <div className="text-left flex-1 min-w-0">
+                <p className="font-display text-sm uppercase tracking-wide">{wallet.name}</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Browser-based Algorand wallet</p>
-            </div>
-          </button>
+            </button>
+          ))}
         </div>
       </DialogContent>
     </Dialog>
