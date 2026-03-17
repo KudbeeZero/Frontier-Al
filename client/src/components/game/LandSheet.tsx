@@ -707,6 +707,7 @@ export function LandSheet({
         expanded ? "max-h-[75vh]" : "max-h-[280px]"
       )}
       data-testid="land-sheet"
+      data-tutorial="land-sheet"
     >
       <div className="mx-2 backdrop-blur-xl bg-gradient-to-b from-card/95 to-card/85 border border-border/60 rounded-t-xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: expanded ? "75vh" : "280px" }}>
         <div

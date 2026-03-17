@@ -36,6 +36,8 @@ import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 import { StreamOverlay } from "./StreamOverlay";
+import { TutorialOverlay } from "./TutorialOverlay";
+import { useTutorial, TUTORIAL_STEPS } from "@/hooks/useTutorial";
 import { sendPaymentTransaction } from "@/lib/algorand";
 import algosdk from "algosdk";
 
@@ -67,6 +69,7 @@ export function GameLayout() {
   const player = useCurrentPlayer(wallet.address);
   const { toast } = useToast();
   const { events: orbitalEvents, impactEvents } = useOrbitalEngine();
+  const tutorial = useTutorial();
 
   const initializedAddressRef = useRef<string | null>(null);
   const ambienceStartedRef = useRef(false);
@@ -814,26 +817,28 @@ export function GameLayout() {
     <div className="relative h-screen w-screen overflow-hidden bg-black" data-testid="game-layout">
       {gameState ? (
         <>
-          <PlanetGlobe
-            parcels={gameState.parcels}
-            players={gameState.players}
-            currentPlayerId={player?.id || null}
-            selectedParcelId={selectedParcelId}
-            onParcelSelect={setSelectedParcelId}
-            onAttack={handleAttackClick}
-            onMine={handleMine}
-            onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
-            onPurchase={handlePurchase}
-            className="absolute inset-0 w-full h-full"
-            battles={gameState.battles}
-            livePulses={livePulses}
-            orbitalEvents={orbitalEvents}
-            replayEvents={replayEvents}
-            replayTime={replayTime}
-            replayVisibleTypes={replayVisibleTypes}
-            streamMode={streamMode}
-            flyRequestId={flyRequestId}
-          />
+          <div className="absolute inset-0 w-full h-full" data-tutorial="map-area">
+            <PlanetGlobe
+              parcels={gameState.parcels}
+              players={gameState.players}
+              currentPlayerId={player?.id || null}
+              selectedParcelId={selectedParcelId}
+              onParcelSelect={setSelectedParcelId}
+              onAttack={handleAttackClick}
+              onMine={handleMine}
+              onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
+              onPurchase={handlePurchase}
+              className="absolute inset-0 w-full h-full"
+              battles={gameState.battles}
+              livePulses={livePulses}
+              orbitalEvents={orbitalEvents}
+              replayEvents={replayEvents}
+              replayTime={replayTime}
+              replayVisibleTypes={replayVisibleTypes}
+              streamMode={streamMode}
+              flyRequestId={flyRequestId}
+            />
+          </div>
 
           {/* Brief overlay when transitioning from a panel to the map */}
           {mapTransitioning && (
@@ -935,7 +940,7 @@ export function GameLayout() {
       )}
 
 
-      <aside className="hidden md:flex flex-col w-60 lg:w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden">
+      <aside className="hidden md:flex flex-col w-60 lg:w-72 absolute top-16 left-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-r border-border overflow-hidden" data-tutorial="buy-plot">
         {isLoading ? (
           <div className="p-4 space-y-3">
             <Skeleton className="h-24 w-full" />
@@ -1199,6 +1204,17 @@ export function GameLayout() {
           seasonName={seasonName ?? null}
         />
       )}
+
+      {/* Onboarding tutorial — shown to first-time users */}
+      <TutorialOverlay
+        isOpen={tutorial.isOpen}
+        step={tutorial.step}
+        steps={TUTORIAL_STEPS}
+        onNext={tutorial.next}
+        onBack={tutorial.back}
+        onSkip={tutorial.complete}
+        onFinish={tutorial.complete}
+      />
     </div>
   );
 }
