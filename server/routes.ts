@@ -26,6 +26,14 @@ import {
   FACTION_DEFINITIONS,
 } from "./services/chain/factions";
 import { fromMicroFRNTR } from "./storage/game-rules";
+import {
+  ECONOMY_MODE,
+  LAND_DAILY_FRNTR_RATE,
+  LAND_DAILY_FRNTR_RATE_TEST,
+  LAND_DAILY_FRNTR_RATE_PROD,
+  EMISSION_CHECK_PARCEL_COUNTS,
+  projectedDailyEmissions,
+} from "../shared/economy-config";
 
 const algodClient    = getAlgodClient();
 const indexerClient  = getIndexerClient();
@@ -181,6 +189,7 @@ export async function registerRoutes(
       // player balances regardless of whether on-chain transfers have settled.
       let totalBurned = 0;
       let inGameCirculating = 0;
+      let ownedParcelCount  = 0;
       try {
         const [metrics] = await db
           .select({
@@ -190,6 +199,12 @@ export async function registerRoutes(
           .from(playersTable);
         totalBurned       = Math.round(Number(metrics?.burned       ?? 0) * 100) / 100;
         inGameCirculating = Math.round(Number(metrics?.balanceMicro ?? 0) / divisor * 100) / 100;
+
+        const [{ cnt }] = await db
+          .select({ cnt: sql<number>`COUNT(*)` })
+          .from(parcelsTable)
+          .where(sql`${parcelsTable.ownerId} IS NOT NULL AND ${parcelsTable.ownerType} = 'player'`);
+        ownedParcelCount = Number(cnt ?? 0);
       } catch (_dbErr) {
         // Non-fatal — fall back to on-chain circulating
         inGameCirculating = circulating;
@@ -203,6 +218,23 @@ export async function registerRoutes(
         protocolTreasuryUnsettled = Math.round(fromMicroFRNTR(bal.unsettledMicro) * 100) / 100;
         protocolTreasuryTotal     = Math.round(fromMicroFRNTR(bal.totalMicro)     * 100) / 100;
       } catch (_e) { /* non-fatal */ }
+
+      // ── Payout safety: projected daily emissions vs admin FRNTR balance ──────
+      const projections = Object.fromEntries(
+        EMISSION_CHECK_PARCEL_COUNTS.map(n => [n, projectedDailyEmissions(n)])
+      ) as Record<number, number>;
+
+      const currentDailyDemand = projectedDailyEmissions(ownedParcelCount);
+
+      // Warn when current demand (base rate only) exceeds 10% of admin FRNTR balance per day
+      if (treasury > 0 && currentDailyDemand > treasury * 0.1) {
+        console.warn(
+          `[/api/economics] ⚠ Payout warning: current daily base emission demand ` +
+          `(${currentDailyDemand.toFixed(0)} FRNTR/day for ${ownedParcelCount} parcels) ` +
+          `exceeds 10% of admin treasury balance (${treasury.toFixed(0)} FRNTR). ` +
+          `At this rate the treasury covers ~${(treasury / Math.max(currentDailyDemand, 1)).toFixed(1)} days.`
+        );
+      }
 
       res.json({
         asaId,
@@ -218,6 +250,15 @@ export async function registerRoutes(
         unitName: "FRNTR",
         assetName: "FRONTIER",
         decimals: ASA_DECIMALS,
+        // ── Emission config (centralized from shared/economy-config.ts) ──────
+        economyMode: ECONOMY_MODE,
+        emissionRatePerDay: LAND_DAILY_FRNTR_RATE,
+        emissionRateTest:   LAND_DAILY_FRNTR_RATE_TEST,
+        emissionRateProd:   LAND_DAILY_FRNTR_RATE_PROD,
+        // ── Payout projections (base rate × parcel count) ────────────────────
+        ownedParcelCount,
+        currentDailyBaseEmission: Math.round(currentDailyDemand * 100) / 100,
+        projectedEmissions: projections,
       });
     } catch (error) {
       console.error("Economics fetch error:", error);

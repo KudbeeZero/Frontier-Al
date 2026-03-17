@@ -31,6 +31,13 @@ interface EconomicsData {
   unitName: string;
   assetName: string;
   decimals: number;
+  economyMode: "testing" | "production";
+  emissionRatePerDay: number;
+  emissionRateTest: number;
+  emissionRateProd: number;
+  ownedParcelCount: number;
+  currentDailyBaseEmission: number;
+  projectedEmissions: Record<string, number>;
 }
 
 function fmt(n: number | undefined | null, decimals = 2): string {
@@ -237,6 +244,46 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                   </div>
                 </div>
               )}
+
+              <div>
+                <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">
+                  Land Emission Rate
+                  {data.economyMode === "testing" && (
+                    <Badge variant="secondary" className="ml-2 text-[9px] font-mono bg-yellow-500/20 text-yellow-300 border-yellow-500/40">
+                      TESTING MODE
+                    </Badge>
+                  )}
+                </p>
+                <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Active Rate</span>
+                    <span className="font-mono text-xs font-bold text-yellow-400">
+                      {data.emissionRatePerDay} FRNTR / day
+                    </span>
+                  </div>
+                  {data.economyMode === "testing" && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Production Rate</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {data.emissionRateProd} FRNTR / day (future)
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Owned Parcels</span>
+                    <span className="font-mono text-xs text-foreground">{data.ownedParcelCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Daily Base Demand</span>
+                    <span className="font-mono text-xs text-emerald-400">{fmt(data.currentDailyBaseEmission)} FRNTR</span>
+                  </div>
+                  {data.economyMode === "testing" && (
+                    <p className="text-[10px] text-yellow-400/80 leading-relaxed pt-0.5 border-t border-border/30 mt-1">
+                      Testing rate active — 50 FRNTR/day per parcel. Will be reduced for live launch.
+                    </p>
+                  )}
+                </div>
+              </div>
 
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">On-Chain Supply</p>

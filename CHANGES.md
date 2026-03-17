@@ -1,5 +1,30 @@
 # FRONTIER — Change Log & Status
 
+## Session: centralize-frntr-emissions-E4ZDk
+**Date:** 2026-03-17
+**Branch:** `claude/centralize-frntr-emissions-E4ZDk`
+
+---
+
+## What Was Done
+
+### FRNTR Land Emissions — Test Rate Rollout
+
+**Purpose:** Raise land production to 50 FRNTR/day per parcel for testing/staging/mainnet-test phase, and centralize all emission config into a single file.
+
+**⚠ Testing Economy Rate Active:** 50 FRNTR/day per parcel (base). This is NOT the live production rate.
+
+**Files Changed:**
+- `shared/economy-config.ts` _(new)_ — central emission constants; `LAND_DAILY_FRNTR_RATE_TEST=50`, `LAND_DAILY_FRNTR_RATE_PROD=1`, env-based mode switching
+- `shared/schema.ts` — `calculateFrontierPerDay()` now reads base rate from `economy-config.ts`
+- `server/services/chain/client.ts` — `getAdminBalance()` now returns real FRNTR ASA balance
+- `server/routes.ts` — `/api/economics` includes emission config, parcel count, daily demand, projections, and payout safety warning log
+- `client/src/components/game/EconomicsPanel.tsx` — Land Emission Rate section with TESTING MODE badge
+
+**Production Switch:** Set `ECONOMY_MODE=production` env var to activate `LAND_DAILY_FRNTR_RATE_PROD`.
+
+---
+
 ## Session: cleanup-and-docs-ZnHtp
 **Date:** 2026-03-14
 **Branch:** `claude/cleanup-and-docs-ZnHtp`
