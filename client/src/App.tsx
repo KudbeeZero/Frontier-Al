@@ -12,6 +12,7 @@ import LandingPage from "@/pages/landing";
 import LandingEconomics from "@/pages/landing-economics";
 import LandingGameplay from "@/pages/landing-gameplay";
 import LandingFeatures from "@/pages/landing-features";
+import LandingUpdates from "@/pages/landing-updates";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/info/economics" component={LandingEconomics} />
       <Route path="/info/gameplay" component={LandingGameplay} />
       <Route path="/info/features" component={LandingFeatures} />
+      <Route path="/info/updates" component={LandingUpdates} />
       <Route path="/game" component={GamePage} />
       <Route path="/testnet" component={TestnetPage} />
       <Route component={NotFound} />

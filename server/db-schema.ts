@@ -320,6 +320,10 @@ export const subParcels = pgTable(
     acquiredAt:            bigint("acquired_at", { mode: "number" }),
     activeBattleId:        varchar("active_battle_id", { length: 36 }),
     createdAt:             bigint("created_at", { mode: "number" }).notNull(),
+    // ── Archetype system (Phase 5.9) ─────────────────────────────────────────
+    archetype:             varchar("archetype", { length: 20 }),              // "resource"|"trade"|"fortress"|"energy"|null
+    archetypeLevel:        integer("archetype_level").notNull().default(0),   // 0=unassigned, 1-3 for fortress
+    energyAlignment:       varchar("energy_alignment", { length: 10 }),       // "helios"|"aegis"|"nexus"|null
   },
   (t) => ({
     /** Efficiently load all sub-parcels for a given parent plot. */

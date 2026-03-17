@@ -116,6 +116,18 @@ export interface IStorage {
   cancelSubParcelListing(sellerId: string, listingId: string): Promise<{ error?: string }>;
   /** Buy a sub-parcel listing (transfers ownership + FRONTIER). */
   buySubParcelListing(buyerId: string, listingId: string): Promise<{ listing: SubParcelListing; error?: string }>;
+  /**
+   * Assign a strategic archetype to an owned sub-parcel.
+   * Enforces grid composition limits (max 3 of same type per 9-cell grid).
+   * Returns factionBonus multiplier applied (0 if no alignment benefit).
+   */
+  assignSubParcelArchetype(
+    subParcelId: string,
+    playerId: string,
+    archetype: import("../../shared/schema").SubParcelArchetype,
+    archetypeLevel: number,
+    energyAlignment?: import("../../shared/schema").EnergyAlignment
+  ): Promise<{ subParcel: SubParcel; factionBonus: number; error?: string }>;
 
   // ── Prediction Markets ────────────────────────────────────────────────────
   getOpenMarkets(): Promise<PredictionMarket[]>;

@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { getBattleReplay, recordSubParcelWorldEvent } from "./services/redis";
+import { getBattleReplay, recordSubParcelWorldEvent, recordArchetypeWorldEvent } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
@@ -2231,6 +2231,56 @@ export async function registerRoutes(
       res.json({ success: true, subParcel: sp });
     } catch (err) {
       console.error("[sub-parcels] buildSubParcelImprovement error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Sub-Parcel Archetype Assignment ───────────────────────────────────────
+
+  /** POST /api/sub-parcels/:subParcelId/archetype — assign a strategic archetype */
+  app.post("/api/sub-parcels/:subParcelId/archetype", async (req, res) => {
+    const { subParcelId } = req.params;
+    const { playerId, archetype, archetypeLevel = 1, energyAlignment } = req.body;
+    if (!subParcelId) return res.status(400).json({ error: "subParcelId required" });
+    if (!playerId)    return res.status(400).json({ error: "playerId required" });
+    if (!archetype)   return res.status(400).json({ error: "archetype required" });
+    try {
+      const result = await storage.assignSubParcelArchetype(
+        subParcelId, playerId, archetype, archetypeLevel, energyAlignment
+      );
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+
+      const sp = result.subParcel;
+
+      broadcastRaw({
+        type:            "sub_parcel_archetype_set",
+        subParcelId:     sp.id,
+        parentPlotId:    sp.parentPlotId,
+        subIndex:        sp.subIndex,
+        archetype:       sp.archetype,
+        archetypeLevel:  sp.archetypeLevel,
+        energyAlignment: sp.energyAlignment,
+        ownerId:         playerId,
+        factionBonus:    result.factionBonus,
+      });
+
+      storage.getParcelBiomeByPlotId(sp.parentPlotId).then(biome => {
+        recordArchetypeWorldEvent({
+          plotId:          sp.parentPlotId,
+          subIndex:        sp.subIndex,
+          biome,
+          archetype:       sp.archetype!,
+          archetypeLevel:  sp.archetypeLevel,
+          energyAlignment: sp.energyAlignment ?? undefined,
+          playerId,
+          factionBonus:    result.factionBonus,
+        }).catch(() => {});
+      }).catch(() => {});
+
+      res.json({ success: true, subParcel: sp, factionBonus: result.factionBonus });
+    } catch (err) {
+      console.error("[sub-parcels] assignSubParcelArchetype error", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
