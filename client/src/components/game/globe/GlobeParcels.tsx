@@ -393,7 +393,7 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
 
   return (
     <>
-      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+      <instancedMesh ref={borderMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} count={0}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors
@@ -404,7 +404,7 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
           toneMapped={false}
         />
       </instancedMesh>
-      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]}>
+      <instancedMesh ref={fillMeshRef} args={[undefined, undefined, MAX_SUB_TILES]} count={0}>
         <planeGeometry args={[1.0, 1.0]} />
         <meshBasicMaterial
           vertexColors

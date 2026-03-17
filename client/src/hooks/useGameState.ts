@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { GameState, MineAction, UpgradeAction, AttackAction, BuildAction, PurchaseAction, MintAvatarAction, SpecialAttackAction, DeployDroneAction, DeploySatelliteAction } from "@shared/schema";
 
@@ -6,6 +6,7 @@ export function useGameState() {
   return useQuery<GameState>({
     queryKey: ["/api/game/state"],
     refetchInterval: 30_000,  // fallback poll — WS push handles real-time updates
+    placeholderData: keepPreviousData,  // keep stale data during refetch so the globe never unmounts
   });
 }
 
