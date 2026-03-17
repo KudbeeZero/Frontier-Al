@@ -1,0 +1,156 @@
+Act as a senior TypeScript game engineer.
+
+I already have a working terraforming engine using applyTerraform(state, action) with full tests.
+
+Now I want to build a VERY SIMPLE payment-based parcel terraforming system.
+
+IMPORTANT:
+- Keep it beginner-friendly
+- Do not overengineer
+- Do not add blockchain logic
+- Do not add UI
+- Use full file replacements
+- Keep logic clean and separated
+
+GOAL:
+Allow a player to pay to terraform a parcel in two ways:
+1. random terraform (cheaper)
+2. targeted terraform (more expensive)
+
+--------------------------------
+
+STEP 1 — CREATE PLAYER + PARCEL TYPES
+
+Create a new file:
+
+client/src/parcelSystem.ts
+
+Add:
+
+- Player type:
+  id: string
+  balance: number
+
+- Parcel type:
+  id: string
+  terraformState: TerraformState
+
+--------------------------------
+
+STEP 2 — CREATE COST SYSTEM
+
+Inside the same file, add:
+
+const terraformCosts = {
+  random: 10,
+  targeted: {
+    desert: 20,
+    forest: 25,
+    ice: 30,
+    toxic: 15,
+    plains: 18
+  }
+}
+
+--------------------------------
+
+STEP 3 — CREATE HELPER FUNCTIONS
+
+Add:
+
+function canAfford(player, cost)
+
+function deductBalance(player, cost)
+
+IMPORTANT:
+- Do not mutate original player object
+- Always return a new object
+
+--------------------------------
+
+STEP 4 — RANDOM TERRAFORM
+
+Create:
+
+function getRandomBiome(currentBiome)
+
+Rules:
+- cannot return the same biome
+- choose from valid biome list
+- randomness should be simple (Math.random)
+
+--------------------------------
+
+STEP 5 — CORE FUNCTION
+
+Create:
+
+function payAndTerraform(player, parcel, action)
+
+Where action can be:
+
+{ type: 'random' }
+{ type: 'targeted', biome: Biome }
+
+Flow:
+1. determine cost
+2. check if player can afford
+3. if not → return error
+4. deduct balance
+5. apply terraform using applyTerraform
+6. return:
+   {
+     success,
+     player,
+     parcel,
+     error?
+   }
+
+IMPORTANT:
+- do not mutate original player or parcel
+- reuse applyTerraform (do NOT rewrite logic)
+
+--------------------------------
+
+STEP 6 — CREATE TEST FILE
+
+Create:
+
+client/tests/parcelSystem.spec.ts
+
+Tests to include:
+
+1. player can afford random terraform
+2. player cannot afford targeted terraform
+3. random terraform deducts balance
+4. targeted terraform deducts balance
+5. parcel biome changes after terraform
+6. original player is not mutated
+7. original parcel is not mutated
+
+IMPORTANT:
+- keep tests simple
+- use fixed Math.random mock for consistency
+
+--------------------------------
+
+STEP 7 — OUTPUT FORMAT
+
+Return:
+1. full contents of parcelSystem.ts
+2. full contents of parcelSystem.spec.ts
+3. exact command to run tests
+
+--------------------------------
+
+RULES:
+- keep everything small
+- no extra abstractions
+- no blockchain
+- no wallet
+- no async code
+- no database
+- no UI
+- just logic + tests
+
+This is a prototype system only.
