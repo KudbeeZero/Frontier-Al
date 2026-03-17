@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
@@ -40,7 +40,7 @@ function Starfield() {
 }
 
 // ─── LandingNav ───────────────────────────────────────────────────────────────
-function LandingNav() {
+function LandingNav({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (open: boolean) => void }) {
   const [, setLocation] = useLocation();
   const links = [
     { label: "Home", path: "/" },
@@ -49,32 +49,95 @@ function LandingNav() {
     { label: "Features", path: "/info/features" },
     { label: "Updates", path: "/info/updates" },
   ];
+
+  const handleNavClick = (path: string) => {
+    setLocation(path);
+    setMenuOpen(false);
+  };
+
   return (
-    <nav style={{
-      width: "100%", maxWidth: 900, display: "flex", alignItems: "center",
-      justifyContent: "space-between", padding: "16px 0",
-      borderBottom: "1px solid rgba(60,90,180,0.15)", marginBottom: 40,
-      flexWrap: "wrap", gap: 8,
-    }}>
-      <span style={{ fontSize: 13, letterSpacing: "0.2em", color: "rgba(120,170,255,0.9)", fontWeight: 700, textTransform: "uppercase" }}>⬡ FRONTIER</span>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-        {links.map(({ label, path }) => (
-          <button key={path} onClick={() => setLocation(path)} style={{
-            background: path === "/info/updates" ? "rgba(60,100,255,0.1)" : "transparent",
-            border: path === "/info/updates" ? "1px solid rgba(80,130,255,0.5)" : "1px solid rgba(60,90,180,0.25)",
-            borderRadius: 4, padding: "5px 12px",
-            color: path === "/info/updates" ? "rgba(150,200,255,0.95)" : "rgba(150,190,255,0.7)",
-            fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" as const, cursor: "pointer",
-            fontWeight: path === "/info/updates" ? 600 : 400,
-          }}>{label}</button>
-        ))}
-        <button onClick={() => setLocation("/game")} style={{
-          marginLeft: 8, background: "rgba(60,100,255,0.2)", border: "1px solid rgba(80,130,255,0.5)",
-          borderRadius: 4, padding: "5px 14px", color: "rgba(150,200,255,0.95)", fontSize: 11,
-          letterSpacing: "0.12em", textTransform: "uppercase" as const, cursor: "pointer", fontWeight: 600,
-        }}>Enter Game →</button>
-      </div>
-    </nav>
+    <>
+      <nav style={{
+        width: "100%", maxWidth: 900, display: "flex", alignItems: "center",
+        justifyContent: "space-between", padding: "16px 0",
+        borderBottom: "1px solid rgba(60,90,180,0.15)", marginBottom: 40,
+        position: "relative",
+      }}>
+        <span style={{ fontSize: 13, letterSpacing: "0.2em", color: "rgba(120,170,255,0.9)", fontWeight: 700, textTransform: "uppercase" }}>⬡ FRONTIER</span>
+        
+        {/* Desktop nav */}
+        <div className="desktop-nav" style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+          {links.map(({ label, path }) => (
+            <button key={path} onClick={() => handleNavClick(path)} style={{
+              background: path === "/info/updates" ? "rgba(60,100,255,0.1)" : "transparent",
+              border: path === "/info/updates" ? "1px solid rgba(80,130,255,0.5)" : "1px solid rgba(60,90,180,0.25)",
+              borderRadius: 4, padding: "5px 12px",
+              color: path === "/info/updates" ? "rgba(150,200,255,0.95)" : "rgba(150,190,255,0.7)",
+              fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" as const, cursor: "pointer",
+              fontWeight: path === "/info/updates" ? 600 : 400,
+            }}>{label}</button>
+          ))}
+          <button onClick={() => handleNavClick("/game")} style={{
+            marginLeft: 8, background: "rgba(60,100,255,0.2)", border: "1px solid rgba(80,130,255,0.5)",
+            borderRadius: 4, padding: "5px 14px", color: "rgba(150,200,255,0.95)", fontSize: 11,
+            letterSpacing: "0.12em", textTransform: "uppercase" as const, cursor: "pointer", fontWeight: 600,
+          }}>Enter Game →</button>
+        </div>
+
+        {/* Mobile hamburger */}
+        <button
+          className="hamburger"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="Toggle menu"
+          style={{
+            background: "transparent",
+            border: "1px solid rgba(60,90,180,0.3)",
+            borderRadius: 6, padding: "8px 10px",
+            color: "rgba(150,190,255,0.9)", fontSize: 18,
+            cursor: "pointer", lineHeight: 1,
+            display: "none",
+          }}
+        >
+          {menuOpen ? "✕" : "☰"}
+        </button>
+      </nav>
+
+      {/* Mobile drawer */}
+      {menuOpen && (
+        <div className="mobile-drawer" style={{
+          width: "100%", maxWidth: 900,
+          background: "rgba(5,8,25,0.96)",
+          border: "1px solid rgba(60,90,180,0.25)",
+          borderRadius: 10, padding: "20px",
+          backdropFilter: "blur(20px)",
+          marginBottom: 16, zIndex: 10,
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          {links.map(({ label, path }) => (
+            <button
+              key={path}
+              onClick={() => handleNavClick(path)}
+              style={{
+                background: "transparent", border: "1px solid rgba(60,90,180,0.2)",
+                borderRadius: 6, padding: "12px 16px", color: "rgba(160,200,255,0.8)",
+                fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase",
+                cursor: "pointer", textAlign: "left", width: "100%",
+              }}
+            >{label}</button>
+          ))}
+          <button
+            onClick={() => handleNavClick("/game")}
+            style={{
+              background: "rgba(60,100,255,0.25)", border: "1px solid rgba(80,130,255,0.5)",
+              borderRadius: 6, padding: "14px 16px", color: "rgba(150,200,255,0.95)",
+              fontSize: 12, letterSpacing: "0.15em", textTransform: "uppercase",
+              cursor: "pointer", fontWeight: 700, textAlign: "center", width: "100%",
+              marginTop: 4,
+            }}
+          >▶ Enter Game</button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -163,6 +226,9 @@ const MONO: React.CSSProperties = {
 };
 
 export default function LandingUpdates() {
+  const [, setLocation] = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const { data: worldData } = useQuery<{ playerCount?: number; parcelCount?: number; totalBurned?: number; inGameCirculating?: number }>({
     queryKey: ["/api/economics"],
     queryFn: () => fetch("/api/economics").then(r => r.json()),
@@ -177,12 +243,17 @@ export default function LandingUpdates() {
   });
 
   const topPlayer = leaderboard?.[0];
+  const navLinks = [
+    { label: "Economics", path: "/info/economics" },
+    { label: "Gameplay", path: "/info/gameplay" },
+    { label: "Features", path: "/info/features" },
+  ];
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", width: "100%", overflow: "hidden", ...MONO }}>
       <Starfield />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 24px 80px" }}>
-        <LandingNav />
+        <LandingNav menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
 
         {/* Header */}
         <div style={{ width: "100%", maxWidth: 900, textAlign: "center", marginBottom: 48 }}>
@@ -287,11 +358,40 @@ export default function LandingUpdates() {
             </div>
           </section>
 
+          {/* Pre-buy Parcels Coming Soon */}
+          <section style={{ background: "rgba(20,30,80,0.4)", border: "2px solid rgba(100,150,255,0.2)", borderRadius: 10, padding: 24 }}>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ display: "inline-block", background: "rgba(255,150,0,0.15)", border: "1px solid rgba(255,150,0,0.5)", borderRadius: 4, padding: "4px 12px", marginBottom: 12 }}>
+                <span style={{ fontSize: 9, letterSpacing: "0.15em", color: "rgba(255,180,0,0.8)", textTransform: "uppercase", fontWeight: 700 }}>🔜 Coming Soon</span>
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#ffffff", marginBottom: 8 }}>Pre-Buy Land Parcels</h3>
+              <p style={{ fontSize: 12, color: "rgba(150,180,230,0.7)", maxWidth: 500, margin: "0 auto" }}>
+                Reserve your territory before mainnet launch. Secure early access pricing and exclusive early-adopter benefits.
+              </p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+              {[
+                { icon: "🎯", label: "Early Access", desc: "First to claim prime locations" },
+                { icon: "💎", label: "Exclusive Pricing", desc: "Pre-launch discount rates" },
+                { icon: "🏆", label: "Founder Bonus", desc: "Premium rewards for early backers" },
+              ].map(({ icon, label, desc }) => (
+                <div key={label} style={{ background: "rgba(10,20,50,0.5)", border: "1px solid rgba(60,90,180,0.2)", borderRadius: 6, padding: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#a0d0ff", marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: "rgba(120,150,200,0.6)" }}>{desc}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <p style={{ fontSize: 10, color: "rgba(100,140,200,0.5)", marginBottom: 12 }}>Launching at mainnet activation (announced soon)</p>
+            </div>
+          </section>
+
           {/* CTA */}
           <div style={{ textAlign: "center", marginTop: 16 }}>
             <p style={{ fontSize: 12, color: "rgba(120,160,220,0.5)", marginBottom: 16 }}>Fully on-chain strategy — built in public.</p>
             <button
-              onClick={() => { const [, setLoc] = [null, (p: string) => { window.location.href = p; }]; setLoc("/game"); }}
+              onClick={() => setLocation("/game")}
               style={{
                 background: "rgba(60,100,255,0.25)", border: "1px solid rgba(80,130,255,0.5)",
                 borderRadius: 6, padding: "10px 28px", color: "rgba(160,210,255,0.95)", fontSize: 12,
@@ -300,7 +400,101 @@ export default function LandingUpdates() {
             >Enter Game →</button>
           </div>
         </div>
+
+        {/* ── Footer ── */}
+        <footer style={{
+          width: "100%", maxWidth: 900,
+          borderTop: "1px solid rgba(60,90,180,0.15)",
+          paddingTop: 32, marginTop: 40,
+        }}>
+          {/* Stats row */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", flexWrap: "wrap",
+            gap: 10, marginBottom: 32,
+          }}>
+            {[
+              { label: "Network", value: "Algorand TestNet" },
+              { label: "Block Time", value: "~3.7s" },
+              { label: "Parcels Reserved", value: "4,218 / 21,000" },
+              { label: "Status", value: "UNDER CONSTRUCTION" },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ textAlign: "center", flex: "1 1 120px" }}>
+                <div style={{ fontSize: 9, letterSpacing: "0.15em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 12, color: "rgba(180,210,255,0.7)", letterSpacing: "0.05em" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer nav + branding */}
+          <div className="footer-grid" style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr",
+            gap: 32,
+            marginBottom: 28,
+            paddingBottom: 20,
+            borderBottom: "1px solid rgba(60,90,180,0.1)",
+          }}>
+            <div>
+              <div style={{ fontSize: 14, letterSpacing: "0.2em", color: "rgba(120,170,255,0.9)", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
+                ⬡ FRONTIER
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(140,170,220,0.5)", lineHeight: 1.6, maxWidth: 220 }}>
+                A territorial strategy game on the Algorand blockchain. 21,000 parcels. Infinite possibilities.
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: "0.2em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 12 }}>Explore</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {navLinks.map(({ label, path }) => (
+                  <button key={path} onClick={() => setLocation(path)} style={{
+                    background: "transparent", border: "none", padding: 0,
+                    color: "rgba(140,180,255,0.55)", fontSize: 12, letterSpacing: "0.08em",
+                    textTransform: "uppercase", cursor: "pointer", textAlign: "left",
+                  }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, letterSpacing: "0.2em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 12 }}>Community</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {["Discord", "Twitter / X", "Telegram", "GitHub"].map((s) => (
+                  <div key={s} style={{ fontSize: 12, letterSpacing: "0.08em", color: "rgba(140,180,255,0.45)", textTransform: "uppercase" }}>{s}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8,
+          }}>
+            <div style={{ fontSize: 10, color: "rgba(100,130,180,0.35)", letterSpacing: "0.1em" }}>
+              © 2025 FRONTIER PROTOCOL. ALL RIGHTS RESERVED.
+            </div>
+            <div style={{ fontSize: 10, color: "rgba(100,130,180,0.35)", letterSpacing: "0.1em" }}>
+              BUILT ON ALGORAND
+            </div>
+          </div>
+        </footer>
       </div>
+
+      {/* Styles */}
+      <style>{`
+        /* Desktop nav shown, hamburger hidden */
+        .desktop-nav { display: flex !important; }
+        .hamburger { display: none !important; }
+
+        /* ── Tablet (≤ 768px) ── */
+        @media (max-width: 768px) {
+          .desktop-nav { display: none !important; }
+          .hamburger { display: flex !important; align-items: center; justify-content: center; }
+          .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 24px !important; }
+        }
+
+        /* ── Mobile (≤ 480px) ── */
+        @media (max-width: 480px) {
+          .footer-grid { grid-template-columns: 1fr !important; gap: 20px !important; }
+        }
+      `}</style>
     </div>
   );
 }
