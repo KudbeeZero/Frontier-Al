@@ -107,15 +107,25 @@ export function getAdminAddress(): string {
   }
 }
 
-export async function getAdminBalance(): Promise<{ algo: number; frontierAsa: number }> {
+export async function getAdminBalance(frontierAsaId?: number | null): Promise<{ algo: number; frontierAsa: number }> {
   try {
     const account     = getAdminAccount();
     const algod       = getAlgodClient();
     const accountInfo = await algod.accountInformation(account.addr.toString()).do();
     const algoBalance = Number(accountInfo.amount) / 1_000_000;
 
-    // frontierAsa balance is populated by the asa module caller if needed.
-    return { algo: algoBalance, frontierAsa: 0 };
+    let frontierAsa = 0;
+    if (frontierAsaId) {
+      const assets: any[] = (accountInfo as any).assets ?? [];
+      const assetEntry = Array.isArray(assets)
+        ? assets.find((a: any) => Number(a.assetId ?? a["asset-id"] ?? a.assetIndex) === frontierAsaId)
+        : undefined;
+      if (assetEntry) {
+        frontierAsa = Number(assetEntry.amount ?? 0) / 1_000_000;
+      }
+    }
+
+    return { algo: algoBalance, frontierAsa };
   } catch (err) {
     console.error("[chain/client] getAdminBalance failed:", err);
     return { algo: 0, frontierAsa: 0 };

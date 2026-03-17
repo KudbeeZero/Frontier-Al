@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LAND_DAILY_FRNTR_RATE } from "./economy-config";
 
 // ── Phase 2: Rare Minerals & Loot System ──────────────────────────────────────
 
@@ -1039,21 +1040,23 @@ export type CreateMarketAction = z.infer<typeof createMarketSchema>;
 export type ResolveMarketAction = z.infer<typeof resolveMarketSchema>;
 
 export function calculateFrontierPerDay(improvements: Improvement[]): number {
-  let perDay = 1;
-  
+  // Base rate sourced from centralized economy config — see shared/economy-config.ts
+  // Currently set to LAND_DAILY_FRNTR_RATE_TEST (50 FRNTR/day) for testing phase.
+  let perDay: number = LAND_DAILY_FRNTR_RATE;
+
   const electricity = improvements.find(i => i.type === "electricity");
   if (electricity) {
     perDay += 1;
-    
+
     const bcNode = improvements.find(i => i.type === "blockchain_node");
     if (bcNode) perDay += FACILITY_INFO.blockchain_node.frontierPerDay[bcNode.level - 1];
-    
+
     const dc = improvements.find(i => i.type === "data_centre");
     if (dc) perDay += FACILITY_INFO.data_centre.frontierPerDay[dc.level - 1];
-    
+
     const aiLab = improvements.find(i => i.type === "ai_lab");
     if (aiLab) perDay += FACILITY_INFO.ai_lab.frontierPerDay[aiLab.level - 1];
   }
-  
+
   return perDay;
 }
