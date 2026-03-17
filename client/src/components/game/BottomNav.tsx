@@ -15,17 +15,17 @@ interface BottomNavProps {
 const PRIMARY_TABS: { id: NavTab; label: string; icon: React.ElementType }[] = [
   { id: "map",       label: "Map",       icon: Map     },
   { id: "inventory", label: "Inventory", icon: Package },
-  { id: "battles",   label: "Battles",   icon: Swords  },
   { id: "intel",     label: "Intel",     icon: Radar   },
+  { id: "commander", label: "Commander", icon: Shield  },
 ];
 
 const OVERFLOW_TABS: { id: NavTab; label: string; icon: React.ElementType }[] = [
-  { id: "factions",    label: "Factions",  icon: Flag           },
-  { id: "commander",   label: "Commander", icon: Shield         },
-  { id: "leaderboard", label: "Rankings",  icon: Trophy         },
-  { id: "economics",   label: "Economics", icon: BarChart3      },
+  { id: "battles",     label: "Battles",   icon: Swords        },
+  { id: "factions",    label: "Factions",  icon: Flag          },
+  { id: "leaderboard", label: "Rankings",  icon: Trophy        },
+  { id: "economics",   label: "Economics", icon: BarChart3     },
   { id: "trade",       label: "Trade",     icon: ArrowLeftRight },
-  { id: "markets",     label: "Markets",   icon: TrendingUp     },
+  { id: "markets",     label: "Markets",   icon: TrendingUp    },
 ];
 
 export function BottomNav({ activeTab, onTabChange, battleCount }: BottomNavProps) {
