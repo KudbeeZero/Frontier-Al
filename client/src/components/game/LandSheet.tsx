@@ -158,9 +158,11 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
 function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
   const [selectedSubIndex, setSelectedSubIndex] = useState<number | null>(null);
 
+  // API returns { plotId, subParcels, isSubdivided } — select extracts the array
   const { data: subParcels = [], isLoading } = useQuery<SubParcel[]>({
     queryKey: [`/api/plots/${parcel.plotId}/sub-parcels`],
     enabled: !!parcel.isSubdivided,
+    select: (data: any) => data?.subParcels ?? data ?? [],
   });
 
   const purchaseMutation = useMutation({
@@ -224,9 +226,9 @@ function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
           <Grid3X3 className="w-3.5 h-3.5 text-primary" />
           <span className="text-[10px] font-display uppercase tracking-wide">Sub-Parcels</span>
         </div>
-        <div className="grid grid-cols-3 gap-1">
+        <div className="space-y-1">
           {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} className="h-8 sm:h-10 rounded bg-muted/40 animate-pulse" />
+            <div key={i} className="h-6 rounded bg-muted/40 animate-pulse" />
           ))}
         </div>
       </div>
