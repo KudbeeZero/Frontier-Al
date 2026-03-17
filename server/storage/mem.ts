@@ -28,6 +28,9 @@ import type {
   SlimParcel,
   SlimPlayer,
   SubParcel,
+  SubParcelListing,
+  SubParcelArchetype,
+  EnergyAlignment,
   Season,
   ImprovementType,
   PredictionMarket,
@@ -299,6 +302,7 @@ export class MemStorage implements IStorage {
       claimedPlots,
       frontierTotalSupply: FRONTIER_TOTAL_SUPPLY,
       frontierCirculating: this.frontierCirculating,
+      currentSeason: null,
     };
   }
 
@@ -325,6 +329,8 @@ export class MemStorage implements IStorage {
       claimedPlots: full.claimedPlots,
       frontierCirculating: full.frontierCirculating,
       lastUpdateTs: full.lastUpdateTs,
+      seasonEndsAt: null,
+      seasonName: null,
     };
   }
 
@@ -1392,4 +1398,19 @@ export class MemStorage implements IStorage {
   async resolveMarket(_marketId: string, _winningOutcome: MarketOutcome): Promise<PredictionMarket | { error: string }> { return { error: "Not supported in memory storage" }; }
   async getPlayerPositions(_playerId: string): Promise<(MarketPosition & { market: PredictionMarket })[]> { return []; }
   async resolveExpiredMarkets(): Promise<void> { /* no-op */ }
+
+  // ── Sub-parcel extended stubs ─────────────────────────────────────────────
+  async getSubParcel(_subParcelId: string): Promise<SubParcel | undefined> { return undefined; }
+  async getParcelBiomeByPlotId(_plotId: number): Promise<string> { return "plains"; }
+  async attackSubParcel(_subParcelId: string, _attackerId: string, _params: { attackerParcelId: string; commanderId?: string; troops: number; iron: number; fuel: number; crystal: number }): Promise<{ outcome: "attacker_wins" | "defender_wins"; battleId: string; attackerPower: number; defenderPower: number; log: { phase: string; message: string }[]; error?: string }> {
+    return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Not supported in memory storage" };
+  }
+  async getOpenSubParcelListings(): Promise<SubParcelListing[]> { return []; }
+  async createSubParcelListing(_sellerId: string, _subParcelId: string, _askPriceFrontier: number): Promise<{ listing: SubParcelListing; error?: string }> { return { listing: null as any, error: "Not supported in memory storage" }; }
+  async cancelSubParcelListing(_sellerId: string, _listingId: string): Promise<{ error?: string }> { return { error: "Not supported in memory storage" }; }
+  async buySubParcelListing(_buyerId: string, _listingId: string): Promise<{ listing: SubParcelListing; error?: string }> { return { listing: null as any, error: "Not supported in memory storage" }; }
+  async assignSubParcelArchetype(_subParcelId: string, _playerId: string, _archetype: SubParcelArchetype, _archetypeLevel: number, _energyAlignment?: EnergyAlignment): Promise<{ subParcel: SubParcel; factionBonus: number; error?: string }> { return { subParcel: null as any, factionBonus: 0, error: "Not supported in memory storage" }; }
+
+  // ── Economics stub ────────────────────────────────────────────────────────
+  async getTreasuryBalance(): Promise<{ unsettledMicro: number; totalMicro: number }> { return { unsettledMicro: 0, totalMicro: 0 }; }
 }

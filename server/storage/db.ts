@@ -67,7 +67,6 @@ import {
 } from "@shared/schema";
 import type { FacilityType, DefenseImprovementType, ImprovementType } from "@shared/schema";
 import { SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier } from "@shared/schema";
-import type { BiomeType } from "@shared/schema";
 import { sphereDistance } from "../sphereUtils";
 import {
   evaluateReconquest,
@@ -445,7 +444,7 @@ export class DbStorage implements IStorage {
     await this.initialize();
     await this.resolveBattles();
 
-    const [allParcels, allPlayers, allBattles, recentEvents, [meta], allSubParcels] = await Promise.all([
+    const [allParcels, allPlayers, allBattles, recentEvents, [meta], allSubParcels, currentSeason] = await Promise.all([
       this.db.select().from(parcelsTable),
       this.db.select().from(playersTable),
       this.db.select().from(battlesTable),
@@ -456,6 +455,7 @@ export class DbStorage implements IStorage {
         subIndex:     subParcelsTable.subIndex,
         ownerId:      subParcelsTable.ownerId,
       }).from(subParcelsTable),
+      this.getCurrentSeason(),
     ]);
 
     // Build sub-parcel map: parentPlotId → array of 9 owner ids
@@ -499,6 +499,7 @@ export class DbStorage implements IStorage {
       claimedPlots,
       frontierTotalSupply: FRONTIER_TOTAL_SUPPLY,
       frontierCirculating,
+      currentSeason,
     };
   }
 

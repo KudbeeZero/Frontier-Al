@@ -912,7 +912,7 @@ export async function registerRoutes(
         .update(playersTable)
         .set({
           playerFactionId: factionName,
-          factionJoinedAt: BigInt(Date.now()),
+          factionJoinedAt: Date.now(),
         })
         .where(eq(playersTable.id, playerId));
 

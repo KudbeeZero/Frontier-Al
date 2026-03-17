@@ -167,13 +167,13 @@ export default function LandingUpdates() {
     refetchInterval: 30_000,
   });
 
-  const { data: leaderboard } = useQuery<{ entries: { playerName: string; score: number }[] }>({
-    queryKey: ["/api/leaderboard"],
-    queryFn: () => fetch("/api/leaderboard").then(r => r.json()),
+  const { data: leaderboard } = useQuery<{ name: string; territories: number; totalFrontierEarned: number }[]>({
+    queryKey: ["/api/game/leaderboard"],
+    queryFn: () => fetch("/api/game/leaderboard").then(r => r.json()),
     staleTime: 60_000,
   });
 
-  const topPlayer = leaderboard?.entries?.[0];
+  const topPlayer = leaderboard?.[0];
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", width: "100%", overflow: "hidden", ...MONO }}>
@@ -197,7 +197,7 @@ export default function LandingUpdates() {
           {[
             { label: "FRNTR Circulating", value: worldData?.inGameCirculating != null ? Math.round(worldData.inGameCirculating).toLocaleString() : "—" },
             { label: "FRNTR Burned", value: worldData?.totalBurned != null ? Math.round(worldData.totalBurned).toLocaleString() : "—" },
-            { label: "Top Commander", value: topPlayer?.playerName ?? "—" },
+            { label: "Top Commander", value: topPlayer?.name ?? "—" },
             { label: "Build Date", value: "March 2026" },
           ].map(({ label, value }) => (
             <div key={label} style={{ ...CARD, textAlign: "center" }}>

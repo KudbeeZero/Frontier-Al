@@ -153,4 +153,6 @@ export interface IStorage {
   settleCurrentSeason(): Promise<Season | null>;
   /** Get all past seasons ordered by number. */
   getSeasonHistory(): Promise<Season[]>;
+  /** Get protocol treasury balance from the economics ledger. */
+  getTreasuryBalance(): Promise<{ unsettledMicro: number; totalMicro: number }>;
 }

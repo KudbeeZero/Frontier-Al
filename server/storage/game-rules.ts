@@ -349,5 +349,8 @@ export function buildSubParcelRows(
     acquiredAt:            i === 4 ? nowMs : null,
     activeBattleId:        null,
     createdAt:             nowMs,
+    archetype:             null,
+    archetypeLevel:        0,
+    energyAlignment:       null,
   }));
 }

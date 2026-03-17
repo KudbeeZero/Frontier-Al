@@ -129,6 +129,15 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 
 ---
 
+## Phase 2 Features (Added by Claude Code)
+- **Rare Minerals**: 4 new vault columns on the players table — `xenorite_vault`, `void_shard_vault`, `plasma_core_vault`, `dark_matter_vault` (all `integer NOT NULL DEFAULT 0`). Types defined in `shared/schema.ts` as `RareMineralType`. **Migration applied** via `npm run db:push`.
+- **Sub-parcel Archetypes**: 3 new columns on sub_parcels table — `archetype` (varchar, nullable), `archetype_level` (integer, default 0), `energy_alignment` (varchar, nullable). Players can assign strategic roles to sub-parcels. Enforces grid composition limits (max 3 of same type per 9-cell grid). Faction bonus multipliers defined in `ARCHETYPE_FACTION_BONUSES`.
+- **Leaderboard Route Change**: Now served at `/api/game/leaderboard` (was `/api/leaderboard`).
+- **`/info/updates` page**: New public-facing updates/roadmap page at `client/src/pages/landing-updates.tsx`.
+- **Sub-parcel Listings**: Full sub-parcel secondary market — create/cancel/buy listings, `SubParcelListing` type in `shared/schema.ts`.
+- **Sub-parcel Battles**: `attackSubParcel` endpoint, battle log with attacker/defender power.
+- **Commander Companions**: Sub-parcel battles can include a commander companion for bonus power.
+
 ## Key Behavioral Notes
 - **Claim pipeline**: opt-in check → credit DB balance → queue on-chain batch transfer (fire-and-forget for fast response).
 - **NFT minting**: idempotency-guarded, fire-and-forget; custodian mode (admin holds NFT if buyer not opted in).
