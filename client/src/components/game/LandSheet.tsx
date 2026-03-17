@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel, BiomeType } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier } from "@shared/schema";
+import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel, BiomeType, SubParcelArchetype, EnergyAlignment } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier, ARCHETYPE_FACTION_BONUSES } from "@shared/schema";
 
 // ── SubParcelGrid ─────────────────────────────────────────────────────────────
 // Shows the 3×3 sub-parcel ownership grid for subdivided plots.
@@ -56,6 +56,21 @@ function SubdivisionCountdown({ heldSince }: { heldSince: number }) {
   );
 }
 
+const ARCHETYPE_LABELS: Record<SubParcelArchetype, string> = {
+  resource: "Resource",
+  trade: "Trade",
+  fortress: "Fortress",
+  energy: "Energy",
+};
+const ARCHETYPE_DESCS: Record<SubParcelArchetype, string> = {
+  resource: "Boosts extraction yield",
+  trade: "Increases market throughput",
+  fortress: "Tiered combat fortification",
+  energy: "Generates power for adjacent parcels",
+};
+const FORTRESS_TIERS: Record<number, string> = { 1: "Outpost", 2: "Garrison", 3: "Citadel" };
+const ENERGY_ALIGNMENTS: Record<EnergyAlignment, string> = { helios: "Helios", aegis: "Aegis", nexus: "Nexus" };
+
 function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
   sp: SubParcel;
   player: Player;
@@ -64,6 +79,9 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
   onClose: () => void;
 }) {
   const [listPrice, setListPrice] = useState("");
+  const [pendingArchetype, setPendingArchetype] = useState<SubParcelArchetype | null>(null);
+  const [pendingLevel, setPendingLevel] = useState<number>(1);
+  const [pendingAlignment, setPendingAlignment] = useState<EnergyAlignment>("helios");
 
   const buildMutation = useMutation({
     mutationFn: (improvementType: ImprovementType) =>
@@ -97,6 +115,15 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
     },
   });
 
+  const archetypeMutation = useMutation({
+    mutationFn: (params: { archetype: SubParcelArchetype; archetypeLevel?: number; energyAlignment?: EnergyAlignment }) =>
+      apiRequest("POST", `/api/sub-parcels/${sp.id}/archetype`, { playerId: player.id, ...params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/plots/${parentPlotId}/sub-parcels`] });
+      setPendingArchetype(null);
+    },
+  });
+
   const improvements = sp.improvements ?? [];
 
   const facilityTypes: FacilityType[] = ["electricity", "blockchain_node", "data_centre", "ai_lab"];
@@ -115,6 +142,95 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
           </Badge>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-[10px]">✕</button>
         </div>
+      </div>
+
+      {/* ── Archetype Section ───────────────────────────────────────────── */}
+      <div className="border-b border-border/30 pb-2">
+        <p className="text-[9px] text-muted-foreground font-display uppercase tracking-wide mb-1.5">Archetype</p>
+        {sp.archetype && !pendingArchetype && (
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Badge variant="secondary" className="text-[9px] capitalize">{ARCHETYPE_LABELS[sp.archetype]}</Badge>
+            {sp.archetype === "fortress" && sp.archetypeLevel > 0 && (
+              <Badge variant="outline" className="text-[9px]">{FORTRESS_TIERS[sp.archetypeLevel] ?? `Lv${sp.archetypeLevel}`}</Badge>
+            )}
+            {sp.archetype === "energy" && sp.energyAlignment && (
+              <Badge variant="outline" className="text-[9px] capitalize">{ENERGY_ALIGNMENTS[sp.energyAlignment]}</Badge>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-1 mb-1">
+          {(["resource", "trade", "fortress", "energy"] as SubParcelArchetype[]).map(type => {
+            const isActive = sp.archetype === type && !pendingArchetype;
+            const isPending = pendingArchetype === type;
+            const factionBonus = player.playerFactionId ? ARCHETYPE_FACTION_BONUSES[type][player.playerFactionId] : undefined;
+            return (
+              <button
+                key={type}
+                onClick={() => setPendingArchetype(isPending ? null : type)}
+                disabled={isActive || archetypeMutation.isPending}
+                className={cn(
+                  "flex flex-col items-start px-2 py-1.5 rounded border text-left transition-colors",
+                  isPending ? "border-primary bg-primary/10" : "border-border/40 hover:border-primary/40 bg-muted/20",
+                  isActive && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <span className="text-[9px] font-display uppercase">{ARCHETYPE_LABELS[type]}</span>
+                <span className="text-[8px] text-muted-foreground">{ARCHETYPE_DESCS[type]}</span>
+                {factionBonus && (
+                  <span className="text-[8px] text-green-400">+{Math.round(factionBonus * 100)}% faction</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {pendingArchetype === "fortress" && (
+          <div className="flex gap-1 mb-1">
+            {([1, 2, 3] as number[]).map(lvl => (
+              <button
+                key={lvl}
+                onClick={() => setPendingLevel(lvl)}
+                className={cn(
+                  "flex-1 text-[9px] px-1.5 py-1 rounded border transition-colors",
+                  pendingLevel === lvl ? "border-primary bg-primary/10 text-primary" : "border-border/40 hover:border-primary/40"
+                )}
+              >
+                {FORTRESS_TIERS[lvl]}
+              </button>
+            ))}
+          </div>
+        )}
+        {pendingArchetype === "energy" && (
+          <div className="flex gap-1 mb-1">
+            {(["helios", "aegis", "nexus"] as EnergyAlignment[]).map(align => (
+              <button
+                key={align}
+                onClick={() => setPendingAlignment(align)}
+                className={cn(
+                  "flex-1 text-[9px] px-1.5 py-1 rounded border capitalize transition-colors",
+                  pendingAlignment === align ? "border-primary bg-primary/10 text-primary" : "border-border/40 hover:border-primary/40"
+                )}
+              >
+                {ENERGY_ALIGNMENTS[align]}
+              </button>
+            ))}
+          </div>
+        )}
+        {pendingArchetype && (
+          <button
+            onClick={() => archetypeMutation.mutate({
+              archetype: pendingArchetype,
+              ...(pendingArchetype === "fortress" ? { archetypeLevel: pendingLevel } : {}),
+              ...(pendingArchetype === "energy"   ? { energyAlignment: pendingAlignment } : {}),
+            })}
+            disabled={archetypeMutation.isPending}
+            className="w-full text-[9px] font-display uppercase py-1 rounded bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 transition-colors"
+          >
+            {archetypeMutation.isPending ? "Assigning..." : `Assign ${ARCHETYPE_LABELS[pendingArchetype]}`}
+          </button>
+        )}
+        {archetypeMutation.isError && (
+          <p className="text-[8px] text-destructive mt-0.5">{String((archetypeMutation.error as any)?.message ?? "Failed")}</p>
+        )}
       </div>
 
       {improvements.length > 0 && (

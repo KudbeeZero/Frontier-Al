@@ -349,7 +349,7 @@ export class MemStorage implements IStorage {
     return this.battles.get(id);
   }
 
-  async mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number }> {
+  async mineResources(action: MineAction): Promise<{ iron: number; fuel: number; crystal: number; mineralDrops: Partial<Record<string, number>> }> {
     await this.initialize();
 
     const parcel = this.parcels.get(action.parcelId);
@@ -409,7 +409,7 @@ export class MemStorage implements IStorage {
     });
 
     this.lastUpdateTs = now;
-    return { iron: finalIron, fuel: finalFuel, crystal: finalCrystal };
+    return { iron: finalIron, fuel: finalFuel, crystal: finalCrystal, mineralDrops: {} };
   }
 
   async collectAll(playerId: string): Promise<{ iron: number; fuel: number; crystal: number }> {
