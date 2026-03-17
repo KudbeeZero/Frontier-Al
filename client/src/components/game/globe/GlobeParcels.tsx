@@ -50,6 +50,7 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   const pulseRef      = useRef(0);
   const hoveredIndexRef = useRef<number | null>(null);
   const prevHoveredRef  = useRef<number | null>(null);
+  const prevSelectedRef = useRef<string | null>(null);
 
   const plotCoords = useMemo(() => generateFibonacciSphere(PLOT_COUNT), []);
 
@@ -57,6 +58,21 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     const m = new Map<number, LandParcel>();
     parcels.forEach(p => m.set(p.plotId, p));
     return m;
+  }, [parcels]);
+
+  // Refs to hold latest data without triggering the heavy 21k effect
+  const plotIdToParcelRef = useRef(plotIdToParcel);
+  plotIdToParcelRef.current = plotIdToParcel;
+  const parcelsRef = useRef(parcels);
+  parcelsRef.current = parcels;
+
+  // Only changes when visually-relevant parcel fields change (not every WS push)
+  const plotVisualFingerprint = useMemo(() => {
+    const parts: string[] = [];
+    for (const p of parcels) {
+      parts.push(`${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${p.isSubdivided ? 1 : 0}:${p.biome}`);
+    }
+    return parts.join("|");
   }, [parcels]);
 
   // Flat Float32Array of every plot's 3D position — used for O(n) nearest-neighbor on clicks/hover
@@ -81,16 +97,17 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   }, [plotPositions3D]);
 
   const animatedIndices = useMemo(() => {
+    const currentMap = plotIdToParcelRef.current;
     const indices: number[] = [];
     for (let i = 0; i < plotCoords.length; i++) {
       const coord = plotCoords[i];
-      const parcel = plotIdToParcel.get(coord.plotId);
+      const parcel = currentMap.get(coord.plotId);
       if (parcel?.id === selectedPlotId || parcel?.ownerId === currentPlayerId || parcel?.activeBattleId) {
         indices.push(i);
       }
     }
     return indices;
-  }, [plotCoords, plotIdToParcel, selectedPlotId, currentPlayerId]);
+  }, [plotCoords, plotVisualFingerprint, selectedPlotId, currentPlayerId]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -128,6 +145,19 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     const toProcess = new Set<number>(animatedIndices);
     if (currentHovered !== null) toProcess.add(currentHovered);
     if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
+
+    // When selection changes, reset the old selected plot's color via useFrame
+    if (prevSelectedRef.current !== selectedPlotId) {
+      const oldSelected = prevSelectedRef.current;
+      prevSelectedRef.current = selectedPlotId;
+      if (oldSelected) {
+        const currentMap = plotIdToParcelRef.current;
+        for (let i = 0; i < plotCoords.length; i++) {
+          const parcel = currentMap.get(plotCoords[i].plotId);
+          if (parcel?.id === oldSelected) { toProcess.add(i); break; }
+        }
+      }
+    }
 
     let colorDirty  = false;
     let matrixDirty = false;
@@ -195,22 +225,23 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
 
+    console.time("[PlotOverlay] full instance update");
+
+    const currentMap = plotIdToParcelRef.current;
+
     for (let i = 0; i < plotCoords.length; i++) {
       const coord  = plotCoords[i];
-      const parcel = plotIdToParcel.get(coord.plotId);
+      const parcel = currentMap.get(coord.plotId);
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
       const fillPos   = fillPositions3D[i];
       const borderPos = borderPositions3D[i];
 
       const isOwned      = !!parcel?.ownerId;
-      const isSelected   = parcel?.id === selectedPlotId;
       const isSubdivided = !!(parcel as LandParcel)?.isSubdivided;
 
       let fillColor: THREE.Color;
-      if (isSelected) {
-        fillColor = COLOR_SELECTED.clone();
-      } else if (parcel?.activeBattleId) {
+      if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else if (isSubdivided) {
         fillColor = COLOR_SUBDIVIDED.clone();
@@ -218,14 +249,12 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      const borderColor = isSelected
-        ? COLOR_SELECTED.clone().multiplyScalar(1.5)
-        : isOwned
-          ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
+      const borderColor = isOwned
+        ? COLOR_BORDER_OWNED.clone()
+        : COLOR_BORDER_UNOWNED.clone();
 
-      const fillScale   = isSelected ? 1.12 : isOwned ? 1.0 : 0.85;
-      const borderScale = isSelected ? 1.15 : isOwned ? 1.0 : 0.85;
+      const fillScale   = isOwned ? 1.0 : 0.85;
+      const borderScale = isOwned ? 1.0 : 0.85;
       applyInstance(fillMeshRef.current,   i, fillPos,   FILL_SIZE   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, BORDER_SIZE * sizeVar * borderScale, borderColor);
     }
@@ -235,8 +264,10 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     if (fillMeshRef.current.instanceColor)   fillMeshRef.current.instanceColor.needsUpdate   = true;
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
 
-    if (parcels.length > 0) readyRef.current = true;
-  }, [parcels, currentPlayerId, selectedPlotId, plotCoords, plotIdToParcel,
+    if (parcelsRef.current.length > 0) readyRef.current = true;
+
+    console.timeEnd("[PlotOverlay] full instance update");
+  }, [plotVisualFingerprint, currentPlayerId, plotCoords,
       fillPositions3D, borderPositions3D]);
 
   const handlePointerMove = useCallback((e: any) => {
@@ -320,12 +351,28 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
   const borderMeshRef = useRef<THREE.InstancedMesh>(null!);
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
+  const parcelsRef = useRef(parcels);
+  parcelsRef.current = parcels;
+
+  // Only changes when subdivision data actually changes
+  const subParcelFingerprint = useMemo(() => {
+    const parts: string[] = [];
+    for (const p of parcels) {
+      if (!p.isSubdivided) continue;
+      parts.push(`${p.plotId}:${(p.subParcelOwnerIds ?? []).join(",")}`);
+    }
+    return parts.join("|");
+  }, [parcels]);
+
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
 
+    console.time("[SubParcelOverlay] instance update");
+
+    const currentParcels = parcelsRef.current;
     let instanceIdx = 0;
 
-    for (const parcel of parcels) {
+    for (const parcel of currentParcels) {
       if (!parcel.isSubdivided || !parcel.subParcelOwnerIds) continue;
 
       const center = latLngToVec3(parcel.lat, parcel.lng, GLOBE_RADIUS);
@@ -380,7 +427,9 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
     if (borderMeshRef.current.instanceColor) borderMeshRef.current.instanceColor.needsUpdate = true;
     fillMeshRef.current.count   = instanceIdx;
     borderMeshRef.current.count = instanceIdx;
-  }, [parcels, currentPlayerId, dummy]);
+
+    console.timeEnd("[SubParcelOverlay] instance update");
+  }, [subParcelFingerprint, currentPlayerId, dummy]);
 
   return (
     <>
