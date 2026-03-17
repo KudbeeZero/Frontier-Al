@@ -1,8 +1,4 @@
 import algosdk from "algosdk";
-import { PeraWalletConnect } from "@perawallet/connect";
-import LuteConnect from "lute-connect";
-
-export type WalletType = "pera" | "lute";
 
 // Override with VITE_ALGOD_URL / VITE_INDEXER_URL at build time to switch networks.
 export const ALGORAND_TESTNET = {
@@ -24,114 +20,39 @@ export const indexerClient = new algosdk.Indexer(
   ""
 );
 
-export const peraWallet = new PeraWalletConnect({
-  shouldShowSignTxnToast: true,
-  compactMode: false,
-});
+// ---------------------------------------------------------------------------
+// Wallet signer registry — injected by WalletContext when a wallet connects.
+// All signing functions route through this to support any use-wallet provider.
+// ---------------------------------------------------------------------------
 
-export const luteWallet = new LuteConnect("FRONTIER");
+type SignerFn = (txns: algosdk.Transaction[]) => Promise<Uint8Array[]>;
+let _registeredSigner: SignerFn | null = null;
 
-let activeWalletType: WalletType | null = null;
-
-export function getActiveWalletType(): WalletType | null {
-  return activeWalletType;
+export function registerWalletSigner(fn: SignerFn | null) {
+  _registeredSigner = fn;
 }
 
-export function setActiveWalletType(type: WalletType | null) {
-  activeWalletType = type;
+export function hasRegisteredSigner(): boolean {
+  return _registeredSigner !== null;
 }
 
 export async function signTransactionWithActiveWallet(
   txn: algosdk.Transaction,
-  signerAddress: string
+  _signerAddress: string
 ): Promise<Uint8Array[]> {
-  if (activeWalletType === "pera") {
-    const singleTxnGroups = [{ txn, signers: [signerAddress] }];
-    const signedTxnResult = await peraWallet.signTransaction([singleTxnGroups]);
-    return signedTxnResult.flat().map((item: unknown) => {
-      if (item instanceof Uint8Array) return item;
-      if (typeof item === "object" && item !== null && "blob" in item) {
-        return (item as { blob: Uint8Array }).blob;
-      }
-      return item as Uint8Array;
-    });
-  } else if (activeWalletType === "lute") {
-    const encoded = algosdk.encodeUnsignedTransaction(txn);
-    let encodedTxn = "";
-    const bytes = new Uint8Array(encoded);
-    const chunk = 8192;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      encodedTxn += String.fromCharCode.apply(null, Array.from(bytes.slice(i, i + chunk)));
-    }
-    encodedTxn = btoa(encodedTxn);
-    const signedResult = await luteWallet.signTxns([
-      { txn: encodedTxn, signers: [signerAddress] },
-    ]);
-    return signedResult
-      .filter((s): s is Uint8Array => s !== null)
-      .map((s) => {
-        if (s instanceof Uint8Array) return s;
-        const binary = atob(s as unknown as string);
-        const arr = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-        return arr;
-      });
-  }
-  throw new Error("No wallet connected");
-}
-
-function _encodeUnsignedTxnToBase64(txn: algosdk.Transaction): string {
-  const encoded = algosdk.encodeUnsignedTransaction(txn);
-  const bytes = new Uint8Array(encoded);
-  let str = "";
-  const chunk = 8192;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    str += String.fromCharCode.apply(null, Array.from(bytes.slice(i, i + chunk)));
-  }
-  return btoa(str);
-}
-
-function _normalizeSignedBlob(item: unknown): Uint8Array {
-  if (item instanceof Uint8Array) return item;
-  if (typeof item === "object" && item !== null && "blob" in item) {
-    return (item as { blob: Uint8Array }).blob;
-  }
-  if (typeof item === "string") {
-    const binary = atob(item);
-    const arr = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-    return arr;
-  }
-  return item as Uint8Array;
+  if (!_registeredSigner) throw new Error("No wallet connected");
+  return await _registeredSigner([txn]);
 }
 
 export async function signGroupedTransactionsWithActiveWallet(
   txns: algosdk.Transaction[],
   signerAddress: string
 ): Promise<Uint8Array[]> {
-  console.log(`[BATCH-DEBUG] signGroupedTransactions | wallet: ${activeWalletType} | txnCount: ${txns.length} | signer: ${signerAddress.slice(0, 8)}... | ts: ${Date.now()}`);
-  if (activeWalletType === "pera") {
-    const txnGroup = txns.map((txn) => ({ txn, signers: [signerAddress] }));
-    const signedResult = await peraWallet.signTransaction([txnGroup]);
-    const flat = signedResult.flat().map(_normalizeSignedBlob);
-    console.log(`[BATCH-DEBUG] Pera signed ${flat.length} txns | ts: ${Date.now()}`);
-    return flat;
-  } else if (activeWalletType === "lute") {
-    const encodedTxns = txns.map((txn) => ({
-      txn: _encodeUnsignedTxnToBase64(txn),
-      signers: [signerAddress],
-    }));
-    const signedResult = await luteWallet.signTxns(encodedTxns);
-    const flat = (signedResult as unknown[])
-      .filter((s) => s !== null && s !== undefined)
-      .map((s) => _normalizeSignedBlob(s));
-    if (flat.length !== txns.length) {
-      console.warn(`[BATCH-DEBUG] LUTE signed ${flat.length} blobs but expected ${txns.length} — possible signature loss`);
-    }
-    console.log(`[BATCH-DEBUG] LUTE signed ${flat.length} txns | ts: ${Date.now()}`);
-    return flat;
-  }
-  throw new Error("No wallet connected");
+  console.log(`[BATCH-DEBUG] signGroupedTransactions | txnCount: ${txns.length} | signer: ${signerAddress.slice(0, 8)}... | ts: ${Date.now()}`);
+  if (!_registeredSigner) throw new Error("No wallet connected");
+  const result = await _registeredSigner(txns);
+  console.log(`[BATCH-DEBUG] signed ${result.length} txns | ts: ${Date.now()}`);
+  return result;
 }
 
 export async function getAccountBalance(address: string): Promise<number> {
