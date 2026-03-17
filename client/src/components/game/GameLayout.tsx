@@ -37,6 +37,7 @@ import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
 import { StreamOverlay } from "./StreamOverlay";
 import { TutorialOverlay } from "./TutorialOverlay";
+import { SelectedPlotPanel } from "./SelectedPlotPanel";
 import { useTutorial, TUTORIAL_STEPS } from "@/hooks/useTutorial";
 import { sendPaymentTransaction } from "@/lib/algorand";
 import algosdk from "algosdk";
@@ -88,6 +89,7 @@ export function GameLayout() {
   // Notify tutorial when a parcel is selected (any click on the globe)
   const handleParcelSelect = useCallback((id: string) => {
     setSelectedParcelId(id);
+    setShowFullLandSheet(false); // Always open lightweight panel first
     tutorial.notifyEvent("plot_selected");
   }, [tutorial.notifyEvent]);
 
@@ -108,6 +110,8 @@ export function GameLayout() {
   }, [isConnected]);
 
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
+  /** Controls whether the full LandSheet is open (vs. the lightweight SelectedPlotPanel) */
+  const [showFullLandSheet, setShowFullLandSheet] = useState(false);
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
@@ -703,6 +707,7 @@ export function GameLayout() {
 
   const handleTabChange = (tab: NavTab) => {
     setActiveTab(tab);
+    if (tab !== "map") setShowFullLandSheet(false);
     if (tab === "map") setSelectedParcelId(selectedParcelId);
   };
 
@@ -1181,7 +1186,29 @@ export function GameLayout() {
         </div>
       )}
 
+      {/* ── Plot Action Surface ─────────────────────────────────────────────────
+           Shown for ANY selected plot (mobile + desktop).
+           Mobile: slides above BottomNav (z-55). Desktop: floating card (z-55).
+           The full LandSheet opens separately when the player taps "Manage Plot".
+      ────────────────────────────────────────────────────────────────────────── */}
       {activeTab === "map" && selectedParcel && (
+        <SelectedPlotPanel
+          parcel={selectedParcel}
+          player={player}
+          isOpen={!showFullLandSheet}
+          onClaim={handlePurchase}
+          isClaiming={purchaseMutation.isPending}
+          isWalletConnected={isWalletConnected}
+          onOpenFullSheet={() => {
+            setShowFullLandSheet(true);
+            tutorial.notifyEvent("landsheet_opened");
+          }}
+          onClose={() => setSelectedParcelId(null)}
+        />
+      )}
+
+      {/* ── Full LandSheet — owned plot management ──────────────────────────── */}
+      {activeTab === "map" && selectedParcel && showFullLandSheet && (
         <LandSheet
           parcel={selectedParcel}
           player={player}
@@ -1191,7 +1218,10 @@ export function GameLayout() {
           onBuild={handleBuild}
           onPurchase={handlePurchase}
           onSpecialAttack={handleSpecialAttack}
-          onClose={() => setSelectedParcelId(null)}
+          onClose={() => {
+            setShowFullLandSheet(false);
+            setSelectedParcelId(null);
+          }}
           onNavigateToPlot={selectedParcel ? () => flyToParcelOnMap(selectedParcel.id) : undefined}
           isMining={mineMutation.isPending}
           isUpgrading={upgradeMutation.isPending}
