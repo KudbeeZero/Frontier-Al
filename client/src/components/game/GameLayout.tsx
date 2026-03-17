@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { TopBar } from "./TopBar";
+import { MissionLoadingScreen } from "./MissionLoadingScreen";
 import PlanetGlobe from "./PlanetGlobe";
 import type { LivePulse } from "@/components/game/PlanetGlobe";
 import { AttackModal } from "./AttackModal";
@@ -812,6 +813,9 @@ export function GameLayout() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black" data-testid="game-layout">
+      {/* Show mission loading screen while initializing */}
+      {isLoading && !gameState && <MissionLoadingScreen />}
+
       {gameState ? (
         <>
           <PlanetGlobe

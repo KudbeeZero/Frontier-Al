@@ -80,6 +80,21 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - **Kept Essential Controls**: Theme toggle, Help button, Testnet guide, Faction badge, Wallet connection
 - File: `client/src/components/game/TopBar.tsx`
 
+## Game Page Loading Screen (Recent Updates)
+- **New Mission Loading Screen**: Shows while game data is initializing
+- **Components**:
+  - Animated rotating globe (12-second rotation loop, matching landing page style)
+  - "MISSION LOGS" panel with 3 sequential system checks:
+    - ✓ Initializing frontier access…
+    - ✓ Blockchain sync complete
+    - ✓ Commander designation confirmed
+  - Large countdown timer (6 seconds)
+  - Progress bar with gradient (blue to purple)
+  - Launch countdown text ("Launching mission…")
+- **Styling**: Dark gradient background with radial gradient glow, matches landing page
+- **Implementation**: Component shows when `isLoading && !gameState`
+- Files: `client/src/components/game/MissionLoadingScreen.tsx`, updated `GameLayout.tsx`
+
 ---
 
 ## Replit Import Instructions
