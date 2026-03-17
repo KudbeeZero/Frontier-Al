@@ -233,13 +233,11 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       const borderPos = borderPositions3D[i];
 
       const isOwned      = !!parcel?.ownerId;
-      const isSelected   = parcel?.id === selectedPlotId;
       const isSubdivided = !!(parcel as LandParcel)?.isSubdivided;
 
+      // Base colors only — selection/hover handled in useFrame so clicking never triggers this loop
       let fillColor: THREE.Color;
-      if (isSelected) {
-        fillColor = COLOR_SELECTED.clone();
-      } else if (parcel?.activeBattleId) {
+      if (parcel?.activeBattleId) {
         fillColor = COLOR_BATTLE.clone();
       } else if (isSubdivided) {
         fillColor = COLOR_SUBDIVIDED.clone();
@@ -247,14 +245,9 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
         fillColor = getPlotColor(parcel, currentPlayerId);
       }
 
-      const borderColor = isSelected
-        ? COLOR_SELECTED.clone().multiplyScalar(1.5)
-        : isOwned
-          ? COLOR_BORDER_OWNED.clone()
-          : COLOR_BORDER_UNOWNED.clone();
-
-      const fillScale   = isSelected ? 1.12 : isOwned ? 1.0 : 0.85;
-      const borderScale = isSelected ? 1.15 : isOwned ? 1.0 : 0.85;
+      const borderColor = isOwned ? COLOR_BORDER_OWNED.clone() : COLOR_BORDER_UNOWNED.clone();
+      const fillScale   = isOwned ? 1.0 : 0.85;
+      const borderScale = isOwned ? 1.0 : 0.85;
       applyInstance(fillMeshRef.current,   i, fillPos,   FILL_SIZE   * sizeVar * fillScale,   fillColor);
       applyInstance(borderMeshRef.current, i, borderPos, BORDER_SIZE * sizeVar * borderScale, borderColor);
     }
@@ -266,7 +259,7 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
 
     if (idToParcel.size > 0) readyRef.current = true;
     console.log(`[PLOT-OVERLAY] full update: ${(performance.now() - t0).toFixed(1)}ms`);
-  }, [plotVisualFingerprint, currentPlayerId, selectedPlotId, plotCoords,
+  }, [plotVisualFingerprint, currentPlayerId, plotCoords,
       fillPositions3D, borderPositions3D]);
 
   const handlePointerMove = useCallback((e: any) => {
@@ -392,16 +385,13 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
             .normalize()
             .multiplyScalar(GLOBE_RADIUS * 1.007);
 
-          let fillColor: THREE.Color;
-          if (!ownerId) {
-            fillColor = new THREE.Color(0x223344);
-          } else if (currentPlayerId && ownerId === currentPlayerId) {
-            fillColor = COLOR_PLAYER.clone().multiplyScalar(0.9);
-          } else {
-            fillColor = new THREE.Color("#ff4400").multiplyScalar(0.9);
-          }
-
-          const borderColor = ownerId ? new THREE.Color("#ffffff") : new THREE.Color(0x334455);
+          // Flat static colors — no clone/multiplyScalar to keep this loop cheap
+          const fillColor = new THREE.Color(
+            !ownerId ? 0x223344
+            : (currentPlayerId && ownerId === currentPlayerId) ? 0x00cc66
+            : 0xcc3300
+          );
+          const borderColor = new THREE.Color(ownerId ? 0xffffff : 0x334455);
 
           dummy.position.copy(worldPos);
           dummy.lookAt(worldPos.clone().multiplyScalar(2));
