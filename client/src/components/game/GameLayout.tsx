@@ -674,7 +674,7 @@ export function GameLayout() {
             toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` });
           }
         },
-        onError: (error) => toast({ title: "Mint Failed", description: error.message, variant: "destructive" }),
+        onError: (error: unknown) => toast({ title: "Mint Failed", description: (error as Error).message, variant: "destructive" }),
       }
     );
   };

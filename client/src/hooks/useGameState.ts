@@ -155,8 +155,41 @@ export function useMintAvatar() {
       const response = await apiRequest("POST", "/api/actions/mint-avatar", action);
       return response.json();
     },
-    onSuccess: () => {
+    onMutate: async (action: MintAvatarAction & { algoPaymentTxId?: string }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/game/state"] });
+      const previous = queryClient.getQueryData<GameState>(["/api/game/state"]);
+      queryClient.setQueryData<GameState>(["/api/game/state"], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          players: old.players.map(p =>
+            p.id === action.playerId
+              ? { ...p, frontier: Math.max(0, p.frontier - 50) } // Optimistic: reduce by sentinel cost (minimum)
+              : p
+          ),
+        };
+      });
+      return { previous };
+    },
+    onSuccess: (data: any) => {
+      const newCommander = data?.commander;
+      if (newCommander) {
+        queryClient.setQueryData<GameState>(["/api/game/state"], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            players: old.players.map(p =>
+              p.commanders ? { ...p, commanders: [...p.commanders, newCommander] } : p
+            ),
+          };
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+    onError: (_err: unknown, _action: MintAvatarAction & { algoPaymentTxId?: string }, context: any) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/game/state"], context.previous);
+      }
     },
   });
 }
