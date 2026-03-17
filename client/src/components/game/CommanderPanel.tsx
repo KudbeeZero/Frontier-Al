@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import type { Player, CommanderTier, SpecialAttackType, LandParcel } from "@shared/schema";
 import {
@@ -354,8 +354,7 @@ export interface CommanderPanelProps {
   ownedParcels?: LandParcel[];
   wallet?: { isConnected: boolean; address: string | null };
   className?: string;
-  pendingNftPlots?: { plotId: number; assetId: number; biome: string }[];
-  onDeliverPlotNft?: (plotId: number) => void;
+  onDeliverPlotNft?: (plotId: number, assetId: number) => void;
   isDeliveringPlotNftId?: number | null;
 }
 
@@ -363,7 +362,7 @@ export function CommanderPanel({
   player, onMintAvatar, onDeployDrone, onDeploySatellite, onSwitchCommander,
   onClaimCommanderNft, onAttack, isMinting, isDeployingDrone, isDeployingSatellite,
   isClaimingCommanderNft, isAttacking, selectedParcel, ownedParcels = [],
-  wallet, className, pendingNftPlots = [], onDeliverPlotNft, isDeliveringPlotNftId,
+  wallet, className, onDeliverPlotNft, isDeliveringPlotNftId,
 }: CommanderPanelProps) {
   const queryClient = useQueryClient();
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
@@ -413,6 +412,28 @@ export function CommanderPanel({
     },
     enabled: attackMode === "sub-parcel" && !!targetPlotId,
     staleTime: 10_000,
+  });
+
+  // Fetch NFT status for all owned parcels (lazy — only when user opens Commander tab)
+  const plotNftQueries = useQueries({
+    queries: ownedParcels.slice(0, 25).map(parcel => ({
+      queryKey: ["nft-plot", parcel.plotId],
+      queryFn: async () => {
+        const res = await fetch(`/api/nft/plot/${parcel.plotId}`);
+        if (res.status === 404) return null;
+        if (!res.ok) return null;
+        return res.json() as Promise<{ plotId: number; assetId: number | null; mintedToAddress: string | null } | null>;
+      },
+      staleTime: 30_000,
+    })),
+  });
+
+  const pendingNftPlots = ownedParcels.slice(0, 25).flatMap((parcel, idx) => {
+    const d = plotNftQueries[idx]?.data;
+    if (!d?.assetId) return [];
+    const inCustody = !!d.mintedToAddress && d.mintedToAddress !== wallet?.address;
+    if (!inCustody) return [];
+    return [{ plotId: parcel.plotId, assetId: d.assetId, biome: parcel.biome as string }];
   });
 
   // Sub-parcel attack mutation
@@ -540,7 +561,7 @@ export function CommanderPanel({
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => onDeliverPlotNft?.(plot.plotId)}
+                      onClick={() => onDeliverPlotNft?.(plot.plotId, plot.assetId)}
                       disabled={isDeliveringPlotNftId === plot.plotId}
                       className="h-8 px-3 text-[10px] font-display uppercase tracking-wide bg-amber-500 hover:bg-amber-600 text-black border-0 shrink-0"
                     >

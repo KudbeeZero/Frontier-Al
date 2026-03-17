@@ -538,35 +538,11 @@ export function GameLayout() {
     }
   };
 
-  // ── NFT delivery for all owned parcels (CommanderPanel claim list) ──────────
-  const allOwnedParcels = gameState?.parcels.filter(p => p.ownerId === player?.id) ?? [];
-  const plotNftQueries = useQueries({
-    queries: allOwnedParcels.slice(0, 25).map(parcel => ({
-      queryKey: ["nft-plot", parcel.plotId],
-      queryFn: async () => {
-        const res = await fetch(`/api/nft/plot/${parcel.plotId}`);
-        if (res.status === 404) return null;
-        if (!res.ok) return null;
-        return res.json() as Promise<{ plotId: number; assetId: number | null; mintedToAddress: string | null } | null>;
-      },
-      staleTime: 30_000,
-    })),
-  });
-
-  const pendingNftPlots = allOwnedParcels.slice(0, 25).flatMap((parcel, idx) => {
-    const d = plotNftQueries[idx]?.data;
-    if (!d?.assetId) return [];
-    const inCustody = !!d.mintedToAddress && d.mintedToAddress !== wallet.address;
-    if (!inCustody) return [];
-    return [{ plotId: parcel.plotId, assetId: d.assetId, biome: parcel.biome as string }];
-  });
-
+  // ── NFT delivery for all owned parcels (now in CommanderPanel only) ──────────
   const [isDeliveringPlotNftId, setIsDeliveringPlotNftId] = useState<number | null>(null);
 
-  const handleDeliverPlotNft = async (plotId: number) => {
+  const handleDeliverPlotNft = async (plotId: number, assetId: number) => {
     if (!wallet.address) return;
-    const nftEntry = pendingNftPlots.find(p => p.plotId === plotId);
-    if (!nftEntry) return;
     setIsDeliveringPlotNftId(plotId);
     try {
       const res = await fetch(`/api/nft/deliver/${plotId}`, {
@@ -585,7 +561,7 @@ export function GameLayout() {
         return;
       }
       if (data.reason === "not_opted_in") {
-        const optedIn = await signOptInToPlotNft(nftEntry.assetId);
+        const optedIn = await signOptInToPlotNft(assetId);
         if (optedIn) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           const retryRes = await fetch(`/api/nft/deliver/${plotId}`, {
@@ -1221,7 +1197,6 @@ export function GameLayout() {
               selectedParcel={selectedParcel}
               ownedParcels={gameState.parcels.filter(p => p.ownerId === player?.id)}
               wallet={{ isConnected: wallet.isConnected, address: wallet.address }}
-              pendingNftPlots={pendingNftPlots}
               onDeliverPlotNft={handleDeliverPlotNft}
               isDeliveringPlotNftId={isDeliveringPlotNftId}
             />
