@@ -73,6 +73,15 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
       parts.push(`${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${p.isSubdivided ? 1 : 0}:${p.biome}`);
     }
     return parts.join("|");
+  const plotIdToParcelRef = useRef(plotIdToParcel);
+  plotIdToParcelRef.current = plotIdToParcel;
+
+  const parcelsRevision = useMemo(() => {
+    return parcels
+      .filter(p => p.ownerId || p.activeBattleId || p.isSubdivided)
+      .map(p => `${p.plotId}:${p.ownerId ?? ""}:${p.activeBattleId ?? ""}:${Number(!!p.isSubdivided)}`)
+      .sort()
+      .join("|");
   }, [parcels]);
 
   // Flat Float32Array of every plot's 3D position — used for O(n) nearest-neighbor on clicks/hover
@@ -232,6 +241,12 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     for (let i = 0; i < plotCoords.length; i++) {
       const coord  = plotCoords[i];
       const parcel = currentMap.get(coord.plotId);
+    const idToParcel = plotIdToParcelRef.current;
+    const t0 = performance.now();
+
+    for (let i = 0; i < plotCoords.length; i++) {
+      const coord  = plotCoords[i];
+      const parcel = idToParcel.get(coord.plotId);
       const sizeVar = getPlotSizeVariant(coord.plotId);
 
       const fillPos   = fillPositions3D[i];
@@ -268,6 +283,9 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
 
     console.timeEnd("[PlotOverlay] full instance update");
   }, [plotVisualFingerprint, currentPlayerId, plotCoords,
+    if (idToParcel.size > 0) readyRef.current = true;
+    console.log(`[PLOT-OVERLAY] full update: ${(performance.now() - t0).toFixed(1)}ms (${parcelsRevision.split("|").length} active parcels)`);
+  }, [parcelsRevision, currentPlayerId, selectedPlotId, plotCoords,
       fillPositions3D, borderPositions3D]);
 
   const handlePointerMove = useCallback((e: any) => {
