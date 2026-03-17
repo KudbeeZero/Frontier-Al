@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { payAndTerraform, canAfford, Player, Parcel, terraformCosts } from '../src/parcelSystem'
+import { payAndTerraform, canAfford, canTerraformParcel, Player, Parcel, terraformCosts } from '../src/parcelSystem'
 
-const makePlayer = (balance: number): Player => ({
-  id: 'player-1',
+const makePlayer = (balance: number, id = 'player-1'): Player => ({
+  id,
   balance
 })
 
-const makeParcel = (): Parcel => ({
+const makeParcel = (ownerId = 'player-1'): Parcel => ({
   id: 'parcel-1',
+  ownerId,
   terraformState: {
     biome: 'desert',
     hazardLevel: 30,
@@ -36,9 +37,9 @@ describe('Parcel terraform payment system', () => {
     expect(canAfford(player, terraformCosts.targeted.ice)).toBe(false)
   })
 
-  it('random terraform deducts balance', () => {
+  it('owner can terraform with random action', () => {
     const player = makePlayer(50)
-    const parcel = makeParcel()
+    const parcel = makeParcel('player-1')
 
     const result = payAndTerraform(player, parcel, { type: 'random' })
 
@@ -46,19 +47,74 @@ describe('Parcel terraform payment system', () => {
     expect(result.player.balance).toBe(50 - terraformCosts.random)
   })
 
-  it('targeted terraform deducts balance', () => {
+  it('owner can terraform with targeted action', () => {
     const player = makePlayer(50)
-    const parcel = makeParcel()
+    const parcel = makeParcel('player-1')
 
     const result = payAndTerraform(player, parcel, { type: 'targeted', biome: 'plains' })
 
     expect(result.success).toBe(true)
     expect(result.player.balance).toBe(50 - terraformCosts.targeted.plains)
+    expect(result.parcel.terraformState.biome).toBe('plains')
   })
 
-  it('parcel biome changes after terraform', () => {
+  it('non-owner cannot terraform', () => {
+    const player = makePlayer(100, 'player-2')
+    const parcel = makeParcel('player-1')
+
+    const result = payAndTerraform(player, parcel, { type: 'random' })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('does not own parcel')
+  })
+
+  it('non-owner does not lose balance', () => {
+    const player = makePlayer(100, 'player-2')
+    const parcel = makeParcel('player-1')
+
+    const result = payAndTerraform(player, parcel, { type: 'targeted', biome: 'plains' })
+
+    expect(result.success).toBe(false)
+    expect(result.player.balance).toBe(100)
+  })
+
+  it('non-owner parcel does not change', () => {
+    const player = makePlayer(100, 'player-2')
+    const parcel = makeParcel('player-1')
+    const originalBiome = parcel.terraformState.biome
+
+    const result = payAndTerraform(player, parcel, { type: 'targeted', biome: 'plains' })
+
+    expect(result.success).toBe(false)
+    expect(result.parcel.terraformState.biome).toBe(originalBiome)
+  })
+
+  it('canTerraformParcel returns true for owner', () => {
     const player = makePlayer(100)
-    const parcel = makeParcel()
+    const parcel = makeParcel('player-1')
+    expect(canTerraformParcel(player, parcel)).toBe(true)
+  })
+
+  it('canTerraformParcel returns false for non-owner', () => {
+    const player = makePlayer(100, 'player-2')
+    const parcel = makeParcel('player-1')
+    expect(canTerraformParcel(player, parcel)).toBe(false)
+  })
+
+  it('owner with low balance still fails correctly', () => {
+    const player = makePlayer(2)
+    const parcel = makeParcel('player-1')
+
+    const result = payAndTerraform(player, parcel, { type: 'random' })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Insufficient balance')
+    expect(result.player.balance).toBe(2)
+  })
+
+  it('parcel biome changes after owner terraform', () => {
+    const player = makePlayer(100)
+    const parcel = makeParcel('player-1')
 
     const result = payAndTerraform(player, parcel, { type: 'targeted', biome: 'plains' })
 
@@ -69,7 +125,7 @@ describe('Parcel terraform payment system', () => {
   it('original player is not mutated', () => {
     const player = makePlayer(100)
     const originalBalance = player.balance
-    const parcel = makeParcel()
+    const parcel = makeParcel('player-1')
 
     payAndTerraform(player, parcel, { type: 'random' })
 
@@ -78,7 +134,7 @@ describe('Parcel terraform payment system', () => {
 
   it('original parcel is not mutated', () => {
     const player = makePlayer(100)
-    const parcel = makeParcel()
+    const parcel = makeParcel('player-1')
     const originalBiome = parcel.terraformState.biome
 
     payAndTerraform(player, parcel, { type: 'targeted', biome: 'plains' })
@@ -86,21 +142,11 @@ describe('Parcel terraform payment system', () => {
     expect(parcel.terraformState.biome).toBe(originalBiome)
   })
 
-  it('returns error when player cannot afford', () => {
-    const player = makePlayer(2)
-    const parcel = makeParcel()
-
-    const result = payAndTerraform(player, parcel, { type: 'random' })
-
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('Insufficient balance')
-    expect(result.player.balance).toBe(2)
-  })
-
   it('does not deduct balance when terraform transition is invalid', () => {
     const player = makePlayer(100)
     const parcel: Parcel = {
       id: 'parcel-2',
+      ownerId: 'player-1',
       terraformState: {
         biome: 'ice',
         hazardLevel: 30,
