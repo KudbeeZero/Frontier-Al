@@ -301,7 +301,7 @@ export interface Battle {
 
 export interface GameEvent {
   id: string;
-  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone" | "deploy_satellite" | "orbital_event";
+  type: "mine" | "upgrade" | "attack" | "battle_resolved" | "ai_action" | "purchase" | "build" | "claim_frontier" | "mint_avatar" | "special_attack" | "deploy_drone" | "deploy_satellite" | "orbital_event" | "terraform";
   playerId: string;
   parcelId?: string;
   battleId?: string;

@@ -136,6 +136,8 @@ export class MemStorage implements IStorage {
         capturedFromFaction: null,
         capturedAt:          null,
         handoverCount:       0,
+        hazardLevel:         0,
+        stability:           100,
       };
       this.parcels.set(id, parcel);
       this.parcelByPlotId.set(coord.plotId, id);

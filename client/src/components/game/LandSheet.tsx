@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink, Grid3X3, Wrench } from "lucide-react";
+import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingCart, ChevronUp, Coins, Target, Zap, Crosshair, Skull, PackageCheck, ExternalLink, Grid3X3, Wrench, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel, BiomeType, SubParcelArchetype, EnergyAlignment } from "@shared/schema";
-import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier, ARCHETYPE_FACTION_BONUSES } from "@shared/schema";
+import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS, getBiomeUpgradeMultiplier, ARCHETYPE_FACTION_BONUSES, TERRAFORM_COSTS, TERRAFORM_BIOME_MAP } from "@shared/schema";
 
 // ── SubParcelGrid ─────────────────────────────────────────────────────────────
 // Shows the 3×3 sub-parcel ownership grid for subdivided plots.
@@ -672,6 +672,23 @@ export function LandSheet({
   onNavigateToPlot,
 }: LandSheetProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showTerraformPanel, setShowTerraformPanel] = useState(false);
+  const [pendingBiome, setPendingBiome] = useState<string | null>(null);
+
+  const TERRAFORM_COST = TERRAFORM_COSTS.convert_biome;
+
+  const terraformMutation = useMutation({
+    mutationFn: (targetBiome: string) =>
+      apiRequest("POST", `/api/plots/${parcel?.plotId}/terraform`, {
+        playerId: player?.id,
+        action: { type: "convert_biome", targetBiome },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+      setShowTerraformPanel(false);
+      setPendingBiome(null);
+    },
+  });
 
   if (!parcel) return null;
 
@@ -873,6 +890,20 @@ export function LandSheet({
                   <Hammer className="w-3.5 h-3.5 mr-1" />
                   Upgrade ↑
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setShowTerraformPanel(v => !v); setPendingBiome(null); }}
+                  disabled={!player}
+                  className={cn(
+                    "font-display uppercase tracking-wide text-xs font-semibold",
+                    showTerraformPanel && "border-primary text-primary"
+                  )}
+                  data-testid="button-terraform"
+                >
+                  <Layers className="w-3.5 h-3.5 mr-1" />
+                  Terraform
+                </Button>
               </>
             )}
             {isEnemyOwned && player && parcel.biome !== "water" && (
@@ -902,6 +933,66 @@ export function LandSheet({
               </Button>
             )}
           </div>
+
+          {showTerraformPanel && isOwned && (() => {
+            const canAffordTerraform = !!player && player.frontier >= TERRAFORM_COST;
+            const currentProtoKey = Object.keys(TERRAFORM_BIOME_MAP).find(
+              k => TERRAFORM_BIOME_MAP[k] === parcel.biome
+            );
+            return (
+              <div className="mt-2 p-2.5 rounded-lg bg-muted/30 border border-border/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-display uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                    <Layers className="w-3 h-3" /> Select Target Biome
+                  </span>
+                  <span className="text-[10px] font-mono text-primary">{TERRAFORM_COST} FRNTR</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(Object.entries(TERRAFORM_BIOME_MAP) as [string, BiomeType][]).map(([protoKey, serverBiome]) => {
+                    if (protoKey === currentProtoKey) return null;
+                    const isSelected = pendingBiome === protoKey;
+                    return (
+                      <button
+                        key={protoKey}
+                        onClick={() => setPendingBiome(isSelected ? null : protoKey)}
+                        className={cn(
+                          "py-1.5 px-2 rounded border text-[9px] font-display uppercase tracking-wide transition-colors",
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border/40 hover:border-primary/40"
+                        )}
+                        style={{ color: isSelected ? undefined : biomeColors[serverBiome] }}
+                      >
+                        {serverBiome}
+                      </button>
+                    );
+                  })}
+                </div>
+                {pendingBiome && (
+                  <Button
+                    size="sm"
+                    className="w-full font-display uppercase text-[10px]"
+                    onClick={() => terraformMutation.mutate(pendingBiome)}
+                    disabled={!canAffordTerraform || terraformMutation.isPending}
+                  >
+                    {terraformMutation.isPending
+                      ? "Terraforming..."
+                      : `Confirm → ${TERRAFORM_BIOME_MAP[pendingBiome]} (${TERRAFORM_COST} FRNTR)`}
+                  </Button>
+                )}
+                {!canAffordTerraform && (
+                  <p className="text-[9px] text-destructive font-mono">
+                    Insufficient FRNTR — need {TERRAFORM_COST}, have {player?.frontier ?? 0}
+                  </p>
+                )}
+                {terraformMutation.isError && (
+                  <p className="text-[9px] text-destructive">
+                    {String((terraformMutation.error as any)?.message ?? "Terraform failed")}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {expanded && isOwned && (
             <div className="mt-3 pt-3 border-t border-border space-y-3">
