@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LAND_DAILY_FRNTR_RATE } from "./economy-config";
+import { LAND_DAILY_FRNTR_RATE, LAND_PURCHASE_ALGO_ACTIVE, COMMANDER_MINT_FRNTR_ACTIVE } from "./economy-config";
 
 // ── Phase 2: Rare Minerals & Loot System ──────────────────────────────────────
 
@@ -553,16 +553,12 @@ export const TOTAL_PLOTS = 21000;
 export const FRONTIER_TOTAL_SUPPLY = 1_000_000_000;
 export const WELCOME_BONUS_FRONTIER = 500;
 
-export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = {
-  forest: 0.5,
-  plains: 0.3,
-  mountain: 0.8,
-  desert: 0.2,
-  water: 1.5,
-  tundra: 0.4,
-  volcanic: 1.0,
-  swamp: 0.3,
-};
+/**
+ * Land purchase prices in ALGO per biome.
+ * Driven by economy-config.ts — testing mode uses minimal prices (0.1 ALGO each).
+ * Production mode uses biome-specific pricing.
+ */
+export const LAND_PURCHASE_ALGO: Record<BiomeType, number> = LAND_PURCHASE_ALGO_ACTIVE as Record<BiomeType, number>;
 
 export type CommanderTier = "sentinel" | "phantom" | "reaper";
 
@@ -594,7 +590,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
   sentinel: {
     name: "Sentinel",
     description: "Balanced tactical commander with reliable stats",
-    mintCostFrontier: 50,
+    mintCostFrontier: COMMANDER_MINT_FRNTR_ACTIVE["sentinel"],
     baseAttackBonus: 10,
     baseDefenseBonus: 10,
     specialAbility: "Fortify",
@@ -604,7 +600,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
   phantom: {
     name: "Phantom",
     description: "Stealth specialist excelling at sabotage and infiltration",
-    mintCostFrontier: 150,
+    mintCostFrontier: COMMANDER_MINT_FRNTR_ACTIVE["phantom"],
     baseAttackBonus: 18,
     baseDefenseBonus: 6,
     specialAbility: "Cloak",
@@ -614,7 +610,7 @@ export const COMMANDER_INFO: Record<CommanderTier, {
   reaper: {
     name: "Reaper",
     description: "Elite destroyer with maximum offensive firepower",
-    mintCostFrontier: 400,
+    mintCostFrontier: COMMANDER_MINT_FRNTR_ACTIVE["reaper"],
     baseAttackBonus: 30,
     baseDefenseBonus: 5,
     specialAbility: "Annihilate",

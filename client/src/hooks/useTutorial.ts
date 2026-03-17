@@ -92,6 +92,16 @@ export function useTutorial() {
     setIsOpen(false);
   }, []);
 
+  const resetAndOpen = useCallback(() => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setStep(0);
+    setIsOpen(true);
+  }, []);
+
   const next = useCallback(() => {
     setStep((s) => Math.min(s + 1, TUTORIAL_STEPS.length - 1));
   }, []);
@@ -131,6 +141,7 @@ export function useTutorial() {
     next,
     back,
     complete,
+    resetAndOpen,
     notifyEvent,
     currentStepDef: TUTORIAL_STEPS[step] ?? null,
   };

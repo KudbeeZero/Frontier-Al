@@ -33,6 +33,10 @@ import {
   LAND_DAILY_FRNTR_RATE_PROD,
   EMISSION_CHECK_PARCEL_COUNTS,
   projectedDailyEmissions,
+  COMMANDER_MINT_FRNTR_ACTIVE,
+  COMMANDER_ALGO_NETWORK_FEE,
+  LAND_PURCHASE_ALGO_ACTIVE,
+  TESTING_ECONOMY_SUMMARY,
 } from "../shared/economy-config";
 
 const algodClient    = getAlgodClient();
@@ -259,6 +263,8 @@ export async function registerRoutes(
         ownedParcelCount,
         currentDailyBaseEmission: Math.round(currentDailyDemand * 100) / 100,
         projectedEmissions: projections,
+        // ── Testing economy pricing (for UI clarity) ─────────────────────────
+        testingPrices: TESTING_ECONOMY_SUMMARY,
       });
     } catch (error) {
       console.error("Economics fetch error:", error);
@@ -548,23 +554,27 @@ export async function registerRoutes(
 
   // ── Commander NFT Price ─────────────────────────────────────────────────────
   // GET /api/nft/commander-price/:tier
-  // Returns the ALGO price for the given tier based on ALGO_USD_RATE env var.
-  const COMMANDER_USD_PRICES: Record<string, number> = {
-    sentinel: 1.50,
-    phantom:  2.25,
-    reaper:   3.25,
-  };
-
+  // Returns the FRNTR cost and minimal ALGO network fee for commander minting.
+  // In testing mode: FRNTR costs are low, ALGO is network fee only (~0.001).
+  // In production mode: FRNTR costs are standard, same minimal ALGO network fee.
   app.get("/api/nft/commander-price/:tier", (req, res) => {
     const { tier } = req.params;
-    const usdPrice = COMMANDER_USD_PRICES[tier];
-    if (usdPrice === undefined) return res.status(400).json({ error: "Unknown tier" });
+    const frntrCost = COMMANDER_MINT_FRNTR_ACTIVE[tier];
+    if (frntrCost === undefined) return res.status(400).json({ error: "Unknown tier" });
 
-    const algoUsdRate = parseFloat(process.env.ALGO_USD_RATE ?? "0.25");
-    const algoPrice   = parseFloat((usdPrice / algoUsdRate).toFixed(6));
     const adminAddress = getAdminAddress();
 
-    res.json({ tier, usdPrice, algoPrice, adminAddress });
+    res.json({
+      tier,
+      frntrCost,
+      algoNetworkFee: COMMANDER_ALGO_NETWORK_FEE,
+      adminAddress,
+      economyMode: ECONOMY_MODE,
+      currency: "FRNTR",
+      note: ECONOMY_MODE === "testing"
+        ? `Testing mode: ${frntrCost} FRNTR to mint. Minimal ALGO network fee (~${COMMANDER_ALGO_NETWORK_FEE} ALGO) applies.`
+        : `${frntrCost} FRNTR to mint. Minimal ALGO network fee (~${COMMANDER_ALGO_NETWORK_FEE} ALGO) applies.`,
+    });
   });
 
   // ── Commander NFT on-chain record lookup ────────────────────────────────────
@@ -1346,18 +1356,8 @@ export async function registerRoutes(
       if (!verifiedId) return;
       const action = mintAvatarActionSchema.parse(req.body);
 
-      // ── ALGO payment verification ──────────────────────────────────────────
-      // algoPaymentTxId is optional: if absent (e.g. AI or dev mode), skip.
-      const algoPaymentTxId: string | undefined = req.body.algoPaymentTxId;
-
       const mintPlayer = await storage.getPlayer(action.playerId);
       if (!mintPlayer) return res.status(404).json({ error: "Player not found" });
-
-      const COMMANDER_USD_PRICES: Record<string, number> = { sentinel: 1.50, phantom: 2.25, reaper: 3.25 };
-      const usdPrice    = COMMANDER_USD_PRICES[action.tier] ?? 0;
-      const algoUsdRate = parseFloat(process.env.ALGO_USD_RATE ?? "0.25");
-      const algoPrice   = usdPrice / algoUsdRate;
-      const minMicroAlgo = Math.floor(algoPrice * 1_000_000);
 
       const isHumanPlayer =
         mintPlayer.address &&
@@ -1365,64 +1365,47 @@ export async function registerRoutes(
         mintPlayer.address !== "PLAYER_WALLET" &&
         algosdk.isValidAddress(mintPlayer.address);
 
-      // If the player is human and a payment txId was provided, verify it on-chain.
-      // If no txId provided for a human player, reject (payment required).
-      if (isHumanPlayer && db) {
-        if (!algoPaymentTxId) {
+      // ── FRNTR cost check ───────────────────────────────────────────────────
+      // Commander minting is now FRNTR-based. ALGO is NOT charged at game level.
+      // The minimal Algorand network fee for the NFT mint transaction is handled
+      // automatically by the admin wallet during the post-response fire-and-forget.
+      const { COMMANDER_INFO } = await import('@shared/schema');
+      const frntrCost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
+
+      if (frntrCost > 0 && isHumanPlayer) {
+        const playerFrntr = mintPlayer.frontier ?? 0;
+        if (playerFrntr < frntrCost) {
           return res.status(402).json({
-            error: "ALGO payment required",
-            algoPrice,
-            minMicroAlgo,
-            adminAddress: getAdminAddress(),
+            error: `Insufficient FRNTR. Required: ${frntrCost} FRNTR, you have: ${playerFrntr.toFixed(2)} FRNTR.`,
+            frntrRequired: frntrCost,
+            frntrAvailable: playerFrntr,
+            currency: "FRNTR",
           });
-        }
-
-        // Guard against reuse of the same payment txId
-        const [existingPayment] = await db
-          .select()
-          .from(commanderNftsTable)
-          .where(eq(commanderNftsTable.algoPaymentTxId, algoPaymentTxId));
-        if (existingPayment) {
-          return res.status(409).json({ error: "Payment txId already used for another Commander mint" });
-        }
-
-        try {
-          await verifyAlgoPayment({
-            txId:           algoPaymentTxId,
-            expectedSender: mintPlayer.address,
-            minMicroAlgo,
-          });
-        } catch (payErr) {
-          return res.status(402).json({ error: payErr instanceof Error ? payErr.message : "Payment verification failed" });
         }
       }
 
       // ── Mint in-game avatar ────────────────────────────────────────────────
       const avatar = await storage.mintAvatar(action);
 
-      // ── FRONTIER token burn (existing mechanic) ────────────────────────────
-      const { COMMANDER_INFO } = await import('@shared/schema');
-      const cost = COMMANDER_INFO[action.tier as keyof typeof COMMANDER_INFO]?.mintCostFrontier ?? 0;
-      if (cost > 0) fireBurn(mintPlayer.address, cost, `Commander mint tier=${action.tier}`);
+      // ── Deduct FRNTR cost via on-chain clawback (fire-and-forget) ─────────
+      if (frntrCost > 0 && mintPlayer.address) {
+        fireBurn(mintPlayer.address, frntrCost, `Commander mint tier=${action.tier}`);
+      }
 
       res.json({
         success: true,
         avatar,
+        frntrCost,
+        currency: "FRNTR",
         nft: isHumanPlayer && db
           ? { status: "minting", message: "Your Commander NFT is being minted. Check back shortly for the on-chain asset ID." }
           : undefined,
       });
 
-      // ── Post-response: liquidity split + NFT mint (fire-and-forget) ────────
-      if (isHumanPlayer && db && algoPaymentTxId) {
-        // Forward 50% of received ALGO to LIQUIDITY_WALLET
-        if (minMicroAlgo > 0) {
-          forwardLiquiditySplit(
-            Math.floor(minMicroAlgo * 0.5),
-            `Commander NFT liquidity split tier=${action.tier} cmd=${avatar.id}`
-          ).catch((err) => console.error("[mint-avatar] liquidity split failed:", err));
-        }
-
+      // ── Post-response: NFT mint (fire-and-forget) ─────────────────────────
+      // No ALGO game payment. The on-chain NFT mint uses the admin wallet which
+      // covers its own network fee internally. No liquidity split required.
+      if (isHumanPlayer && db) {
         // ── Idempotency guard for NFT mint ──────────────────────────────────
         const idempotencyKey = `cmdr:mint:${action.playerId}:${avatar.id}`;
         const now = Date.now();
@@ -1462,14 +1445,14 @@ export async function registerRoutes(
                   assetId:         result.assetId,
                   mintedToAddress: result.mintedToAddress,
                   mintedAt:        Date.now(),
-                  algoPaymentTxId: algoPaymentTxId ?? null,
+                  algoPaymentTxId: null,
                 }).onConflictDoUpdate({
                   target: commanderNftsTable.commanderId,
                   set: {
                     assetId:         result.assetId,
                     mintedToAddress: result.mintedToAddress,
                     mintedAt:        Date.now(),
-                    algoPaymentTxId: algoPaymentTxId ?? null,
+                    algoPaymentTxId: null,
                   },
                 });
                 await db!.update(commanderMintIdempotencyTable)

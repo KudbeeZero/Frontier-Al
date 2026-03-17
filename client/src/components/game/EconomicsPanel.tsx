@@ -19,6 +19,17 @@ import { cn } from "@/lib/utils";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useWallet } from "@/hooks/useWallet";
 
+interface TestingPrices {
+  mode: string;
+  landEmissionRatePerDay: number;
+  landPurchaseAlgo: Record<string, number>;
+  commanderMintFrntr: Record<string, number>;
+  commanderAlgoNetworkFeeOnly: number;
+  primaryCurrency: string;
+  unavoidableAlgoCost: string;
+  note: string;
+}
+
 interface EconomicsData {
   asaId: number | null;
   adminAddress: string;
@@ -38,6 +49,7 @@ interface EconomicsData {
   ownedParcelCount: number;
   currentDailyBaseEmission: number;
   projectedEmissions: Record<string, number>;
+  testingPrices?: TestingPrices;
 }
 
 function fmt(n: number | undefined | null, decimals = 2): string {
@@ -285,6 +297,47 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                 </div>
               </div>
 
+              {data.testingPrices && (
+                <div>
+                  <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">
+                    Testing Economy Prices
+                    {data.economyMode === "testing" && (
+                      <Badge variant="secondary" className="ml-2 text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border-emerald-500/40">
+                        ACTIVE
+                      </Badge>
+                    )}
+                  </p>
+                  <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
+                    <p className="text-[10px] text-emerald-400/80 leading-relaxed pb-1 border-b border-border/30">
+                      Primary currency: <span className="font-bold font-mono">FRNTR</span> — ALGO is used only for unavoidable network fees.
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Commander — Sentinel</span>
+                      <span className="font-mono text-xs font-bold text-emerald-400">{data.testingPrices.commanderMintFrntr.sentinel} FRNTR</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Commander — Phantom</span>
+                      <span className="font-mono text-xs font-bold text-emerald-400">{data.testingPrices.commanderMintFrntr.phantom} FRNTR</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Commander — Reaper</span>
+                      <span className="font-mono text-xs font-bold text-emerald-400">{data.testingPrices.commanderMintFrntr.reaper} FRNTR</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-border/30 pt-1 mt-1">
+                      <span className="text-xs text-muted-foreground">Land Purchase (all biomes)</span>
+                      <span className="font-mono text-xs text-yellow-400">0.1 ALGO (min)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Commander NFT fee</span>
+                      <span className="font-mono text-xs text-muted-foreground">~{data.testingPrices.commanderAlgoNetworkFeeOnly} ALGO (network only)</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/70 leading-relaxed pt-1 border-t border-border/30">
+                      {data.testingPrices.note}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">On-Chain Supply</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -452,10 +505,10 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Sinks (Burns)</p>
                 <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-2">
                   {[
-                    { label: "Commander Minting", desc: "Tier 1–3 commanders cost 100–500 FRONTIER to mint" },
-                    { label: "Special Attacks", desc: "EMP, Nuke & Orbital Strike burn FRONTIER on use" },
+                    { label: "Commander Minting", desc: data.economyMode === "testing" ? `Sentinel 10 FRNTR · Phantom 25 FRNTR · Reaper 50 FRNTR (testing)` : "Tier 1–3 commanders cost 50–400 FRONTIER to mint" },
+                    { label: "Special Attacks", desc: "EMP, Orbital Strike & Siege Barrage burn FRONTIER on use" },
                     { label: "Drone Recon", desc: "Deploying scout drones costs FRONTIER" },
-                    { label: "Land Upgrades", desc: "Some facility upgrades consume FRONTIER tokens" },
+                    { label: "Land Upgrades", desc: "Facilities consume FRONTIER tokens to build" },
                   ].map(({ label, desc }) => (
                     <div key={label} className="flex items-start gap-2">
                       <div className="w-1 h-1 rounded-full bg-destructive mt-1.5 shrink-0" />
