@@ -302,36 +302,66 @@ export function TutorialOverlay({
               Let&apos;s Go!
             </button>
           ) : isActionGated ? (
-            /* Waiting indicator for action-gated steps — no Next button */
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 16px",
-                borderRadius: 8,
-                border: "1px solid rgba(0,229,255,0.2)",
-                background: "rgba(0,229,255,0.04)",
-                color: "rgba(0,229,255,0.55)",
-                fontSize: 11,
-                fontFamily: "monospace",
-                letterSpacing: "0.15em",
-                textTransform: "uppercase",
-              }}
-            >
-              {/* Pulsing dot */}
-              <span
+            /* Waiting indicator + manual skip escape for action-gated steps */
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <div
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "rgba(0,229,255,0.7)",
-                  display: "inline-block",
-                  animation: "tutorial-pulse 1.4s ease-in-out infinite",
-                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(0,229,255,0.2)",
+                  background: "rgba(0,229,255,0.04)",
+                  color: "rgba(0,229,255,0.55)",
+                  fontSize: 11,
+                  fontFamily: "monospace",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
                 }}
-              />
-              Waiting for action
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "rgba(0,229,255,0.7)",
+                    display: "inline-block",
+                    animation: "tutorial-pulse 1.4s ease-in-out infinite",
+                    flexShrink: 0,
+                  }}
+                />
+                Waiting for action
+              </div>
+              <button
+                onClick={onNext}
+                style={{
+                  minHeight: 38,
+                  padding: "8px 16px",
+                  fontSize: 11,
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  borderRadius: 8,
+                  border: "1px solid rgba(0,229,255,0.3)",
+                  background: "rgba(0,229,255,0.07)",
+                  color: "rgba(0,229,255,0.75)",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  whiteSpace: "nowrap",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(0,229,255,0.15)";
+                  e.currentTarget.style.color = "rgba(0,229,255,1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(0,229,255,0.07)";
+                  e.currentTarget.style.color = "rgba(0,229,255,0.75)";
+                }}
+              >
+                Skip Step →
+              </button>
             </div>
           ) : (
             <button

@@ -395,7 +395,7 @@ export function CommanderPanel({
     if (ownedParcels.length > 0 && !sourceParcelId) setSourceParcelId(ownedParcels[0].id);
   }, [ownedParcels]);
 
-  const { data: selectedTierPrice } = useQuery<{ algoPrice: number; usdPrice: number; adminAddress: string }>({
+  const { data: selectedTierPrice } = useQuery<{ frntrCost: number; algoNetworkFee: number; adminAddress: string; economyMode: string; currency: string }>({
     queryKey: ["/api/nft/commander-price", selectedTier],
     queryFn: async () => { const r = await fetch(`/api/nft/commander-price/${selectedTier}`); if (!r.ok) throw new Error(); return r.json(); },
     staleTime: 60_000, retry: false,
@@ -636,12 +636,12 @@ export function CommanderPanel({
                 {isRealWallet && selectedTierPrice && (
                   <div className="flex items-center gap-2 p-2 rounded-md bg-cyan-500/5 border border-cyan-500/20 mb-2">
                     <Gift className="w-3 h-3 text-cyan-400" />
-                    <p className="text-[9px] text-cyan-300">NFT incl. — {selectedTierPrice.algoPrice.toFixed(3)} ALGO (~${selectedTierPrice.usdPrice.toFixed(2)})</p>
+                    <p className="text-[9px] text-cyan-300">NFT incl. — network fee ~{selectedTierPrice.algoNetworkFee} ALGO</p>
                   </div>
                 )}
                 <Button onClick={() => onMintAvatar(selectedTier)} disabled={isMinting || player.frontier < selectedInfo.mintCostFrontier} className="w-full font-display uppercase tracking-wide text-xs" data-testid="button-mint-avatar">
                   <Zap className="w-3.5 h-3.5 mr-2" />
-                  {isMinting ? "Minting…" : isRealWallet && selectedTierPrice ? `Mint · ${selectedInfo.mintCostFrontier} FRNTR + ${selectedTierPrice.algoPrice.toFixed(3)} ALGO` : `Mint for ${selectedInfo.mintCostFrontier} FRNTR`}
+                  {isMinting ? "Minting…" : isRealWallet && selectedTierPrice ? `Mint · ${selectedInfo.mintCostFrontier} FRNTR + ${selectedTierPrice.algoNetworkFee} ALGO fee` : `Mint for ${selectedInfo.mintCostFrontier} FRNTR`}
                 </Button>
               </Card>
             </div>

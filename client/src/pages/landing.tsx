@@ -657,16 +657,21 @@ export default function LandingPage() {
         .hero-section { gap: 40px !important; margin-bottom: 70px !important; }
 
         @media (max-width: 768px) {
-          .hero-section { flex-direction: column !important; align-items: center !important; gap: 32px !important; margin-bottom: 50px !important; }
-          .planet-wrap > div { width: 200px !important; height: 200px !important; }
+          .hero-section { flex-direction: column !important; align-items: center !important; gap: 24px !important; margin-bottom: 40px !important; }
+          .planet-wrap { justify-content: center !important; }
+          .planet-wrap > div:first-child { width: 200px !important; height: 200px !important; overflow: hidden !important; }
+          .planet-wrap > div:last-child { display: none !important; }
         }
         @media (max-width: 480px) {
-          .planet-wrap > div { width: 180px !important; height: 180px !important; }
-          .hero-section { flex-direction: column !important; align-items: center !important; }
+          .hero-section { flex-direction: column !important; align-items: center !important; gap: 20px !important; margin-bottom: 32px !important; }
+          .planet-wrap { justify-content: center !important; }
+          .planet-wrap > div:first-child { width: 160px !important; height: 160px !important; overflow: hidden !important; }
+          .planet-wrap > div:last-child { display: none !important; }
         }
         @media (max-height: 500px) and (orientation: landscape) {
           .hero-section { flex-direction: row !important; gap: 24px !important; }
-          .planet-wrap > div { width: 160px !important; height: 160px !important; }
+          .planet-wrap > div:first-child { width: 150px !important; height: 150px !important; overflow: hidden !important; }
+          .planet-wrap > div:last-child { display: none !important; }
         }
       `}</style>
     </div>
