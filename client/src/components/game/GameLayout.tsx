@@ -575,11 +575,23 @@ export function GameLayout() {
         toast({ title: "Commander NFT Delivered!", description: `Your NFT is now in your wallet. TX: ${data.txId?.slice(0, 8)}...` });
         queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
       } else if (data.reason === "not_opted_in") {
-        toast({
-          title: "Opt-In Required",
-          description: `Add asset ${data.assetId} to your Pera wallet first, then tap Claim again.`,
-          variant: "destructive",
-        });
+        // Auto opt-in (standard Algorand ASA self-send), then retry delivery
+        const optedIn = await signOptInToPlotNft(data.assetId);
+        if (optedIn) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // wait for indexer propagation
+          const retryRes = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: wallet.address }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.success) {
+            toast({ title: "Commander NFT Delivered!", description: `Your Commander NFT is now in your wallet. TX: ${retryData.txId?.slice(0, 8)}...` });
+            queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+          } else {
+            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try claiming again.", variant: "destructive" });
+          }
+        }
       } else if (data.reason === "not_in_custody") {
         toast({ title: "Already In Your Wallet", description: data.message || "NFT has already been delivered." });
       } else {

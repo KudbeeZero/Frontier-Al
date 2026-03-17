@@ -143,6 +143,11 @@ export const players = pgTable("players", {
   playerFactionId:      varchar("player_faction_id", { length: 20 }),
   /** Timestamp (ms) when the player last joined/changed faction. */
   factionJoinedAt:      bigint("faction_joined_at", { mode: "number" }),
+  // ── Phase 2: Rare Mineral Vault (cap: 50 per type) ────────────────────────
+  xenoriteVault:        integer("xenorite_vault").notNull().default(0),
+  voidShardVault:       integer("void_shard_vault").notNull().default(0),
+  plasmaCoreVault:      integer("plasma_core_vault").notNull().default(0),
+  darkMatterVault:      integer("dark_matter_vault").notNull().default(0),
 });
 
 // ─── parcels ──────────────────────────────────────────────────────────────────
@@ -464,3 +469,25 @@ export const marketPositions = pgTable(
 
 export type MarketPositionRow    = typeof marketPositions.$inferSelect;
 export type InsertMarketPosition = typeof marketPositions.$inferInsert;
+
+// ─── loot_box_inventory ───────────────────────────────────────────────────────
+// Phase 2: One row per loot box awarded to a player (up to 20 unopened).
+// openedAt is NULL while the box is sealed; set when the player opens it.
+
+export const lootBoxInventory = pgTable(
+  "loot_box_inventory",
+  {
+    id:         varchar("id", { length: 36 }).primaryKey(),
+    playerId:   varchar("player_id", { length: 36 }).notNull(),
+    tier:       varchar("tier", { length: 10 }).notNull(), // common | rare | epic | legendary
+    awardedAt:  bigint("awarded_at", { mode: "number" }).notNull(),
+    openedAt:   bigint("opened_at",  { mode: "number" }),
+  },
+  (t) => ({
+    playerIdx:   index("loot_box_player_idx").on(t.playerId),
+    unopenedIdx: index("loot_box_unopened_idx").on(t.playerId, t.openedAt),
+  })
+);
+
+export type LootBoxInventoryRow    = typeof lootBoxInventory.$inferSelect;
+export type InsertLootBoxInventory = typeof lootBoxInventory.$inferInsert;

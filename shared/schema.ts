@@ -1,5 +1,87 @@
 import { z } from "zod";
 
+// ── Phase 2: Rare Minerals & Loot System ──────────────────────────────────────
+
+export type RareMineralType = "xenorite" | "void_shard" | "plasma_core" | "dark_matter";
+
+export type LootBoxTier = "common" | "rare" | "epic" | "legendary";
+
+/** Maximum units stored per rare mineral type in a player's vault. */
+export const RARE_MINERAL_VAULT_CAP = 50;
+
+/** Maximum unopened loot boxes a player may hold. */
+export const LOOT_BOX_INVENTORY_CAP = 20;
+
+/**
+ * Per-biome drop chance (0–1) for each rare mineral on a successful mine action.
+ * Rolls are independent — a single mine can yield multiple minerals.
+ */
+export const RARE_MINERAL_DROP_RATES: Record<BiomeType, Partial<Record<RareMineralType, number>>> = {
+  volcanic: { xenorite: 0.08, plasma_core: 0.05 },
+  mountain: { xenorite: 0.04, void_shard: 0.03 },
+  forest:   { void_shard: 0.04, plasma_core: 0.02 },
+  desert:   { plasma_core: 0.05, xenorite: 0.03 },
+  tundra:   { void_shard: 0.06, dark_matter: 0.01 },
+  swamp:    { dark_matter: 0.03, void_shard: 0.02 },
+  plains:   { xenorite: 0.02 },
+  water:    { dark_matter: 0.02, plasma_core: 0.02 },
+};
+
+/**
+ * Weighted loot box reward tables.
+ * Each entry: { type, weight } — higher weight = more likely to appear.
+ * Weights within a tier sum to 100.
+ */
+export const LOOT_BOX_DROP_TABLES: Record<LootBoxTier, Array<{ mineral: RareMineralType; amount: number; weight: number }>> = {
+  common: [
+    { mineral: "xenorite",    amount: 1, weight: 50 },
+    { mineral: "void_shard",  amount: 1, weight: 30 },
+    { mineral: "plasma_core", amount: 1, weight: 20 },
+  ],
+  rare: [
+    { mineral: "xenorite",    amount: 2, weight: 30 },
+    { mineral: "void_shard",  amount: 2, weight: 30 },
+    { mineral: "plasma_core", amount: 2, weight: 25 },
+    { mineral: "dark_matter", amount: 1, weight: 15 },
+  ],
+  epic: [
+    { mineral: "plasma_core", amount: 3, weight: 35 },
+    { mineral: "void_shard",  amount: 3, weight: 30 },
+    { mineral: "dark_matter", amount: 2, weight: 25 },
+    { mineral: "xenorite",    amount: 4, weight: 10 },
+  ],
+  legendary: [
+    { mineral: "dark_matter", amount: 5, weight: 40 },
+    { mineral: "plasma_core", amount: 5, weight: 30 },
+    { mineral: "void_shard",  amount: 5, weight: 20 },
+    { mineral: "xenorite",    amount: 8, weight: 10 },
+  ],
+};
+
+/** Drop triggers for loot boxes. */
+export const LOOT_BOX_TRIGGERS = {
+  mine_action:      "common" as LootBoxTier,      // small chance on any mine
+  battle_victory:   "rare" as LootBoxTier,         // awarded on attack win
+  orbital_impact:   "epic" as LootBoxTier,         // awarded during orbital events
+} as const;
+
+/** Probability of awarding a loot box per trigger event. */
+export const LOOT_BOX_DROP_CHANCE: Record<keyof typeof LOOT_BOX_TRIGGERS, number> = {
+  mine_action:    0.03,   // 3% per mine
+  battle_victory: 0.25,   // 25% on win
+  orbital_impact: 0.50,   // 50% during orbital event
+};
+
+/** A single loot box in a player's inventory. */
+export interface LootBoxRecord {
+  id:        string;
+  tier:      LootBoxTier;
+  awardedAt: number; // Unix ms
+  openedAt?: number; // Unix ms — undefined if unopened
+}
+
+// ── End Phase 2 types ─────────────────────────────────────────────────────────
+
 export type BiomeType = "forest" | "desert" | "mountain" | "plains" | "water" | "tundra" | "volcanic" | "swamp";
 
 export const biomeColors: Record<BiomeType, string> = {
@@ -182,6 +264,13 @@ export interface Player {
   playerFactionId?: string | null;
   /** Timestamp (ms) when the player joined/last switched faction */
   factionJoinedAt?: number | null;
+  // ── Phase 2: Rare Mineral Vault (cap: RARE_MINERAL_VAULT_CAP per type) ──
+  xenoriteVault?:    number;
+  voidShardVault?:   number;
+  plasmaCoreVault?:  number;
+  darkMatterVault?:  number;
+  // ── Phase 2: Loot Box Inventory (cap: LOOT_BOX_INVENTORY_CAP) ──
+  lootBoxes?: LootBoxRecord[];
 }
 
 export interface Battle {

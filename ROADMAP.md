@@ -30,8 +30,8 @@ The game is fully playable. Core systems are live:
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| [Phase 1](#phase-1-foundation-polish) | Foundation Polish | Planned |
-| [Phase 2](#phase-2-rare-minerals--loot-system) | Rare Minerals & Loot System | Planned |
+| [Phase 1](#phase-1-foundation-polish) | Foundation Polish | ✅ Complete |
+| [Phase 2](#phase-2-rare-minerals--loot-system) | Rare Minerals & Loot System | 🚧 In Progress |
 | [Phase 3](#phase-3-landmarks) | Landmarks | Planned |
 | [Phase 4](#phase-4-season-expansion) | Season Expansion | Planned |
 | [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | ✅ Complete |
