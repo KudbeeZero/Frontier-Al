@@ -1,4 +1,4 @@
-import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Wallet, LogOut, Loader2, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,8 +31,14 @@ export function WalletConnect({ className }: { className?: string }) {
     availableWallets,
     connect,
     disconnect,
+    clearError,
   } = useWallet();
   const [showPicker, setShowPicker] = useState(false);
+
+  const openPicker = () => {
+    clearError();
+    setShowPicker(true);
+  };
 
   if (isConnecting) {
     return (
@@ -50,15 +56,28 @@ export function WalletConnect({ className }: { className?: string }) {
 
   if (error) {
     return (
-      <Button
-        variant="destructive"
-        onClick={() => setShowPicker(true)}
-        className={cn("gap-2 font-display uppercase tracking-wide", className)}
-        data-testid="button-wallet-error"
-      >
-        <AlertCircle className="w-4 h-4" />
-        Retry Connection
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="destructive"
+          onClick={openPicker}
+          className={cn("gap-2 font-display uppercase tracking-wide text-xs", className)}
+          data-testid="button-wallet-error"
+          title={error}
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          Retry
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={clearError}
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          data-testid="button-wallet-error-dismiss"
+          title="Dismiss"
+        >
+          <X className="w-3 h-3" />
+        </Button>
+      </div>
     );
   }
 
@@ -66,7 +85,7 @@ export function WalletConnect({ className }: { className?: string }) {
     return (
       <>
         <Button
-          onClick={() => setShowPicker(true)}
+          onClick={openPicker}
           className={cn("gap-2 font-display uppercase tracking-wide", className)}
           data-testid="button-wallet-connect"
         >
@@ -158,6 +177,11 @@ function WalletPickerDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 py-4">
+          {wallets.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-4">
+              No wallets available
+            </p>
+          )}
           {wallets.map((wallet) => (
             <button
               key={wallet.id}

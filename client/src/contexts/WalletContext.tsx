@@ -17,7 +17,7 @@ export interface WalletInfo {
   isActive: boolean;
 }
 
-interface WalletState {
+interface WalletContextValue {
   isConnected: boolean;
   walletStatus: WalletStatus;
   address: string | null;
@@ -28,13 +28,11 @@ interface WalletState {
   walletType: string | null;
   signerReady: boolean;
   blockchainReady: boolean;
-}
-
-interface WalletContextValue extends WalletState {
   isReady: boolean;
   availableWallets: WalletInfo[];
   connect: (walletId: string) => Promise<void>;
   disconnect: () => void;
+  clearError: () => void;
   refreshBalance: () => Promise<void>;
 }
 
@@ -43,6 +41,23 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 interface WalletProviderProps {
   children: ReactNode;
   enableAutoConnect?: boolean;
+}
+
+// Broad set of strings that indicate user-cancelled / modal-dismissed — not real errors.
+function isUserCancellation(msg: string, data?: { type?: string }): boolean {
+  if (data?.type === "CONNECT_MODAL_CLOSED") return true;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("cancel") ||
+    lower.includes("reject") ||
+    lower.includes("denied") ||
+    lower.includes("closed") ||
+    lower.includes("dismissed") ||
+    lower.includes("user abort") ||
+    lower.includes("user closed") ||
+    lower.includes("modal") ||
+    lower.includes("declined")
+  );
 }
 
 export function WalletProvider({ children, enableAutoConnect = false }: WalletProviderProps) {
@@ -72,6 +87,8 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
       });
       localStorage.setItem("frontier_wallet_type", "use-wallet");
       localStorage.setItem("frontier_wallet_address", activeAddress);
+      // Clear any stale error once connected
+      setError(null);
     } else {
       registerWalletSigner(null);
       if (!activeAddress) {
@@ -97,18 +114,20 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
     }
   }, [activeAddress]);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const connect = useCallback(async (walletId: string) => {
     setIsConnecting(true);
     setError(null);
     try {
-      const wallet = wallets.find((w) => w.id === walletId);
+      const wallet = wallets.find((w: any) => w.id === walletId);
       if (!wallet) throw new Error(`Wallet ${walletId} not configured`);
       await wallet.connect();
     } catch (err: unknown) {
       const e = err as { message?: string; data?: { type?: string } };
       const msg = e?.message || "";
-      if (!msg.toLowerCase().includes("cancel") && e?.data?.type !== "CONNECT_MODAL_CLOSED") {
-        setError(msg || "Failed to connect wallet");
+      if (!isUserCancellation(msg, e?.data)) {
+        setError(msg || "Connection failed — please try again");
       }
     } finally {
       setIsConnecting(false);
@@ -116,7 +135,7 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
   }, [wallets]);
 
   const disconnect = useCallback(() => {
-    const activeWallet = wallets.find((w) => w.isActive);
+    const activeWallet = wallets.find((w: any) => w.isActive);
     activeWallet?.disconnect();
     setError(null);
     setBalance(0);
@@ -125,7 +144,7 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
 
   const isConnected = !!activeAddress;
   const signerReady = isConnected;
-  const activeWallet = wallets.find((w) => w.isActive) ?? null;
+  const activeWallet = wallets.find((w: any) => w.isActive) ?? null;
   const walletType = activeWallet?.id ?? null;
 
   const walletStatus: WalletStatus = !isInitialized
@@ -134,7 +153,7 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
     ? "connected"
     : "disconnected";
 
-  const availableWallets: WalletInfo[] = wallets.map((w) => ({
+  const availableWallets: WalletInfo[] = wallets.map((w: any) => ({
     id: w.id,
     name: w.metadata.name,
     icon: w.metadata.icon,
@@ -161,6 +180,7 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
         availableWallets,
         connect,
         disconnect,
+        clearError,
         refreshBalance,
       }}
     >
