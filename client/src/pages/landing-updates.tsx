@@ -102,6 +102,9 @@ const ACTIVE_UPDATES = [
 ];
 
 const RECENT_CHANGES = [
+  { date: "2026-03-17", area: "Database",   note: "npm run db:push: Migrated 7 new columns (rare minerals vaults + archetype fields) to PostgreSQL" },
+  { date: "2026-03-17", area: "API Route",  note: "/api/game/leaderboard endpoint now live; updated landing-updates.tsx to use new route" },
+  { date: "2026-03-17", area: "TypeScript", note: "Fixed 5 TS errors: removed duplicate BiomeType import, added getTreasuryBalance to IStorage, stubbed MemStorage methods, fixed sub-parcel archetype fields, added currentSeason to game state" },
   { date: "2026-03-17", area: "Backend",    note: "POST /api/sub-parcels/:id/archetype — assign archetype with faction bonus calc" },
   { date: "2026-03-17", area: "Backend",    note: "assignSubParcelArchetype() in db.ts — transactional archetype assignment with grid limit enforcement" },
   { date: "2026-03-17", area: "Schema",     note: "SubParcelArchetype, EnergyAlignment types added to shared/schema.ts" },
