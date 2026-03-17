@@ -1410,7 +1410,55 @@ export class MemStorage implements IStorage {
   async cancelSubParcelListing(_sellerId: string, _listingId: string): Promise<{ error?: string }> { return { error: "Not supported in memory storage" }; }
   async buySubParcelListing(_buyerId: string, _listingId: string): Promise<{ listing: SubParcelListing; error?: string }> { return { listing: null as any, error: "Not supported in memory storage" }; }
   async assignSubParcelArchetype(_subParcelId: string, _playerId: string, _archetype: SubParcelArchetype, _archetypeLevel: number, _energyAlignment?: EnergyAlignment): Promise<{ subParcel: SubParcel; factionBonus: number; error?: string }> { return { subParcel: null as any, factionBonus: 0, error: "Not supported in memory storage" }; }
-  async terraformParcel(_plotId: number, _playerId: string, _action: import("@shared/schema").TerraformAction["action"]): Promise<{ parcel: LandParcel; error?: string }> { return { parcel: null as any, error: "Not supported in memory storage" }; }
+  async terraformParcel(plotId: number, playerId: string, action: import("@shared/schema").TerraformAction["action"]): Promise<{ parcel: LandParcel; error?: string }> {
+    await this.initialize();
+    const { TERRAFORM_COSTS, TERRAFORM_BIOME_MAP } = await import("@shared/schema");
+
+    const parcelUuid = this.parcelByPlotId.get(plotId);
+    if (!parcelUuid) return { parcel: null as any, error: "Plot not found" };
+    const parcel = this.parcels.get(parcelUuid);
+    if (!parcel) return { parcel: null as any, error: "Plot not found" };
+
+    const player = this.players.get(playerId);
+    if (!player) return { parcel: { ...parcel }, error: "Player not found" };
+    if (parcel.ownerId !== playerId) return { parcel: { ...parcel }, error: "You do not own this plot" };
+
+    const cost = TERRAFORM_COSTS[action.type] ?? 10;
+    if (player.frontier < cost) {
+      return { parcel: { ...parcel }, error: `Insufficient FRONTIER — need ${cost}, have ${player.frontier.toFixed(2)}` };
+    }
+
+    const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
+
+    switch (action.type) {
+      case "convert_biome": {
+        const mapped = (TERRAFORM_BIOME_MAP[action.targetBiome] ?? action.targetBiome) as BiomeType;
+        if (mapped === parcel.biome) return { parcel: { ...parcel }, error: "Plot already has that biome" };
+        parcel.biome = mapped;
+        parcel.stability = clamp((parcel.stability ?? 100) - 5);
+        break;
+      }
+      case "reduce_hazard":
+        parcel.hazardLevel = clamp((parcel.hazardLevel ?? 0) - action.amount);
+        break;
+      case "increase_stability":
+        parcel.stability = clamp((parcel.stability ?? 100) + action.amount);
+        break;
+      case "boost_resources":
+        parcel.yieldMultiplier = Number(((parcel.yieldMultiplier ?? 1) + action.amount).toFixed(4));
+        break;
+      case "corrupt_land":
+        parcel.hazardLevel = clamp((parcel.hazardLevel ?? 0) + action.amount);
+        parcel.stability = clamp((parcel.stability ?? 100) - action.amount);
+        if (parcel.biome === "plains") parcel.biome = "volcanic";
+        break;
+      default:
+        return { parcel: { ...parcel }, error: "Unknown terraform action" };
+    }
+
+    player.frontier -= cost;
+    return { parcel: { ...parcel } };
+  }
 
   // ── Economics stub ────────────────────────────────────────────────────────
   async getTreasuryBalance(): Promise<{ unsettledMicro: number; totalMicro: number }> { return { unsettledMicro: 0, totalMicro: 0 }; }
