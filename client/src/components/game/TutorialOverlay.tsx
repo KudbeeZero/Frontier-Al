@@ -71,33 +71,51 @@ export function TutorialOverlay({
 
   return (
     <>
-      {/* Dimming overlay — pointer-events blocks background interaction */}
+      {/* Dimming overlay */}
       <div
-        className="fixed inset-0 bg-black/60"
+        className="fixed inset-0 bg-black/65"
         style={{ zIndex: 9000 }}
         aria-hidden="true"
       />
 
-      {/* Tutorial popup */}
+      {/* Tutorial card */}
       <div
-        className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[min(400px,90vw)] rounded-xl border border-cyan-400/40 shadow-[0_0_40px_rgba(0,229,255,0.12)] backdrop-blur-xl p-5"
-        style={{
-          zIndex: 9002,
-          background: "rgba(4,8,20,0.96)",
-          fontFamily: "inherit",
-        }}
         role="dialog"
         aria-modal="true"
         aria-label={`Tutorial step ${step + 1}: ${currentStep.title}`}
+        style={{
+          position: "fixed",
+          zIndex: 9002,
+          left: "50%",
+          transform: "translateX(-50%)",
+          bottom: "clamp(16px, 4vh, 40px)",
+          width: "min(580px, calc(100vw - 32px))",
+          background: "rgba(4, 8, 22, 0.97)",
+          border: "1px solid rgba(0, 229, 255, 0.35)",
+          borderTop: "2px solid rgba(0, 229, 255, 0.6)",
+          borderRadius: 16,
+          boxShadow:
+            "0 0 0 1px rgba(0,229,255,0.06), 0 8px 48px rgba(0,0,0,0.7), 0 0 60px rgba(0,229,255,0.1)",
+          backdropFilter: "blur(20px)",
+          fontFamily: "inherit",
+          padding: "clamp(20px, 3vw, 28px)",
+        }}
       >
         {/* Header row: step counter + skip */}
-        <div className="flex items-center justify-between mb-2">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
           <span
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontFamily: "monospace",
               letterSpacing: "0.2em",
-              color: "rgba(0,229,255,0.6)",
+              color: "rgba(0,229,255,0.55)",
               textTransform: "uppercase",
             }}
           >
@@ -105,43 +123,59 @@ export function TutorialOverlay({
           </span>
           <button
             onClick={onSkip}
+            aria-label="Skip tutorial"
             style={{
-              fontSize: 10,
-              letterSpacing: "0.12em",
+              fontSize: 11,
+              fontFamily: "inherit",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
-              color: "rgba(150,150,170,0.8)",
+              fontWeight: 500,
+              color: "rgba(140, 145, 170, 0.85)",
               background: "none",
-              border: "none",
+              border: "1px solid rgba(80,85,110,0.4)",
+              borderRadius: 6,
               cursor: "pointer",
-              padding: "2px 6px",
+              padding: "4px 12px",
+              lineHeight: 1.4,
+              transition: "all 0.2s",
             }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.color = "rgba(200,200,220,1)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.color = "rgba(150,150,170,0.8)")
-            }
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "rgba(200,205,230,1)";
+              e.currentTarget.style.borderColor = "rgba(120,125,155,0.7)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "rgba(140,145,170,0.85)";
+              e.currentTarget.style.borderColor = "rgba(80,85,110,0.4)";
+            }}
           >
-            Skip tutorial
+            Skip
           </button>
         </div>
 
-        {/* Step dots */}
-        <div className="flex gap-1.5 mb-3">
+        {/* Progress dots */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 18,
+            alignItems: "center",
+          }}
+        >
           {steps.map((_, i) => (
             <div
               key={i}
               style={{
-                width: i === step ? 20 : 6,
                 height: 6,
+                width: i === step ? 28 : 7,
                 borderRadius: 3,
                 background:
                   i === step
-                    ? "rgba(0,229,255,0.9)"
+                    ? "rgba(0,229,255,0.95)"
                     : i < step
-                    ? "rgba(0,229,255,0.4)"
-                    : "rgba(80,80,100,0.5)",
+                    ? "rgba(0,229,255,0.38)"
+                    : "rgba(70,75,100,0.55)",
                 transition: "all 0.3s ease",
+                flexShrink: 0,
               }}
             />
           ))}
@@ -150,13 +184,13 @@ export function TutorialOverlay({
         {/* Title */}
         <h2
           style={{
-            fontFamily: "inherit",
-            fontSize: 15,
+            margin: "0 0 10px 0",
+            fontSize: "clamp(16px, 2.5vw, 20px)",
             fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: "0.08em",
-            color: "rgba(0,229,255,0.95)",
-            marginBottom: 8,
+            color: "rgba(0,229,255,0.97)",
+            lineHeight: 1.2,
           }}
         >
           {currentStep.title}
@@ -165,44 +199,69 @@ export function TutorialOverlay({
         {/* Description */}
         <p
           style={{
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: "rgba(180,185,210,0.9)",
-            marginBottom: 20,
+            margin: "0 0 24px 0",
+            fontSize: "clamp(13px, 1.8vw, 15px)",
+            lineHeight: 1.65,
+            color: "rgba(185,190,215,0.92)",
           }}
         >
           {currentStep.description}
         </p>
 
+        {/* Hint line (optional) */}
+        {currentStep.hint && (
+          <p
+            style={{
+              margin: "-16px 0 20px 0",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "rgba(120,200,180,0.75)",
+              fontStyle: "italic",
+            }}
+          >
+            {currentStep.hint}
+          </p>
+        )}
+
         {/* Action buttons */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+          }}
+        >
           {!isFirst && (
             <button
               onClick={onBack}
               style={{
-                padding: "6px 16px",
-                fontSize: 11,
+                minHeight: 42,
+                padding: "8px 22px",
+                fontSize: 12,
                 fontFamily: "inherit",
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.1em",
-                borderRadius: 6,
-                border: "1px solid rgba(80,85,110,0.6)",
-                background: "none",
+                borderRadius: 8,
+                border: "1px solid rgba(80,85,110,0.65)",
+                background: "rgba(255,255,255,0.03)",
                 color: "rgba(160,165,190,0.9)",
                 cursor: "pointer",
                 transition: "all 0.2s",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "rgba(120,125,150,0.9)";
-                e.currentTarget.style.color = "rgba(200,205,230,1)";
+                e.currentTarget.style.borderColor = "rgba(140,145,175,0.9)";
+                e.currentTarget.style.color = "rgba(210,215,240,1)";
+                e.currentTarget.style.background = "rgba(255,255,255,0.06)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "rgba(80,85,110,0.6)";
+                e.currentTarget.style.borderColor = "rgba(80,85,110,0.65)";
                 e.currentTarget.style.color = "rgba(160,165,190,0.9)";
+                e.currentTarget.style.background = "rgba(255,255,255,0.03)";
               }}
             >
-              Back
+              ← Back
             </button>
           )}
 
@@ -210,25 +269,33 @@ export function TutorialOverlay({
             <button
               onClick={onFinish}
               style={{
-                padding: "6px 22px",
-                fontSize: 11,
+                minHeight: 42,
+                padding: "8px 28px",
+                fontSize: 12,
                 fontFamily: "inherit",
                 fontWeight: 700,
                 textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                borderRadius: 6,
+                letterSpacing: "0.12em",
+                borderRadius: 8,
                 border: "none",
-                background: "rgba(0,229,255,0.9)",
-                color: "#000",
+                background: "linear-gradient(135deg, rgba(0,229,255,0.95), rgba(0,180,220,0.9))",
+                color: "#000d14",
                 cursor: "pointer",
-                transition: "background 0.2s",
+                transition: "all 0.2s",
+                boxShadow: "0 0 20px rgba(0,229,255,0.3)",
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "rgba(0,229,255,1)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "rgba(0,229,255,0.9)")
-              }
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(0,240,255,1), rgba(0,210,250,1))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 30px rgba(0,229,255,0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(0,229,255,0.95), rgba(0,180,220,0.9))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 20px rgba(0,229,255,0.3)";
+              }}
             >
               Let&apos;s Go!
             </button>
@@ -236,27 +303,35 @@ export function TutorialOverlay({
             <button
               onClick={onNext}
               style={{
-                padding: "6px 22px",
-                fontSize: 11,
+                minHeight: 42,
+                padding: "8px 28px",
+                fontSize: 12,
                 fontFamily: "inherit",
                 fontWeight: 700,
                 textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                borderRadius: 6,
+                letterSpacing: "0.12em",
+                borderRadius: 8,
                 border: "none",
-                background: "rgba(0,229,255,0.9)",
-                color: "#000",
+                background: "linear-gradient(135deg, rgba(0,229,255,0.9), rgba(0,180,220,0.85))",
+                color: "#000d14",
                 cursor: "pointer",
-                transition: "background 0.2s",
+                transition: "all 0.2s",
+                boxShadow: "0 0 16px rgba(0,229,255,0.25)",
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "rgba(0,229,255,1)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "rgba(0,229,255,0.9)")
-              }
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(0,240,255,1), rgba(0,210,250,1))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 28px rgba(0,229,255,0.45)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(0,229,255,0.9), rgba(0,180,220,0.85))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 16px rgba(0,229,255,0.25)";
+              }}
             >
-              Next
+              Next →
             </button>
           )}
         </div>
