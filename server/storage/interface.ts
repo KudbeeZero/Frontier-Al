@@ -20,6 +20,7 @@ import type {
   OrbitalSatellite,
   OrbitalEvent,
   SubParcel,
+  SubParcelListing,
   Season,
   ImprovementType,
   PredictionMarket,
@@ -101,6 +102,20 @@ export interface IStorage {
   isSubdivided(parentPlotId: number): Promise<boolean>;
   /** Build or upgrade an improvement on an owned sub-parcel. */
   buildSubParcelImprovement(subParcelId: string, playerId: string, improvementType: ImprovementType): Promise<{ subParcel: SubParcel; error?: string }>;
+  /** Get a single sub-parcel by its UUID. */
+  getSubParcel(subParcelId: string): Promise<SubParcel | undefined>;
+  /** Get the biome string for a macro-plot by its plotId. */
+  getParcelBiomeByPlotId(plotId: number): Promise<string>;
+  /** Immediately resolve an attack on a single sub-parcel. */
+  attackSubParcel(subParcelId: string, attackerId: string, params: { attackerParcelId: string; commanderId?: string; troops: number; iron: number; fuel: number; crystal: number }): Promise<{ outcome: "attacker_wins" | "defender_wins"; battleId: string; attackerPower: number; defenderPower: number; log: { phase: string; message: string }[]; error?: string }>;
+  /** List all open sub-parcel listings. */
+  getOpenSubParcelListings(): Promise<SubParcelListing[]>;
+  /** Create a listing to sell a sub-parcel. */
+  createSubParcelListing(sellerId: string, subParcelId: string, askPriceFrontier: number): Promise<{ listing: SubParcelListing; error?: string }>;
+  /** Cancel an open listing. */
+  cancelSubParcelListing(sellerId: string, listingId: string): Promise<{ error?: string }>;
+  /** Buy a sub-parcel listing (transfers ownership + FRONTIER). */
+  buySubParcelListing(buyerId: string, listingId: string): Promise<{ listing: SubParcelListing; error?: string }>;
 
   // ── Prediction Markets ────────────────────────────────────────────────────
   getOpenMarkets(): Promise<PredictionMarket[]>;

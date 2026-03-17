@@ -346,8 +346,68 @@ export default function LandingPage() {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        padding: "40px 24px 60px",
+        padding: "0 24px 60px",
       }}>
+
+        {/* Navigation Bar */}
+        <nav style={{
+          width: "100%",
+          maxWidth: 900,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 0",
+          borderBottom: "1px solid rgba(60,90,180,0.15)",
+          marginBottom: 20,
+          flexWrap: "wrap",
+          gap: 8,
+        }}>
+          <span style={{ fontSize: 13, letterSpacing: "0.2em", color: "rgba(120,170,255,0.9)", fontWeight: 700, textTransform: "uppercase" }}>
+            ⬡ FRONTIER
+          </span>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            {[
+              { label: "Economics", path: "/info/economics" },
+              { label: "Gameplay", path: "/info/gameplay" },
+              { label: "Features", path: "/info/features" },
+            ].map(({ label, path }) => (
+              <button
+                key={path}
+                onClick={() => setLocation(path)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(60,90,180,0.25)",
+                  borderRadius: 4,
+                  padding: "5px 12px",
+                  color: "rgba(150,190,255,0.7)",
+                  fontSize: 11,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(100,150,255,0.5)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(180,220,255,0.9)"; }}
+                onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(60,90,180,0.25)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(150,190,255,0.7)"; }}
+              >{label}</button>
+            ))}
+            <button
+              onClick={handleEnter}
+              style={{
+                marginLeft: 8,
+                background: "rgba(60,100,255,0.2)",
+                border: "1px solid rgba(80,130,255,0.5)",
+                borderRadius: 4,
+                padding: "5px 14px",
+                color: "rgba(150,200,255,0.95)",
+                fontSize: 11,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >Enter Game →</button>
+          </div>
+        </nav>
 
         {/* Top bar */}
         <div style={{

@@ -63,12 +63,37 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
   biome: BiomeType;
   onClose: () => void;
 }) {
+  const [listPrice, setListPrice] = useState("");
+
   const buildMutation = useMutation({
     mutationFn: (improvementType: ImprovementType) =>
       apiRequest("POST", `/api/sub-parcels/${sp.id}/build`, { playerId: player.id, improvementType }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/plots/${parentPlotId}/sub-parcels`] });
       queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+  });
+
+  const { data: listingsData } = useQuery<{ listings: { id: string; subParcelId: string; status: string; askPriceFrontier: number }[] }>({
+    queryKey: ["/api/sub-parcels/listings"],
+    staleTime: 10_000,
+  });
+  const existingListing = listingsData?.listings?.find(l => l.subParcelId === sp.id && l.status === "open");
+
+  const createListingMutation = useMutation({
+    mutationFn: (price: number) =>
+      apiRequest("POST", "/api/sub-parcels/listings", { sellerId: player.id, subParcelId: sp.id, askPriceFrontier: price }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sub-parcels/listings"] });
+      setListPrice("");
+    },
+  });
+
+  const cancelListingMutation = useMutation({
+    mutationFn: (listingId: string) =>
+      apiRequest("DELETE", `/api/sub-parcels/listings/${listingId}`, { sellerId: player.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sub-parcels/listings"] });
     },
   });
 
@@ -184,6 +209,35 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, biome, onClose }: {
             );
           })}
         </div>
+      </div>
+
+      {/* Trade Section */}
+      <div className="border-t border-border/30 pt-2">
+        <p className="text-[9px] text-muted-foreground font-display uppercase tracking-wide mb-1.5">Trade</p>
+        {existingListing ? (
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] text-emerald-400 font-mono">Listed: {existingListing.askPriceFrontier} FRNTR</span>
+            <Button size="sm" variant="outline" className="h-5 px-2 text-[9px] border-destructive/50 text-destructive hover:bg-destructive/10"
+              onClick={() => cancelListingMutation.mutate(existingListing.id)}
+              disabled={cancelListingMutation.isPending}
+            >Cancel Listing</Button>
+          </div>
+        ) : (
+          <div className="flex gap-1.5">
+            <input
+              type="number"
+              min={1}
+              value={listPrice}
+              onChange={e => setListPrice(e.target.value)}
+              placeholder="Ask price (FRNTR)"
+              className="flex-1 bg-muted/30 border border-border rounded px-2 py-1 text-[9px] font-mono focus:outline-none focus:border-primary"
+            />
+            <Button size="sm" variant="outline" className="h-7 px-2 text-[9px] border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 shrink-0"
+              onClick={() => { const p = parseInt(listPrice); if (p > 0) createListingMutation.mutate(p); }}
+              disabled={!listPrice || parseInt(listPrice) < 1 || createListingMutation.isPending}
+            >List for Sale</Button>
+          </div>
+        )}
       </div>
 
       {buildMutation.isError && (

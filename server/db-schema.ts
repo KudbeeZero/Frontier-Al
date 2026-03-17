@@ -327,6 +327,37 @@ export const subParcels = pgTable(
 export type SubParcelRow    = typeof subParcels.$inferSelect;
 export type InsertSubParcel = typeof subParcels.$inferInsert;
 
+// ─── sub_parcel_listings ──────────────────────────────────────────────────────
+// Player-to-player marketplace for sub-parcel ownership transfers.
+// A seller lists a sub-parcel at an asking price (FRONTIER). Any other player
+// can buy it; ownership + FRONTIER transfer atomically.
+
+export const subParcelListings = pgTable(
+  "sub_parcel_listings",
+  {
+    id:                  varchar("id", { length: 36 }).primaryKey(),
+    subParcelId:         varchar("sub_parcel_id", { length: 36 }).notNull(),
+    parentPlotId:        integer("parent_plot_id").notNull(),
+    subIndex:            integer("sub_index").notNull(),
+    sellerId:            varchar("seller_id", { length: 36 }).notNull(),
+    sellerName:          varchar("seller_name", { length: 100 }).notNull(),
+    askPriceFrontier:    real("ask_price_frontier").notNull(),
+    status:              varchar("status", { length: 20 }).notNull().default("open"),
+    createdAt:           bigint("created_at", { mode: "number" }).notNull(),
+    buyerId:             varchar("buyer_id", { length: 36 }),
+    buyerName:           varchar("buyer_name", { length: 100 }),
+    soldAt:              bigint("sold_at", { mode: "number" }),
+  },
+  (t) => ({
+    subParcelIdx: index("sub_parcel_listings_sub_parcel_idx").on(t.subParcelId),
+    sellerIdx:    index("sub_parcel_listings_seller_idx").on(t.sellerId),
+    statusIdx:    index("sub_parcel_listings_status_idx").on(t.status),
+  })
+);
+
+export type SubParcelListingRow    = typeof subParcelListings.$inferSelect;
+export type InsertSubParcelListing = typeof subParcelListings.$inferInsert;
+
 // ─── seasons ─────────────────────────────────────────────────────────────────
 // Each season is a ~90-day meta-layer. The game world PERSISTS between seasons;
 // this table only snapshots leaderboard state and tracks reward distribution.

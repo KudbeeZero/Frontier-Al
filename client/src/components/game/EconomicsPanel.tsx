@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -273,10 +274,48 @@ export function EconomicsPanel({ className }: EconomicsPanelProps) {
 
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-2">Token Distribution</p>
-                <div className="bg-card/60 border border-border/50 rounded-lg p-3 space-y-3">
-                  <DistributionBar label="In Circulation" value={data.inGameCirculating} total={data.totalSupply} color="bg-emerald-500" />
-                  <DistributionBar label="Burned" value={data.totalBurned} total={data.totalSupply} color="bg-red-500" />
-                  <DistributionBar label="Treasury Reserve" value={data.treasury} total={data.totalSupply} color="bg-yellow-500" />
+                <div className="bg-card/60 border border-border/50 rounded-lg p-3">
+                  {/* Recharts Pie Chart */}
+                  <div className="w-full" style={{ height: 200 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: "In Circulation", value: Math.round(data.inGameCirculating), fill: "#10b981" },
+                            { name: "Burned", value: Math.round(data.totalBurned), fill: "#ef4444" },
+                            { name: "Treasury", value: Math.round(data.treasury), fill: "#eab308" },
+                            { name: "Unallocated", value: Math.max(0, Math.round(data.totalSupply - data.inGameCirculating - data.totalBurned - data.treasury)), fill: "#374151" },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {[
+                            "#10b981", "#ef4444", "#eab308", "#374151"
+                          ].map((color, i) => (
+                            <Cell key={i} fill={color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => [fmt(value), ""]}
+                          contentStyle={{ backgroundColor: "#0a0b14", border: "1px solid #1f2937", borderRadius: "6px", fontSize: "10px" }}
+                          labelStyle={{ color: "#9ca3af" }}
+                        />
+                        <Legend
+                          iconSize={8}
+                          formatter={(value) => <span style={{ fontSize: "9px", color: "#9ca3af", fontFamily: "monospace" }}>{value}</span>}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-2 mt-2">
+                    <DistributionBar label="In Circulation" value={data.inGameCirculating} total={data.totalSupply} color="bg-emerald-500" />
+                    <DistributionBar label="Burned" value={data.totalBurned} total={data.totalSupply} color="bg-red-500" />
+                    <DistributionBar label="Treasury Reserve" value={data.treasury} total={data.totalSupply} color="bg-yellow-500" />
+                  </div>
                 </div>
               </div>
 

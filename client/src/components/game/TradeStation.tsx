@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Zap, Plus, X, ArrowRight, RefreshCw, ArrowLeftRight, Trophy } from "lucide-react";
+import { Zap, Plus, X, ArrowRight, RefreshCw, ArrowLeftRight, Trophy, MapPin, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import type { TradeOrder, TradeResource } from "@shared/schema";
+import type { TradeOrder, TradeResource, SubParcelListing } from "@shared/schema";
 
 interface TradeStationPanelProps {
   currentPlayerId: string;
@@ -378,6 +378,114 @@ function RankingsTab() {
 
 // ── Root export ───────────────────────────────────────────────────────────────
 
+// ── Parcels Tab ───────────────────────────────────────────────────────────────
+
+function ParcelsTab({ currentPlayerId }: { currentPlayerId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: listingsData, isFetching, refetch } = useQuery<{ listings: SubParcelListing[] }>({
+    queryKey: ["/api/sub-parcels/listings"],
+    queryFn: () => fetch("/api/sub-parcels/listings").then(r => r.json()),
+    refetchInterval: 15_000,
+  });
+  const listings = listingsData?.listings ?? [];
+
+  const cancelMutation = useMutation({
+    mutationFn: async (listingId: string) => {
+      const r = await fetch(`/api/sub-parcels/listings/${listingId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sellerId: currentPlayerId }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Cancel failed"); }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Listing Cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/sub-parcels/listings"] });
+    },
+    onError: (e) => toast({ title: "Error", description: (e as Error).message, variant: "destructive" }),
+  });
+
+  const buyMutation = useMutation({
+    mutationFn: async (listingId: string) => {
+      const r = await fetch(`/api/sub-parcels/listings/${listingId}/buy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerId: currentPlayerId }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Purchase failed"); }
+      return r.json();
+    },
+    onSuccess: (_, listingId) => {
+      const listing = listings.find(l => l.id === listingId);
+      toast({ title: "Sub-Parcel Purchased!", description: `Plot #${listing?.parentPlotId} Cell ${(listing?.subIndex ?? 0) + 1} is now yours.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/sub-parcels/listings"] });
+    },
+    onError: (e) => toast({ title: "Purchase Failed", description: (e as Error).message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
+        <span className="text-xs font-display uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5" /> Open Listings ({listings.filter(l => l.status === "open").length})
+        </span>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetch()} disabled={isFetching}>
+          <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {listings.filter(l => l.status === "open").length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full py-12 text-muted-foreground">
+            <ShoppingBag className="w-8 h-8 mb-2 opacity-30" />
+            <p className="text-xs">No sub-parcels listed for sale</p>
+            <p className="text-[10px] mt-1 text-center px-4">Open a parcel in the map and click "List for Sale" on an owned sub-parcel.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/40">
+            {listings.filter(l => l.status === "open").map(listing => {
+              const isOwn = listing.sellerId === currentPlayerId;
+              return (
+                <div key={listing.id} className="p-3 hover:bg-muted/10 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
+                        <span className="font-mono text-xs">Plot #{listing.parentPlotId} · Cell {listing.subIndex + 1}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <span>Seller: {listing.sellerName}</span>
+                        {isOwn && <Badge variant="outline" className="text-[8px] text-primary border-primary/30">Yours</Badge>}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span className="font-mono font-bold text-sm text-emerald-400">{listing.askPriceFrontier.toLocaleString()} ⚡</span>
+                      {isOwn ? (
+                        <Button size="sm" variant="outline" className="h-6 text-[9px] px-2 border-destructive/50 text-destructive hover:bg-destructive/10"
+                          onClick={() => cancelMutation.mutate(listing.id)}
+                          disabled={cancelMutation.isPending}
+                        >Cancel</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-6 text-[9px] px-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10"
+                          onClick={() => buyMutation.mutate(listing.id)}
+                          disabled={buyMutation.isPending}
+                        >Buy</Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TradeStationPanel({ currentPlayerId, currentPlayerName: _currentPlayerName, className }: TradeStationPanelProps) {
   return (
     <div className={cn("flex flex-col h-full", className)}>
@@ -392,10 +500,11 @@ export function TradeStationPanel({ currentPlayerId, currentPlayerName: _current
 
       {/* Tabs */}
       <Tabs defaultValue="orders" className="flex flex-col flex-1 overflow-hidden">
-        <TabsList className="mx-3 mt-2 shrink-0 grid grid-cols-3 h-8">
-          <TabsTrigger value="orders"   className="text-xs">Orders</TabsTrigger>
-          <TabsTrigger value="history"  className="text-xs">History</TabsTrigger>
-          <TabsTrigger value="rankings" className="text-xs">Rankings</TabsTrigger>
+        <TabsList className="mx-3 mt-2 shrink-0 grid grid-cols-4 h-8">
+          <TabsTrigger value="orders"   className="text-[11px]">Orders</TabsTrigger>
+          <TabsTrigger value="history"  className="text-[11px]">History</TabsTrigger>
+          <TabsTrigger value="rankings" className="text-[11px]">Rankings</TabsTrigger>
+          <TabsTrigger value="parcels"  className="text-[11px]">Parcels</TabsTrigger>
         </TabsList>
 
         <TabsContent value="orders"   className="flex-1 overflow-hidden mt-0 flex flex-col">
@@ -406,6 +515,9 @@ export function TradeStationPanel({ currentPlayerId, currentPlayerName: _current
         </TabsContent>
         <TabsContent value="rankings" className="flex-1 overflow-hidden mt-0 flex flex-col">
           <RankingsTab />
+        </TabsContent>
+        <TabsContent value="parcels"  className="flex-1 overflow-hidden mt-0 flex flex-col">
+          <ParcelsTab currentPlayerId={currentPlayerId} />
         </TabsContent>
       </Tabs>
     </div>
