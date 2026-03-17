@@ -36,12 +36,17 @@ interface WalletContextValue extends WalletState {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-export function WalletProvider({ children }: { children: ReactNode }) {
+interface WalletProviderProps {
+  children: ReactNode;
+  enableAutoConnect?: boolean;
+}
+
+export function WalletProvider({ children, enableAutoConnect = false }: WalletProviderProps) {
   const hasSavedWallet = !!(localStorage.getItem("frontier_wallet_type"));
 
   const [state, setState] = useState<WalletState>({
     isConnected: false,
-    walletStatus: hasSavedWallet ? "restoring" : "disconnected",
+    walletStatus: hasSavedWallet && enableAutoConnect ? "restoring" : "disconnected",
     address: null,
     displayAddress: null,
     balance: 0,
@@ -103,7 +108,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (isReconnecting.current) return;
+    if (!enableAutoConnect || isReconnecting.current) return;
     isReconnecting.current = true;
 
     const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;

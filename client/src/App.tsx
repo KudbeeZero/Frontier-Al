@@ -22,9 +22,16 @@ function Router() {
       <Route path="/info/gameplay" component={LandingGameplay} />
       <Route path="/info/features" component={LandingFeatures} />
       <Route path="/info/updates" component={LandingUpdates} />
-      <Route path="/game" component={GamePage} />
       <Route path="/testnet" component={TestnetPage} />
       <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function GameRouter() {
+  return (
+    <Switch>
+      <Route path="/game" component={GamePage} />
     </Switch>
   );
 }
@@ -33,12 +40,17 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <WalletProvider>
-          <TooltipProvider>
-            <Toaster />
+        <TooltipProvider>
+          <Toaster />
+          {/* Landing pages: no wallet auto-connect */}
+          <WalletProvider enableAutoConnect={false}>
             <Router />
-          </TooltipProvider>
-        </WalletProvider>
+          </WalletProvider>
+          {/* Game page: enable wallet auto-connect */}
+          <WalletProvider enableAutoConnect={true}>
+            <GameRouter />
+          </WalletProvider>
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
