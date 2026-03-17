@@ -1,5 +1,44 @@
 # FRONTIER — Change Log & Status
 
+## Session: terraforming-state-sync-fmFyy
+**Date:** 2026-03-17
+**Branch:** `claude/terraforming-state-sync-fmFyy`
+
+---
+
+## What Was Done
+
+### Terraforming State Sync — Same Land Identity Architecture
+
+**Purpose:** Implement terraforming so the same land NFT (ASA) keeps its identity after a terraform operation. No burn/remint required. Metadata updates dynamically because the `/nft/metadata/:plotId` endpoint already reads from DB at request time — changing DB state automatically changes what the endpoint returns.
+
+**Strategy Chosen:** Update same land asset / backend-canonical state. The metadata URL baked into the ASA at mint time always points to the live endpoint, which now returns terraform fields. No ASA replacement.
+
+**Files Changed:**
+
+- `migrations/0002_terraform_state.sql` _(new)_ — Adds 6 terraform tracking columns to `parcels` table
+- `server/db-schema.ts` — Added `terraformStatus`, `terraformedAt`, `terraformLevel`, `terraformType`, `metadataVersion`, `visualStateRevision` columns to `parcels` table Drizzle schema
+- `shared/schema.ts` — Added same 6 fields to `LandParcel` interface
+- `server/storage/game-rules.ts` — `rowToParcel` now maps all 6 new terraform fields
+- `server/storage/db.ts` — `terraformParcel` now sets all tracking fields on every terraform action; derives `terraformStatus` from hazard/stability levels; bumps `metadataVersion` and `visualStateRevision` correctly
+- `server/routes.ts` — `/nft/metadata/:plotId` now fetches and returns all terraform fields in ARC-3 `properties`; `Cache-Control` reduced from 24h to 1h so wallets pick up changes; description includes terraform level when active
+- `client/src/terraforming.ts` — `TerraformState` extended with all 6 tracking fields; `applyTerraform` now updates them on every action
+- `client/src/components/game/LandSheet.tsx` — Land panel shows terraform status badge (Lvl N, Terraformed/Degraded), last action type, date, hazard%, stability%; post-terraform confirmation banner shows before→after biome transition
+
+**Terraform NFT Strategy:**
+- Same ASA identity retained after every terraform action
+- Metadata URL unchanged — content updates automatically from DB
+- `metadataVersion` in metadata JSON increments on every change so indexers can detect updates
+- `visualStateRevision` increments only on biome/visual changes for efficient render gating
+- Burn/remint explicitly rejected — not needed with dynamic metadata endpoint
+
+**Limitations:**
+- On-chain ARC-3 metadata is not immutably tied to current biome (by design — URL is stable, content is live)
+- Wallets that aggressively cache metadata may show stale biome for up to 1 hour (Cache-Control TTL)
+- ARC-69 (note-field metadata) would allow zero-latency on-chain updates but is not implemented; left as future upgrade path
+
+---
+
 ## Session: centralize-frntr-emissions-E4ZDk
 **Date:** 2026-03-17
 **Branch:** `claude/centralize-frntr-emissions-E4ZDk`

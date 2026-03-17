@@ -13,6 +13,18 @@
     stability: number
     resourceMultiplier: number
     factionInfluence: string | null
+    /** Lifecycle status: 'none' = pristine, 'active' = terraformed, 'degraded' = high hazard/low stability */
+    terraformStatus: 'none' | 'active' | 'degraded'
+    /** Unix ms timestamp of last terraform action (null = never terraformed) */
+    terraformedAt: number | null
+    /** Cumulative count of terraform actions applied */
+    terraformLevel: number
+    /** Action type of the most recent terraform operation */
+    terraformType: string | null
+    /** Monotonic counter incremented on every state change; used to detect metadata updates */
+    metadataVersion: number
+    /** Monotonic counter incremented on biome/visual changes; triggers render refresh */
+    visualStateRevision: number
   }
 
   export type TerraformResult = {
@@ -144,6 +156,21 @@
         }
       }
     }
+
+    // Update terraform tracking fields.
+    const isVisualChange = action.type === 'convert_biome' ||
+      (action.type === 'corrupt_land' && state.biome === 'plains')
+    const newStatus: 'none' | 'active' | 'degraded' =
+      nextState.hazardLevel > 60 || nextState.stability < 30 ? 'degraded' : 'active'
+
+    nextState.terraformStatus     = newStatus
+    nextState.terraformedAt       = Date.now()
+    nextState.terraformLevel      = (state.terraformLevel ?? 0) + 1
+    nextState.terraformType       = action.type
+    nextState.metadataVersion     = (state.metadataVersion ?? 1) + 1
+    nextState.visualStateRevision = isVisualChange
+      ? (state.visualStateRevision ?? 0) + 1
+      : (state.visualStateRevision ?? 0)
 
     return {
       success: true,

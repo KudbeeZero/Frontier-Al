@@ -344,39 +344,63 @@ export async function registerRoutes(
         return res.status(503).json({ error: "PUBLIC_BASE_URL not configured — NFT metadata URLs would be invalid. Set PUBLIC_BASE_URL env var." });
       }
 
-      // Select only the columns needed for immutable ARC-3 metadata.
+      // Select columns needed for ARC-3 metadata including live terraform state.
       const [parcel] = await db
         .select({
-          plotId:           parcelsTable.plotId,
-          biome:            parcelsTable.biome,
-          lat:              parcelsTable.lat,
-          lng:              parcelsTable.lng,
-          richness:         parcelsTable.richness,
-          purchasePriceAlgo: parcelsTable.purchasePriceAlgo,
+          plotId:              (parcelsTable as any).plotId,
+          biome:               (parcelsTable as any).biome,
+          lat:                 (parcelsTable as any).lat,
+          lng:                 (parcelsTable as any).lng,
+          richness:            (parcelsTable as any).richness,
+          purchasePriceAlgo:   (parcelsTable as any).purchasePriceAlgo,
+          hazardLevel:         (parcelsTable as any).hazardLevel,
+          stability:           (parcelsTable as any).stability,
+          terraformStatus:     (parcelsTable as any).terraformStatus,
+          terraformedAt:       (parcelsTable as any).terraformedAt,
+          terraformLevel:      (parcelsTable as any).terraformLevel,
+          terraformType:       (parcelsTable as any).terraformType,
+          metadataVersion:     (parcelsTable as any).metadataVersion,
+          visualStateRevision: (parcelsTable as any).visualStateRevision,
         })
         .from(parcelsTable)
-        .where(eq(parcelsTable.plotId, plotId));
+        .where(eq((parcelsTable as any).plotId, plotId));
 
       if (!parcel) {
         return res.status(404).json({ error: "Plot not found" });
       }
 
-      // ARC-3 style metadata — keep lean; mutable game state is excluded.
+      const terraformStatus    = parcel.terraformStatus ?? "none";
+      const metadataVersion    = parcel.metadataVersion ?? 1;
+      const visualRevision     = parcel.visualStateRevision ?? 0;
+      const isTerraformed      = terraformStatus !== "none";
+
+      // ARC-3 style metadata — biome and terraform state update dynamically.
+      // Cache-Control is short (1h) so wallets/indexers pick up terraform changes.
+      // The same ASA identity is preserved — no burn/remint on terraform.
       res.setHeader("Content-Type", "application/json");
-      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Cache-Control", "public, max-age=3600");
       res.json({
         name:         `Frontier Plot #${parcel.plotId}`,
-        description:  `A ${parcel.biome} land parcel on the Frontier globe. Richness: ${parcel.richness}%. Own, mine, upgrade, and battle for territory on the Algorand blockchain.`,
+        description:  `A ${parcel.biome} land parcel on the Frontier globe. Richness: ${parcel.richness}%.${isTerraformed ? ` Terraformed to ${parcel.biome} (level ${parcel.terraformLevel ?? 0}).` : ""} Own, mine, upgrade, and battle for territory on the Algorand blockchain.`,
         image:        `${baseUrl}/nft/biomes/${parcel.biome}.png`,
         external_url: `${baseUrl}/plot/${parcel.plotId}`,
         properties: {
-          plotId:            parcel.plotId,
-          biome:             parcel.biome,
-          lat:               parcel.lat,
-          lng:               parcel.lng,
-          richness:          parcel.richness,
-          purchasePriceAlgo: parcel.purchasePriceAlgo,
-          version:           1,
+          plotId:              parcel.plotId,
+          biome:               parcel.biome,
+          lat:                 parcel.lat,
+          lng:                 parcel.lng,
+          richness:            parcel.richness,
+          purchasePriceAlgo:   parcel.purchasePriceAlgo,
+          hazardLevel:         parcel.hazardLevel ?? 0,
+          stability:           parcel.stability ?? 100,
+          terraformStatus,
+          terraformedAt:       parcel.terraformedAt ?? null,
+          terraformLevel:      parcel.terraformLevel ?? 0,
+          terraformType:       parcel.terraformType ?? null,
+          metadataVersion,
+          visualStateRevision: visualRevision,
+          // version is the metadata schema version (static); metadataVersion tracks content changes.
+          version:             2,
         },
       });
     } catch (error) {
