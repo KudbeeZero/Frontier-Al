@@ -31,7 +31,29 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 // Security headers (helmet middleware)
-app.use(helmet());
+// CSP is relaxed in development to allow Vite HMR and inline styles;
+// in production a stricter policy is enforced.
+const isDev = process.env.NODE_ENV !== "production";
+app.use(
+  helmet({
+    contentSecurityPolicy: isDev
+      ? false
+      : {
+          directives: {
+            defaultSrc:     ["'self'"],
+            scriptSrc:      ["'self'", "'unsafe-inline'"],
+            styleSrc:       ["'self'", "'unsafe-inline'"],
+            imgSrc:         ["'self'", "data:", "blob:"],
+            connectSrc:     ["'self'", "wss:", "ws:", "https:"],
+            fontSrc:        ["'self'", "data:"],
+            workerSrc:      ["'self'", "blob:"],
+            objectSrc:      ["'none'"],
+            upgradeInsecureRequests: [],
+          },
+        },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // CORS — allow cross-origin requests from the Vercel frontend in production
 app.use((req, res, next) => {
