@@ -91,11 +91,7 @@ function Scene({
           selectedPlotId={selectedPlotId}
           onPlotSelect={onPlotSelect}
         />
-        <SubParcelOverlay
-          parcels={parcels}
-          players={players}
-          currentPlayerId={currentPlayerId}
-        />
+        {/* SubParcelOverlay disabled: sub-parcel data shown in table only */}
         {replayEvents && replayEvents.length > 0 && replayVisibleTypes && replayTime !== undefined && (
           <GlobeEventOverlays
             events={replayEvents}

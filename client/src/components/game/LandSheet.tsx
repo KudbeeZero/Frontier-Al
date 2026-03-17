@@ -5,6 +5,7 @@ import { X, Shield, Pickaxe, Fuel, Gem, MapPin, Clock, Swords, Hammer, ShoppingC
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { LandParcel, Player, ImprovementType, SpecialAttackType, DefenseImprovementType, FacilityType, SubParcel } from "@shared/schema";
 import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMPROVEMENT_INFO, FACILITY_INFO, IMPROVEMENT_INFO, SPECIAL_ATTACK_INFO, SUB_PARCEL_HOLD_HOURS, BASE_YIELD, SUB_PARCEL_FACILITY_COSTS, SUB_PARCEL_DEFENSE_COSTS } from "@shared/schema";
@@ -264,46 +265,86 @@ function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
           )}
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-1">
-        {Array.from({ length: 9 }).map((_, i) => {
-          const sp = subMap.get(i);
-          const isYours = sp?.ownerId === player?.id;
-          const isEnemy = sp?.ownerId && !isYours;
-          const price   = sp?.purchasePriceFrontier;
-          const canBuy  = !sp?.ownerId && player && price !== undefined;
-          const hasImprovements = (sp?.improvements?.length ?? 0) > 0;
-          const isSelected = selectedSubIndex === i;
+      <Table className="text-[10px]">
+        <TableHeader>
+          <TableRow className="border-border/30">
+            <TableHead className="text-[9px] font-display uppercase tracking-wide h-6 py-0">#</TableHead>
+            <TableHead className="text-[9px] font-display uppercase tracking-wide h-6 py-0">Status</TableHead>
+            <TableHead className="text-[9px] font-display uppercase tracking-wide h-6 py-0">Improvements</TableHead>
+            <TableHead className="text-[9px] font-display uppercase tracking-wide h-6 py-0 text-right">Action</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 9 }).map((_, i) => {
+            const sp = subMap.get(i);
+            const isYours = sp?.ownerId === player?.id;
+            const isEnemy = sp?.ownerId && !isYours;
+            const price   = sp?.purchasePriceFrontier;
+            const canBuy  = !sp?.ownerId && player && price !== undefined;
+            const hasImprovements = (sp?.improvements?.length ?? 0) > 0;
+            const isSelected = selectedSubIndex === i;
 
-          return (
-            <button
-              key={i}
-              disabled={!canBuy && !isYours || purchaseMutation.isPending}
-              onClick={() => {
-                if (canBuy && sp) {
-                  purchaseMutation.mutate(sp.id);
-                } else if (isYours) {
-                  setSelectedSubIndex(isSelected ? null : i);
-                }
-              }}
-              className={cn(
-                "rounded p-1.5 text-center transition-colors border text-[8px] font-mono relative",
-                isYours && isSelected
-                  ? "bg-primary/30 border-primary ring-1 ring-primary text-primary"
-                  : isYours
-                    ? "bg-primary/20 border-primary/40 text-primary hover:border-primary cursor-pointer"
-                    : isEnemy
-                      ? "bg-destructive/20 border-destructive/40 text-destructive"
-                      : sp
-                        ? "bg-muted/30 border-border/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/10 cursor-pointer"
-                        : "bg-muted/10 border-border/20 text-muted-foreground/40"
-              )}
-              title={canBuy ? `Buy for ${price} FRNTR` : isYours ? "Click to manage upgrades" : isEnemy ? "Enemy cell" : ""}
-            >
-              {isYours ? (hasImprovements ? "⚙YOU" : "YOU") : isEnemy ? "ENM" : sp ? `${price}F` : "–"}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <TableRow
+                key={i}
+                className={cn(
+                  "border-border/20 transition-colors",
+                  isSelected && "bg-primary/10"
+                )}
+              >
+                <TableCell className="py-1 font-mono text-muted-foreground">{i + 1}</TableCell>
+                <TableCell className="py-1">
+                  {isYours ? (
+                    <span className="text-primary font-display uppercase font-semibold">Yours</span>
+                  ) : isEnemy ? (
+                    <span className="text-destructive font-display uppercase font-semibold">Enemy</span>
+                  ) : sp ? (
+                    <span className="text-muted-foreground font-mono">{price}F</span>
+                  ) : (
+                    <span className="text-muted-foreground/40">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-1">
+                  {hasImprovements ? (
+                    <div className="flex flex-wrap gap-0.5">
+                      {sp!.improvements!.map((imp, j) => (
+                        <Badge key={j} variant="secondary" className="text-[8px] px-1 py-0">
+                          {IMPROVEMENT_INFO[imp.type]?.name ?? imp.type} {imp.level}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground/40 text-[9px]">None</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-1 text-right">
+                  {canBuy && sp && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-5 px-2 text-[9px] font-display uppercase"
+                      onClick={() => purchaseMutation.mutate(sp.id)}
+                      disabled={purchaseMutation.isPending}
+                    >
+                      Buy
+                    </Button>
+                  )}
+                  {isYours && (
+                    <Button
+                      size="sm"
+                      variant={isSelected ? "default" : "ghost"}
+                      className="h-5 px-2 text-[9px] font-display uppercase"
+                      onClick={() => setSelectedSubIndex(isSelected ? null : i)}
+                    >
+                      {isSelected ? "Close" : "Manage"}
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
 
       {selectedSp && player && selectedSp.ownerId === player.id && (
         <SubParcelUpgradePanel
