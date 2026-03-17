@@ -7,6 +7,7 @@ export type Player = {
 
 export type Parcel = {
   id: string
+  ownerId: string
   terraformState: TerraformState
 }
 
@@ -48,11 +49,24 @@ export function getRandomBiome(currentBiome: Biome): Biome {
   return options[index]
 }
 
+export function canTerraformParcel(player: Player, parcel: Parcel): boolean {
+  return player.id === parcel.ownerId
+}
+
 export function payAndTerraform(
   player: Player,
   parcel: Parcel,
   action: TerraformPayAction
 ): PayAndTerraformResult {
+  if (!canTerraformParcel(player, parcel)) {
+    return {
+      success: false,
+      player,
+      parcel,
+      error: `Player ${player.id} does not own parcel ${parcel.id}`
+    }
+  }
+
   const cost =
     action.type === 'random'
       ? terraformCosts.random
