@@ -122,10 +122,13 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
     try {
       const wallet = wallets.find((w: any) => w.id === walletId);
       if (!wallet) throw new Error(`Wallet ${walletId} not configured`);
+      console.log(`[WALLET] Connecting to ${walletId}...`, wallet);
       await wallet.connect();
+      console.log(`[WALLET] Connected to ${walletId}`);
     } catch (err: unknown) {
-      const e = err as { message?: string; data?: { type?: string } };
-      const msg = e?.message || "";
+      const e = err as { message?: string; data?: { type?: string }; code?: string };
+      const msg = e?.message || String(err) || "";
+      console.error(`[WALLET] Error connecting to ${walletId}:`, { message: msg, data: e?.data, code: e?.code, fullError: err });
       if (!isUserCancellation(msg, e?.data)) {
         setError(msg || "Connection failed — please try again");
       }
