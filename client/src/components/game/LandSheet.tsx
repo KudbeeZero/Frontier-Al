@@ -16,6 +16,7 @@ import { biomeColors, biomeBonuses, MINE_COOLDOWN_MS, UPGRADE_COSTS, DEFENSE_IMP
 interface SubParcelGridProps {
   parcel: LandParcel;
   player: Player | null;
+  onNavigate?: () => void;
 }
 
 function SubdivisionCountdown({ heldSince }: { heldSince: number }) {
@@ -153,7 +154,7 @@ function SubParcelUpgradePanel({ sp, player, parentPlotId, onClose }: {
   );
 }
 
-function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
+function SubParcelGrid({ parcel, player, onNavigate }: SubParcelGridProps) {
   const [selectedSubIndex, setSelectedSubIndex] = useState<number | null>(null);
 
   const { data: subParcels = [], isLoading } = useQuery<SubParcel[]>({
@@ -244,11 +245,23 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
           <Grid3X3 className="w-3.5 h-3.5 text-primary" />
           <span className="text-[10px] font-display uppercase tracking-wide">Sub-Parcels</span>
         </div>
-        {allOwnedByMe && (
-          <Badge variant="outline" className="text-[9px] text-primary border-primary/40">
-            +50% Yield
-          </Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          {allOwnedByMe && (
+            <Badge variant="outline" className="text-[9px] text-primary border-primary/40">
+              +50% Yield
+            </Badge>
+          )}
+          {onNavigate && (
+            <button
+              onClick={onNavigate}
+              title="Find this plot on the map"
+              className="flex items-center gap-1 text-[9px] text-muted-foreground hover:text-primary transition-colors px-1.5 py-0.5 rounded border border-border/40 hover:border-primary/40"
+            >
+              <MapPin className="w-2.5 h-2.5" />
+              Find Plot
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-3 gap-1">
         {Array.from({ length: 9 }).map((_, i) => {
@@ -335,6 +348,7 @@ interface LandSheetProps {
   nftInfo?: { assetId: number; inCustody: boolean } | null;
   onDeliverNft?: () => void;
   isDeliveringNft?: boolean;
+  onNavigateToPlot?: () => void;
 }
 
 function CooldownTimer({ lastMineTs }: { lastMineTs: number }) {
@@ -397,6 +411,7 @@ export function LandSheet({
   nftInfo,
   onDeliverNft,
   isDeliveringNft,
+  onNavigateToPlot,
 }: LandSheetProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -571,7 +586,7 @@ export function LandSheet({
 
           {/* Sub-parcel grid — shown for owned plots and subdivided plots */}
           {(parcel.isSubdivided || isOwned) && (
-            <SubParcelGrid parcel={parcel} player={player} />
+            <SubParcelGrid parcel={parcel} player={player} onNavigate={onNavigateToPlot} />
           )}
 
           <div className="flex gap-2">
