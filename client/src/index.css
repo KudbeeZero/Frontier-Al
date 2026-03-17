@@ -327,3 +327,8 @@ pera-wallet-sign-txn-modal {
   max-height: calc(100vh - env(safe-area-inset-top, 0px)) !important;
   overflow-y: auto !important;
 }
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}

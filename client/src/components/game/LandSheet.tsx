@@ -173,8 +173,8 @@ function SubParcelGrid({ parcel, player }: SubParcelGridProps) {
   const subdivideMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/plots/${parcel.plotId}/subdivide`, { playerId: player?.id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
     },
   });
 

@@ -94,6 +94,8 @@ export function GameLayout() {
   const [now, setNow] = useState(() => Date.now());
   const [miningParcelIds, setMiningParcelIds] = useState<Set<string>>(new Set());
   const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
+  const [flyRequestId, setFlyRequestId] = useState(0);
+  const [mapTransitioning, setMapTransitioning] = useState(false);
 
   // ── Stream mode & season countdown ────────────────────────────────────────
   /** Detect ?stream=1 in URL to enable the fullscreen streaming HUD. */
@@ -655,9 +657,19 @@ export function GameLayout() {
     if (tab === "map") setSelectedParcelId(selectedParcelId);
   };
 
-  const handleParcelSelectFromInventory = (id: string) => {
-    setSelectedParcelId(id);
+  /** Navigate to a parcel on the globe, forcing a camera fly-to and showing a brief transition overlay. */
+  const flyToParcelOnMap = (parcelId: string) => {
+    setSelectedParcelId(parcelId);
+    setFlyRequestId(prev => prev + 1);
+    if (activeTab !== "map") {
+      setMapTransitioning(true);
+      setTimeout(() => setMapTransitioning(false), 600);
+    }
     setActiveTab("map");
+  };
+
+  const handleParcelSelectFromInventory = (id: string) => {
+    flyToParcelOnMap(id);
   };
 
   const handleLocateTerritory = () => {
@@ -668,8 +680,7 @@ export function GameLayout() {
       if (candidates.length === 0) candidates = ownedPlots;
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
       lastLocatedOwnedId.current = pick.id;
-      setSelectedParcelId(pick.id);
-      setActiveTab("map");
+      flyToParcelOnMap(pick.id);
     }
   };
 
@@ -681,8 +692,7 @@ export function GameLayout() {
       if (candidates.length === 0) candidates = enemyPlots;
       const randomEnemy = candidates[Math.floor(Math.random() * candidates.length)];
       lastLocatedEnemyId.current = randomEnemy.id;
-      setSelectedParcelId(randomEnemy.id);
-      setActiveTab("map");
+      flyToParcelOnMap(randomEnemy.id);
       toast({ title: "Enemy Located", description: `Plot #${randomEnemy.plotId} owned by ${randomEnemy.ownerType === "ai" ? "AI Faction" : "Player"} — tap to attack!` });
     } else {
       toast({ title: "No Enemies Found", description: "No enemy territories detected yet." });
@@ -690,8 +700,7 @@ export function GameLayout() {
   };
 
   const handleViewOnGlobe = (parcelId: string) => {
-    setSelectedParcelId(parcelId);
-    setActiveTab("map");
+    flyToParcelOnMap(parcelId);
   };
 
   const playerHasOwnedPlots = player && gameState ? gameState.parcels.some(p => p.ownerId === player.id) : false;
@@ -818,7 +827,18 @@ export function GameLayout() {
             replayTime={replayTime}
             replayVisibleTypes={replayVisibleTypes}
             streamMode={streamMode}
+            flyRequestId={flyRequestId}
           />
+
+          {/* Brief overlay when transitioning from a panel to the map */}
+          {mapTransitioning && (
+            <div
+              className="absolute inset-0 z-20 bg-black/80 flex items-center justify-center pointer-events-none transition-opacity duration-500"
+              style={{ animation: "fadeOut 600ms ease-out forwards" }}
+            >
+              <p className="text-muted-foreground font-display text-sm uppercase tracking-wide">Locating plot...</p>
+            </div>
+          )}
         </>
       ) : null}
 
