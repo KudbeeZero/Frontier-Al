@@ -18,7 +18,7 @@ export const COLOR_BATTLE         = new THREE.Color("#ff0055"); // hot pink-red 
 export const COLOR_SELECTED       = new THREE.Color("#ffe566"); // bright gold — selected plot highlight
 export const COLOR_BORDER_OWNED   = new THREE.Color("#ffffff"); // white outline on owned
 export const COLOR_BORDER_UNOWNED = new THREE.Color("#4fc3f7"); // bright cyan grid — visible on all terrain
-export const COLOR_SUBDIVIDED     = new THREE.Color(0x111820); // neutral dark for subdivided macro-plots
+export const COLOR_SUBDIVIDED     = new THREE.Color(0x1a3a5c); // dark-blue tint for subdivided macro-plots
 
 // ── Biome colors — neon zone aesthetic ───────────────────────────────────────
 // forest   = Storm Belt    | desert   = Canyon Zone  | mountain = AI Nexus
@@ -79,7 +79,7 @@ export const FILL_SIZE   = GLOBE_RADIUS * 0.022;
 export const BORDER_SIZE = GLOBE_RADIUS * 0.026;
 
 // ── SubParcel sizing ──────────────────────────────────────────────────────────
-export const SUB_FILL_SIZE   = GLOBE_RADIUS * 0.010;
-export const SUB_BORDER_SIZE = GLOBE_RADIUS * 0.011;
-export const SUB_SPACING     = GLOBE_RADIUS * 0.011;
+export const SUB_FILL_SIZE   = GLOBE_RADIUS * 0.018;  // visible 3×3 cell fill
+export const SUB_BORDER_SIZE = GLOBE_RADIUS * 0.020;  // slightly larger for outline
+export const SUB_SPACING     = GLOBE_RADIUS * 0.019;  // gap between cell centers
 export const MAX_SUB_TILES   = 9 * 500;

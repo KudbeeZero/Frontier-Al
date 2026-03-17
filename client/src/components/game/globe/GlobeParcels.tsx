@@ -159,16 +159,18 @@ export function PlotOverlay({ parcels, currentPlayerId, selectedPlotId, onPlotSe
     if (currentHovered !== null) toProcess.add(currentHovered);
     if (prevHovered !== null && prevHovered !== currentHovered) toProcess.add(prevHovered);
 
-    // When selection changes, reset the old selected plot's color via useFrame
+    // When selection changes, reset the old selected plot using O(1) lookup
     if (prevSelectedRef.current !== selectedPlotId) {
       const oldSelected = prevSelectedRef.current;
       prevSelectedRef.current = selectedPlotId;
       if (oldSelected) {
         const currentMap = plotIdToParcelRef.current;
-        for (let i = 0; i < plotCoords.length; i++) {
-          const parcel = currentMap.get(plotCoords[i].plotId);
-          if (parcel?.id === oldSelected) { toProcess.add(i); break; }
-        }
+        currentMap.forEach((parcel, plotId) => {
+          if (parcel.id === oldSelected) {
+            const idx = plotIdToIndex.get(plotId);
+            if (idx !== undefined) toProcess.add(idx);
+          }
+        });
       }
     }
 
@@ -376,7 +378,8 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
   useEffect(() => {
     if (!fillMeshRef.current || !borderMeshRef.current) return;
 
-    console.time("[SubParcelOverlay] instance update");
+    const subdivided = parcelsRef.current.filter(p => p.isSubdivided && p.subParcelOwnerIds);
+    console.log(`[SubParcelOverlay] updating — ${subdivided.length} subdivided parcels → ${subdivided.length * 9} tiles`);
 
     const currentParcels = parcelsRef.current;
     let instanceIdx = 0;
@@ -402,13 +405,14 @@ export function SubParcelOverlay({ parcels, currentPlayerId }: SubParcelOverlayP
             .normalize()
             .multiplyScalar(GLOBE_RADIUS * 1.028); // above main tiles (1.012/1.018)
 
-          // Flat static colors — no clone/multiplyScalar to keep this loop cheap
+          // Vivid colors — easy to see during debugging
+          const isOwn = currentPlayerId && ownerId === currentPlayerId;
           const fillColor = new THREE.Color(
-            !ownerId ? 0x223344
-            : (currentPlayerId && ownerId === currentPlayerId) ? 0x00cc66
-            : 0xcc3300
+            !ownerId ? 0x0055aa    // unowned: bright blue
+            : isOwn  ? 0x00ff88   // your sub-parcel: bright green
+            : 0xff3300            // enemy sub-parcel: bright red
           );
-          const borderColor = new THREE.Color(ownerId ? 0xffffff : 0x334455);
+          const borderColor = new THREE.Color(ownerId ? 0xffffff : 0x44aaff);
 
           dummy.position.copy(worldPos);
           dummy.lookAt(worldPos.clone().multiplyScalar(2));
