@@ -40,8 +40,26 @@ interface WalletContextValue extends WalletState {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-function InnerWalletProvider({ children }: { children: ReactNode }) {
-  const { wallets, activeAddress, signTransactions } = useWalletLib();
+interface WalletProviderProps {
+  children: ReactNode;
+  enableAutoConnect?: boolean;
+}
+
+export function WalletProvider({ children, enableAutoConnect = false }: WalletProviderProps) {
+  const hasSavedWallet = !!(localStorage.getItem("frontier_wallet_type"));
+
+  const [state, setState] = useState<WalletState>({
+    isConnected: false,
+    walletStatus: hasSavedWallet && enableAutoConnect ? "restoring" : "disconnected",
+    address: null,
+    displayAddress: null,
+    balance: 0,
+    isConnecting: false,
+    error: null,
+    walletType: null,
+    signerReady: false,
+    blockchainReady: false,
+  });
 
   const [balance, setBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -61,13 +79,44 @@ function InnerWalletProvider({ children }: { children: ReactNode }) {
 
   // Register/unregister the signer whenever the active wallet changes
   useEffect(() => {
-    if (activeAddress && signTransactions) {
-      registerWalletSigner(async (txns) => {
-        const results = await signTransactions([txns]);
-        return results.filter((s): s is Uint8Array => s !== null);
-      });
-    } else {
-      registerWalletSigner(null);
+    if (!enableAutoConnect || isReconnecting.current) return;
+    isReconnecting.current = true;
+
+    const savedType = localStorage.getItem("frontier_wallet_type") as WalletType | null;
+    const savedAddress = localStorage.getItem("frontier_wallet_address");
+
+    if (savedType === "lute" && savedAddress) {
+      luteWallet
+        .connect(ALGORAND_TESTNET.genesisID)
+        .then((accounts) => {
+          const addr = accounts.length > 0 ? accounts[0] : savedAddress;
+          setActiveWalletType("lute");
+          localStorage.setItem("frontier_wallet_address", addr);
+          localStorage.setItem("frontier_onboarded_v1", "1");
+          setState((prev) => ({
+            ...prev,
+            isConnected: true,
+            walletStatus: "connected",
+            address: addr,
+            displayAddress: formatAddress(addr),
+            balance: 0,
+            isConnecting: false,
+            error: null,
+            walletType: "lute",
+            signerReady: true,
+          }));
+          updateBalance(addr);
+        })
+        .catch((err) => {
+          console.warn("LUTE reconnection failed, clearing saved state:", err);
+          localStorage.removeItem("frontier_wallet_type");
+          localStorage.removeItem("frontier_wallet_address");
+          setState((prev) => ({ ...prev, walletStatus: "disconnected" }));
+        })
+        .finally(() => {
+          isReconnecting.current = false;
+        });
+      return;
     }
   }, [activeAddress, signTransactions]);
 

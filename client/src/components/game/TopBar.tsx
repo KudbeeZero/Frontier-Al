@@ -1,5 +1,4 @@
-import { Settings, Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap, Flag } from "lucide-react";
-import { SiTelegram, SiX, SiGithub, SiDiscord } from "react-icons/si";
+import { Sun, Moon, HelpCircle, Menu, FlaskConical, Pickaxe, Fuel, Gem, Zap, Flag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -35,10 +34,16 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex items-center justify-between gap-4 px-4 py-2 backdrop-blur-md bg-black/50 border-b border-white/10",
+        "sticky top-0 z-40 flex items-center justify-between gap-4 px-4 py-2",
+        "bg-gradient-to-r from-black/60 via-black/50 to-black/60 backdrop-blur-lg",
+        "border-b border-blue-500/20 shadow-lg shadow-blue-500/5",
         className
       )}
       data-testid="top-bar"
+      style={{
+        backgroundImage: "radial-gradient(circle at 20% 50%, rgba(30, 80, 180, 0.05) 0%, transparent 50%)",
+        backgroundAttachment: "fixed"
+      }}
     >
       <div className="flex items-center gap-4">
         {mobileMenuContent && (
@@ -60,18 +65,19 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
 
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-md bg-primary/20 flex items-center justify-center border border-primary/30">
-              <span className="font-display text-xl font-bold text-primary">F</span>
+            <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-md blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative w-10 h-10 rounded-md bg-gradient-to-br from-blue-500/30 to-primary/20 flex items-center justify-center border border-blue-400/40 shadow-lg shadow-blue-500/20">
+              <span className="font-display text-xl font-bold bg-gradient-to-br from-blue-300 to-purple-300 bg-clip-text text-transparent">⬡</span>
             </div>
             <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-success border-2 border-background animate-pulse" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="font-display text-xl font-bold uppercase tracking-wider">FRONTIER</h1>
+            <h1 className="font-display text-xl font-bold uppercase tracking-wider bg-gradient-to-r from-blue-300 to-purple-300 bg-clip-text text-transparent">FRONTIER</h1>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] py-0 px-1 font-mono">
+              <Badge variant="outline" className="text-[10px] py-0 px-1 font-mono border-blue-400/40 text-blue-300/80">
                 TESTNET
               </Badge>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">V1.1</span>
+              <span className="text-[10px] text-blue-400/60 uppercase tracking-wide">V1.1</span>
             </div>
           </div>
         </div>
@@ -100,29 +106,6 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
       )}
 
       <div className="flex items-center gap-1 sm:gap-2">
-        <div className="hidden sm:flex items-center gap-1 mr-1 border-r border-border pr-2">
-          <a href="https://t.me/frontier_game" target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="icon" data-testid="link-telegram">
-              <SiTelegram className="w-4 h-4" />
-            </Button>
-          </a>
-          <a href="https://x.com/frontier_game" target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="icon" data-testid="link-twitter">
-              <SiX className="w-4 h-4" />
-            </Button>
-          </a>
-          <a href="https://github.com/frontier-game" target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="icon" data-testid="link-github">
-              <SiGithub className="w-4 h-4" />
-            </Button>
-          </a>
-          <a href="https://discord.gg/frontier" target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="icon" data-testid="link-discord">
-              <SiDiscord className="w-4 h-4" />
-            </Button>
-          </a>
-        </div>
-
         <Button
           variant="ghost"
           size="icon"
@@ -148,10 +131,6 @@ export function TopBar({ isConnected, className, mobileMenuContent, mobileResour
         </Link>
         <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-help">
           <HelpCircle className="w-5 h-5" />
-        </Button>
-
-        <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-settings">
-          <Settings className="w-5 h-5" />
         </Button>
 
         {playerFactionId && (

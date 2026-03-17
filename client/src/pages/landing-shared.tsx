@@ -157,71 +157,122 @@ export function LandingNav({ activePath }: { activePath: string }) {
   );
 }
 
-// ─── Shared Footer ────────────────────────────────────────────────────────────
-export function LandingFooter() {
-  const [, setLocation] = useLocation();
-  const footerLinks = NAV_LINKS.filter(l => l.path !== "/");
+// ─── Cookie Consent Banner ────────────────────────────────────────────────
+export function CookieConsentBanner() {
+  const [accepted, setAccepted] = useState(() => {
+    try {
+      return localStorage.getItem("frontier_cookies_accepted") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const handleAccept = () => {
+    try {
+      localStorage.setItem("frontier_cookies_accepted", "true");
+    } catch {}
+    setAccepted(true);
+  };
+
+  if (accepted) return null;
 
   return (
-    <footer style={{
-      width: "100%", maxWidth: 940,
-      borderTop: "1px solid rgba(60,90,180,0.15)",
-      paddingTop: 32, marginTop: 48,
+    <div style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
+      background: "linear-gradient(135deg, rgba(4,10,25,0.98) 0%, rgba(10,5,30,0.96) 100%)",
+      borderTop: "1px solid rgba(60,90,180,0.3)", backdropFilter: "blur(16px)",
+      padding: "16px 20px",
     }}>
       <div style={{
-        display: "flex", justifyContent: "space-between", flexWrap: "wrap",
-        gap: 10, marginBottom: 32,
+        maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center",
+        justifyContent: "space-between", gap: 20, flexWrap: "wrap",
+      }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{
+            fontSize: 13, color: "rgba(140,180,255,0.85)", lineHeight: 1.5,
+          }}>
+            We use cookies to enhance your browsing experience and analyze site usage. By clicking "Accept", you consent to our cookie policy.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+          <a href="/privacy" style={{
+            fontSize: 11, color: "rgba(100,160,255,0.7)", textDecoration: "underline",
+            textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer",
+          }}>Privacy Policy</a>
+          <button onClick={handleAccept} style={{
+            background: "rgba(60,100,255,0.3)", border: "1px solid rgba(100,160,255,0.55)",
+            borderRadius: 6, padding: "8px 16px", color: "rgba(180,220,255,0.95)",
+            fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase",
+            cursor: "pointer", fontWeight: 600, fontFamily: "inherit",
+          }}>Accept</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shared Footer ────────────────────────────────────────────────────────────
+export function LandingFooter() {
+  return (
+    <footer style={{
+      width: "100%", maxWidth: 1100,
+      borderTop: "1px solid rgba(60,90,180,0.15)",
+      paddingTop: 40, marginTop: 60, textAlign: "center",
+    }}>
+      {/* Logo & Description */}
+      <div style={{ marginBottom: 36 }}>
+        <div style={{ fontSize: 16, letterSpacing: "0.2em", color: "rgba(120,175,255,0.92)", fontWeight: 700, textTransform: "uppercase", marginBottom: 12 }}>
+          ⬡ FRONTIER
+        </div>
+        <div style={{ fontSize: 13, color: "rgba(140,170,220,0.6)", lineHeight: 1.6, maxWidth: 500, margin: "0 auto", marginBottom: 24 }}>
+          A territorial strategy game on the Algorand blockchain. 21,000 parcels. Infinite possibilities.
+        </div>
+
+        {/* Social Icons - Centered */}
+        <div style={{
+          display: "flex", justifyContent: "center", alignItems: "center", gap: 20, marginBottom: 24,
+        }}>
+          <a href="https://x.com/ascendancyalgox" target="_blank" rel="noopener noreferrer" title="Twitter/X" style={{
+            fontSize: 24, color: "rgba(150,200,255,0.7)", transition: "all 0.3s",
+            cursor: "pointer", textDecoration: "none",
+          }} onMouseEnter={(e) => e.currentTarget.style.color = "rgba(79,195,247,0.95)"}
+             onMouseLeave={(e) => e.currentTarget.style.color = "rgba(150,200,255,0.7)"}
+          >𝕏</a>
+          <div title="Discord" style={{
+            fontSize: 24, color: "rgba(150,200,255,0.5)", cursor: "default",
+          }}>◆</div>
+          <div title="Telegram" style={{
+            fontSize: 24, color: "rgba(150,200,255,0.5)", cursor: "default",
+          }}>✈</div>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" title="GitHub" style={{
+            fontSize: 24, color: "rgba(150,200,255,0.7)", transition: "all 0.3s",
+            cursor: "pointer", textDecoration: "none",
+          }} onMouseEnter={(e) => e.currentTarget.style.color = "rgba(79,195,247,0.95)"}
+             onMouseLeave={(e) => e.currentTarget.style.color = "rgba(150,200,255,0.7)"}
+          >⚙</a>
+        </div>
+      </div>
+
+      {/* Network Status */}
+      <div style={{
+        display: "flex", justifyContent: "center", flexWrap: "wrap",
+        gap: 24, marginBottom: 32, paddingBottom: 32, borderBottom: "1px solid rgba(60,90,180,0.1)",
       }}>
         {[
           { label: "Network",          value: "Algorand TestNet" },
-          { label: "Block Time",       value: "~3.7s" },
           { label: "Parcels Reserved", value: "4,218 / 21,000" },
           { label: "Status",           value: "UNDER CONSTRUCTION" },
         ].map(({ label, value }) => (
-          <div key={label} style={{ textAlign: "center", flex: "1 1 120px" }}>
+          <div key={label} style={{ textAlign: "center" }}>
             <div style={{ fontSize: 9, letterSpacing: "0.15em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
             <div style={{ fontSize: 12, color: "rgba(180,210,255,0.72)", letterSpacing: "0.05em" }}>{value}</div>
           </div>
         ))}
       </div>
 
-      <div className="footer-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 32, marginBottom: 28 }}>
-        <div>
-          <div style={{ fontSize: 14, letterSpacing: "0.2em", color: "rgba(120,175,255,0.92)", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
-            ⬡ FRONTIER
-          </div>
-          <div style={{ fontSize: 12, color: "rgba(140,170,220,0.5)", lineHeight: 1.7, maxWidth: 240 }}>
-            A territorial strategy game on the Algorand blockchain. 21,000 parcels. Infinite possibilities.
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: "0.2em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 12 }}>Explore</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {footerLinks.map(({ label, path }) => (
-              <button key={path} onClick={() => setLocation(path)} style={{
-                background: "transparent", border: "none", padding: 0,
-                color: "rgba(140,180,255,0.5)", fontSize: 12, letterSpacing: "0.08em",
-                textTransform: "uppercase", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
-              }}>{label}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: "0.2em", color: "rgba(100,130,200,0.5)", textTransform: "uppercase", marginBottom: 12 }}>Community</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <a href="https://x.com/ascendancyalgox" target="_blank" rel="noopener noreferrer" style={{
-              fontSize: 12, letterSpacing: "0.08em", color: "rgba(150,200,255,0.6)", textTransform: "uppercase", textDecoration: "none",
-            }}>Twitter / X ↗</a>
-            {["Discord", "Telegram", "GitHub"].map((s) => (
-              <div key={s} style={{ fontSize: 12, letterSpacing: "0.08em", color: "rgba(140,180,255,0.38)", textTransform: "uppercase" }}>{s}</div>
-            ))}
-          </div>
-        </div>
-      </div>
-
+      {/* Copyright */}
       <div style={{
-        paddingTop: 20, borderTop: "1px solid rgba(60,90,180,0.1)",
-        display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8,
+        display: "flex", flexDirection: "column", gap: 8, alignItems: "center",
       }}>
         <div style={{ fontSize: 10, color: "rgba(100,130,180,0.32)", letterSpacing: "0.1em" }}>
           © 2025–2026 FRONTIER PROTOCOL. ALL RIGHTS RESERVED.

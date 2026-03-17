@@ -16,33 +16,55 @@ import LandingGameplay from "@/pages/landing-gameplay";
 import LandingFeatures from "@/pages/landing-features";
 import LandingUpdates from "@/pages/landing-updates";
 
-function Router() {
-  return (
-    <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/info/economics" component={LandingEconomics} />
-      <Route path="/info/gameplay" component={LandingGameplay} />
-      <Route path="/info/features" component={LandingFeatures} />
-      <Route path="/info/updates" component={LandingUpdates} />
-      <Route path="/game" component={GamePage} />
-      <Route path="/testnet" component={TestnetPage} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <UseWalletProvider manager={walletManager}>
-          <WalletProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
-          </WalletProvider>
-        </UseWalletProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Switch>
+            <Route path="/game">
+              <WalletProvider enableAutoConnect={true}>
+                <GamePage />
+              </WalletProvider>
+            </Route>
+            <Route path="/">
+              <WalletProvider enableAutoConnect={false}>
+                <LandingPage />
+              </WalletProvider>
+            </Route>
+            <Route path="/info/economics">
+              <WalletProvider enableAutoConnect={false}>
+                <LandingEconomics />
+              </WalletProvider>
+            </Route>
+            <Route path="/info/gameplay">
+              <WalletProvider enableAutoConnect={false}>
+                <LandingGameplay />
+              </WalletProvider>
+            </Route>
+            <Route path="/info/features">
+              <WalletProvider enableAutoConnect={false}>
+                <LandingFeatures />
+              </WalletProvider>
+            </Route>
+            <Route path="/info/updates">
+              <WalletProvider enableAutoConnect={false}>
+                <LandingUpdates />
+              </WalletProvider>
+            </Route>
+            <Route path="/testnet">
+              <WalletProvider enableAutoConnect={false}>
+                <TestnetPage />
+              </WalletProvider>
+            </Route>
+            <Route>
+              <WalletProvider enableAutoConnect={false}>
+                <NotFound />
+              </WalletProvider>
+            </Route>
+          </Switch>
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

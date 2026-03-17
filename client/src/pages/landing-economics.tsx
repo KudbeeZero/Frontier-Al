@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
-import { LandingNav, LandingFooter, Starfield, SHARED_CSS } from "./landing-shared";
+import { LandingNav, LandingFooter, CookieConsentBanner, Starfield, SHARED_CSS } from "./landing-shared";
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -150,6 +150,9 @@ export default function LandingEconomics() {
 
         <LandingFooter />
       </div>
+
+      <CookieConsentBanner />
+
       <style>{SHARED_CSS}</style>
     </div>
   );

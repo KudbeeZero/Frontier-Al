@@ -42,6 +42,7 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
   - `factions.ts`: Faction identity ASA bootstrap.
 - `client/src/components/game/PlanetGlobe.tsx`: 3D globe visualization and plot interaction.
 - `client/src/components/game/GameLayout.tsx`: Main game UI layout and action handlers.
+- `client/src/pages/landing-shared.tsx`: Shared landing page components (Nav, Footer, Starfield, CookieConsentBanner).
 - `shared/schema.ts`: Game constants, mechanics, and types.
 - `shared/orbitalEngine.ts`: Deterministic cosmetic orbital event generation.
 
@@ -50,6 +51,49 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - `server/routes.ts` imports ONLY from the chain service — never directly from algosdk.
 - `server/algorand.ts` was removed (dead code, fully superseded by chain service).
 - `batchedTransferFrontierAsa` in `asa.ts` uses the chain service's `_frontierAsaId` (fixes bug where claims would fail using stale module-local variable).
+
+## Landing Page & Legal Compliance (Recent Updates)
+- **Cookie Consent Banner**: Fixed-position banner at bottom of all landing pages. Uses localStorage to remember user's choice. Links to Privacy Policy.
+- **Footer Redesign**: Centered layout with:
+  - Logo and project description (centered, top section)
+  - Social media icons (𝕏 for Twitter/X, ◆ for Discord, ✈ for Telegram, ⚙ for GitHub) with hover effects
+  - Network status (Algorand TestNet, Parcels Reserved, Status) centered below icons
+  - Copyright notice (centered at bottom)
+- **All Landing Pages Updated**:
+  - `landing.tsx` (main home page)
+  - `landing-economics.tsx`
+  - `landing-features.tsx`
+  - `landing-gameplay.tsx`
+  - `landing-updates.tsx`
+- All pages now export `CookieConsentBanner` from `landing-shared.tsx`
+
+## Game Page Header Redesign (Recent Updates)
+- **Removed Clutter**: 
+  - Removed social media links (Telegram, Twitter, GitHub, Discord) from top bar
+  - Removed Settings/gear icon
+- **Enhanced Styling** (matching landing page aesthetic):
+  - Header background: Gradient with subtle blue glow (radial gradient at 20% 50%)
+  - Border: Blue-tinted glow (`border-blue-500/20`) with shadow effect
+  - Logo: Changed from "F" to hexagon symbol (⬡) with gradient text (blue to purple)
+  - Title: "FRONTIER" now has gradient coloring (blue to purple)
+  - TESTNET badge: Enhanced with blue tones
+- **Kept Essential Controls**: Theme toggle, Help button, Testnet guide, Faction badge, Wallet connection
+- File: `client/src/components/game/TopBar.tsx`
+
+## Game Page Loading Screen (Recent Updates)
+- **New Mission Loading Screen**: Shows while game data is initializing
+- **Components**:
+  - Animated rotating globe (12-second rotation loop, matching landing page style)
+  - "MISSION LOGS" panel with 3 sequential system checks:
+    - ✓ Initializing frontier access…
+    - ✓ Blockchain sync complete
+    - ✓ Commander designation confirmed
+  - Large countdown timer (6 seconds)
+  - Progress bar with gradient (blue to purple)
+  - Launch countdown text ("Launching mission…")
+- **Styling**: Dark gradient background with radial gradient glow, matches landing page
+- **Implementation**: Component shows when `isLoading && !gameState`
+- Files: `client/src/components/game/MissionLoadingScreen.tsx`, updated `GameLayout.tsx`
 
 ---
 
