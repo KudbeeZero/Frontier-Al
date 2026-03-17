@@ -71,6 +71,26 @@ export function GameLayout() {
   const { events: orbitalEvents, impactEvents } = useOrbitalEngine();
   const tutorial = useTutorial();
 
+  // When tutorial step changes, update camera coords if the step defines them
+  useEffect(() => {
+    if (!tutorial.isOpen) return;
+    const s = tutorial.currentStepDef;
+    if (s?.cameraLat != null && s?.cameraLng != null) {
+      setTutorialLat(s.cameraLat);
+      setTutorialLng(s.cameraLng);
+      setFlyRequestId((prev) => prev + 1);
+    } else {
+      setTutorialLat(null);
+      setTutorialLng(null);
+    }
+  }, [tutorial.step, tutorial.isOpen, tutorial.currentStepDef]);
+
+  // Notify tutorial when a parcel is selected (any click on the globe)
+  const handleParcelSelect = useCallback((id: string) => {
+    setSelectedParcelId(id);
+    tutorial.notifyEvent("plot_selected");
+  }, [tutorial.notifyEvent]);
+
   const initializedAddressRef = useRef<string | null>(null);
   const ambienceStartedRef = useRef(false);
 
@@ -99,6 +119,10 @@ export function GameLayout() {
   const [livePulses, setLivePulses] = useState<LivePulse[]>([]);
   const [flyRequestId, setFlyRequestId] = useState(0);
   const [mapTransitioning, setMapTransitioning] = useState(false);
+
+  // Tutorial-driven camera override — set when a tutorial step has camera coords
+  const [tutorialLat, setTutorialLat] = useState<number | null>(null);
+  const [tutorialLng, setTutorialLng] = useState<number | null>(null);
 
   // ── Stream mode & season countdown ────────────────────────────────────────
   /** Detect ?stream=1 in URL to enable the fullscreen streaming HUD. */
@@ -198,6 +222,14 @@ export function GameLayout() {
   const selectedParcel = gameState?.parcels.find((p) => p.id === selectedParcelId) || null;
   const activeBattleCount = gameState?.battles.filter(b => b.status === "pending").length || 0;
 
+  // Notify tutorial when LandSheet becomes visible (parcel selected on map tab)
+  useEffect(() => {
+    if (selectedParcel && activeTab === "map") {
+      tutorial.notifyEvent("landsheet_opened");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedParcel?.id]);
+
   const handleMine = async () => {
     if (!isConnected) {
       toast({ title: "Authorization Required", description: "Connect your wallet to perform game actions.", variant: "destructive" });
@@ -216,6 +248,7 @@ export function GameLayout() {
             ? `+${yields.iron} Iron, +${yields.fuel} Fuel, +${yields.crystal} Crystal`
             : "Resources extracted successfully.";
           toast({ title: "Mining Complete", description: desc });
+          tutorial.notifyEvent("land_action_completed");
           if (selectedParcel) {
             const pulse: LivePulse = {
               id: `pulse-${Date.now()}-${Math.random()}`,
@@ -359,6 +392,7 @@ export function GameLayout() {
       {
         onSuccess: () => {
           toast({ title: "Territory Acquired", description: "New land is now yours." });
+          tutorial.notifyEvent("plot_purchased");
           setSelectedParcelId(null);
         },
         onError: (error) => toast({ title: "Purchase Failed", description: error.message, variant: "destructive" }),
@@ -823,7 +857,7 @@ export function GameLayout() {
               players={gameState.players}
               currentPlayerId={player?.id || null}
               selectedParcelId={selectedParcelId}
-              onParcelSelect={setSelectedParcelId}
+              onParcelSelect={handleParcelSelect}
               onAttack={handleAttackClick}
               onMine={handleMine}
               onBuild={() => { /* LandSheet handles upgrades — stay on map */ }}
@@ -837,6 +871,11 @@ export function GameLayout() {
               replayVisibleTypes={replayVisibleTypes}
               streamMode={streamMode}
               flyRequestId={flyRequestId}
+              tutorialLat={tutorialLat}
+              tutorialLng={tutorialLng}
+              nftInfo={nftInfo}
+              onDeliverNft={handleDeliverNft}
+              isDeliveringNft={isDeliveringNft}
             />
           </div>
 

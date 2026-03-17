@@ -68,6 +68,7 @@ export function TutorialOverlay({
   const currentStep = steps[step];
   const isFirst = step === 0;
   const isLast = step === steps.length - 1;
+  const isActionGated = currentStep.completionRule !== "next";
 
   return (
     <>
@@ -230,6 +231,7 @@ export function TutorialOverlay({
             gap: 10,
             justifyContent: "flex-end",
             flexWrap: "wrap",
+            alignItems: "center",
           }}
         >
           {!isFirst && (
@@ -299,6 +301,38 @@ export function TutorialOverlay({
             >
               Let&apos;s Go!
             </button>
+          ) : isActionGated ? (
+            /* Waiting indicator for action-gated steps — no Next button */
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "1px solid rgba(0,229,255,0.2)",
+                background: "rgba(0,229,255,0.04)",
+                color: "rgba(0,229,255,0.55)",
+                fontSize: 11,
+                fontFamily: "monospace",
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+              }}
+            >
+              {/* Pulsing dot */}
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "rgba(0,229,255,0.7)",
+                  display: "inline-block",
+                  animation: "tutorial-pulse 1.4s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              />
+              Waiting for action
+            </div>
           ) : (
             <button
               onClick={onNext}
@@ -336,6 +370,14 @@ export function TutorialOverlay({
           )}
         </div>
       </div>
+
+      {/* Keyframe for the pulsing dot */}
+      <style>{`
+        @keyframes tutorial-pulse {
+          0%, 100% { opacity: 0.3; transform: scale(0.85); }
+          50% { opacity: 1; transform: scale(1.15); }
+        }
+      `}</style>
     </>
   );
 }
