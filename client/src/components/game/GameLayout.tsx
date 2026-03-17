@@ -263,7 +263,7 @@ export function GameLayout() {
             setLivePulses(prev => [...prev, pulse]);
           }
         },
-        onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
+        onError: (error: unknown) => toast({ title: "Mining Failed", description: (error as Error).message, variant: "destructive" }),
         onSettled: () => {
           setMiningParcelIds((prev) => {
             const next = new Set(prev);
@@ -303,7 +303,7 @@ export function GameLayout() {
           };
           setLivePulses(prev => [...prev, pulse]);
         },
-        onError: (error) => toast({ title: "Mining Failed", description: error.message, variant: "destructive" }),
+        onError: (error: unknown) => toast({ title: "Mining Failed", description: (error as Error).message, variant: "destructive" }),
         onSettled: () => {
           setMiningParcelIds((prev) => {
             const next = new Set(prev);

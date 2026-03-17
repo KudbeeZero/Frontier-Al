@@ -38,8 +38,41 @@ export function useMine() {
       const response = await apiRequest("POST", "/api/actions/mine", action);
       return response.json();
     },
-    onSuccess: () => {
+    onMutate: async (action: MineAction) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/game/state"] });
+      const previous = queryClient.getQueryData<GameState>(["/api/game/state"]);
+      queryClient.setQueryData<GameState>(["/api/game/state"], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          parcels: old.parcels.map(p =>
+            p.id === action.parcelId ? { ...p, lastMineTs: Date.now() } : p
+          ),
+        };
+      });
+      return { previous };
+    },
+    onSuccess: (data: any, action: MineAction) => {
+      const yields = data?.yield as { iron: number; fuel: number; crystal: number } | undefined;
+      if (yields) {
+        queryClient.setQueryData<GameState>(["/api/game/state"], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            players: old.players.map(p =>
+              p.id === action.playerId
+                ? { ...p, iron: p.iron + yields.iron, fuel: p.fuel + yields.fuel, crystal: p.crystal + yields.crystal }
+                : p
+            ),
+          };
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/game/state"] });
+    },
+    onError: (_err: unknown, _action: MineAction, context: any) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/game/state"], context.previous);
+      }
     },
   });
 }
