@@ -67,6 +67,19 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
   - `landing-updates.tsx`
 - All pages now export `CookieConsentBanner` from `landing-shared.tsx`
 
+## Game Page Header Redesign (Recent Updates)
+- **Removed Clutter**: 
+  - Removed social media links (Telegram, Twitter, GitHub, Discord) from top bar
+  - Removed Settings/gear icon
+- **Enhanced Styling** (matching landing page aesthetic):
+  - Header background: Gradient with subtle blue glow (radial gradient at 20% 50%)
+  - Border: Blue-tinted glow (`border-blue-500/20`) with shadow effect
+  - Logo: Changed from "F" to hexagon symbol (⬡) with gradient text (blue to purple)
+  - Title: "FRONTIER" now has gradient coloring (blue to purple)
+  - TESTNET badge: Enhanced with blue tones
+- **Kept Essential Controls**: Theme toggle, Help button, Testnet guide, Faction badge, Wallet connection
+- File: `client/src/components/game/TopBar.tsx`
+
 ---
 
 ## Replit Import Instructions
