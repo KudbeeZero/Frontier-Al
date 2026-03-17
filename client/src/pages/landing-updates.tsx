@@ -16,6 +16,30 @@ const MONO: React.CSSProperties = {
 
 const ACTIVE_UPDATES = [
   {
+    label: "Testing Economy Unlock — FRNTR-First Pricing",
+    status: "complete" as const,
+    date: "Mar 2026",
+    detail: "Commander minting now uses FRNTR as primary currency (no ALGO game-level charge). All testing prices are centralized in a single economy config. Sentinel: 10 FRNTR · Phantom: 25 FRNTR · Reaper: 50 FRNTR. Land purchases reduced to 0.1 ALGO (minimum viable) for testing. Unavoidable ALGO network fee (~0.001) is the only remaining chain cost.",
+  },
+  {
+    label: "Centralized Economy Config",
+    status: "complete" as const,
+    date: "Mar 2026",
+    detail: "All gameplay prices (commander mint, land purchase, facility builds, special attacks, drones, satellites) are now controlled from a single shared/economy-config.ts. Testing and production profiles are cleanly separated. Set ECONOMY_MODE=production to switch to live tokenomics.",
+  },
+  {
+    label: "Tutorial Restart Button",
+    status: "complete" as const,
+    date: "Mar 2026",
+    detail: "A 'TUTORIAL' button now appears in the lower-left of the game screen. Partners and testers can replay the onboarding tutorial at any time without clearing browser storage.",
+  },
+  {
+    label: "Economics Panel — Testing Price Clarity",
+    status: "complete" as const,
+    date: "Mar 2026",
+    detail: "The in-game Economics panel now shows a dedicated 'Testing Economy Prices' section listing current FRNTR costs per action, land ALGO prices, and the unavoidable network fee. Currency per action is clearly labeled.",
+  },
+  {
     label: "Sub-Parcel Archetype System",
     status: "in_progress" as const,
     date: "Mar 2026",

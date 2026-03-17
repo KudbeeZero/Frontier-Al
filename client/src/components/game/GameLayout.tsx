@@ -31,7 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock, Flag } from "lucide-react";
+import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock, Flag, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -597,57 +597,43 @@ export function GameLayout() {
   const handleMintAvatar = async (tier: CommanderTier) => {
     if (!player) return;
 
-    const isRealWallet =
-      wallet.isConnected &&
-      wallet.address &&
-      wallet.address !== "PLAYER_WALLET" &&
-      algosdk.isValidAddress(wallet.address);
+    // Fetch pricing — response now returns frntrCost (primary currency) and
+    // algoNetworkFee (unavoidable Algorand tx fee, ~0.001 ALGO, wallet handles automatically).
+    let frntrCost = 0;
+    try {
+      const priceRes = await fetch(`/api/nft/commander-price/${tier}`);
+      if (!priceRes.ok) throw new Error("Could not fetch commander price");
+      const priceData: { frntrCost: number; algoNetworkFee: number; note: string; economyMode: string } = await priceRes.json();
+      frntrCost = priceData.frntrCost;
 
-    let algoPaymentTxId: string | undefined;
-
-    if (isRealWallet && wallet.address) {
-      try {
-        const priceRes = await fetch(`/api/nft/commander-price/${tier}`);
-        if (!priceRes.ok) throw new Error("Could not fetch commander price");
-        const priceData: { algoPrice: number; adminAddress: string; usdPrice: number } = await priceRes.json();
-        const microAlgos = Math.floor(priceData.algoPrice * 1_000_000);
-
-        toast({
-          title: "ALGO Payment Required",
-          description: `Approve ${priceData.algoPrice.toFixed(3)} ALGO (~$${priceData.usdPrice.toFixed(2)}) in your wallet to mint your Commander NFT.`,
-        });
-
-        algoPaymentTxId = await sendPaymentTransaction(
-          wallet.address,
-          priceData.adminAddress,
-          microAlgos,
-          `FRONTIER Commander NFT mint - ${tier}`
-        );
-
-        toast({ title: "Payment Confirmed", description: "Minting your Commander NFT on Algorand..." });
-      } catch (payErr) {
-        toast({
-          title: "Payment Failed",
-          description: payErr instanceof Error ? payErr.message : "Payment could not be completed",
-          variant: "destructive",
-        });
-        return;
-      }
+      toast({
+        title: "Minting Commander",
+        description: `Cost: ${frntrCost} FRNTR${priceData.economyMode === "testing" ? " (testing price)" : ""}. The Algorand network fee (~${priceData.algoNetworkFee} ALGO) is handled by your wallet automatically.`,
+      });
+    } catch (fetchErr) {
+      toast({
+        title: "Price Fetch Failed",
+        description: fetchErr instanceof Error ? fetchErr.message : "Could not load commander pricing",
+        variant: "destructive",
+      });
+      return;
     }
 
+    // No ALGO game-level payment required — FRNTR is deducted server-side via mintAvatarMutation.
+    // The minimal Algorand network fee is covered automatically by the wallet during NFT minting.
     queueMintAvatarAction(tier);
     mintAvatarMutation.mutate(
-      { playerId: player.id, tier, algoPaymentTxId },
+      { playerId: player.id, tier },
       {
         onSuccess: (data: any) => {
           const nft = data.nft;
           if (nft?.assetId) {
             toast({
               title: "Commander Minted + NFT Created!",
-              description: `${data.avatar?.name || tier} Commander is ready. NFT ASA ${nft.assetId} is held in custody — claim it from the Commander page once opted in.`,
+              description: `${data.avatar?.name || tier} Commander is ready. ${frntrCost} FRNTR spent. NFT ASA ${nft.assetId} held in custody — claim from Commander page.`,
             });
           } else {
-            toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle!` });
+            toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle! ${frntrCost} FRNTR spent.` });
           }
         },
         onError: (error: unknown) => toast({ title: "Mint Failed", description: (error as Error).message, variant: "destructive" }),
@@ -1329,6 +1315,26 @@ export function GameLayout() {
           seasonName={seasonName ?? null}
         />
       )}
+
+      {/* Tutorial test button — lower left, always visible for testing */}
+      <button
+        onClick={tutorial.resetAndOpen}
+        className="absolute bottom-20 left-3 z-40 md:bottom-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full select-none transition-opacity opacity-60 hover:opacity-100"
+        style={{
+          background: "rgba(4,8,20,0.85)",
+          border: "1px solid rgba(0,229,255,0.3)",
+          backdropFilter: "blur(8px)",
+          fontFamily: "monospace",
+          fontSize: 10,
+          letterSpacing: "0.15em",
+          color: "rgba(0,229,255,0.85)",
+        }}
+        title="Restart Tutorial"
+        data-testid="button-tutorial-restart"
+      >
+        <BookOpen style={{ width: 11, height: 11 }} />
+        TUTORIAL
+      </button>
 
       {/* Onboarding tutorial — shown to first-time users */}
       <TutorialOverlay
