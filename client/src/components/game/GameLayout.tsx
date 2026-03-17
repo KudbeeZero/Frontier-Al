@@ -25,7 +25,7 @@ import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
 import { useGameSocket } from "@/hooks/useGameSocket";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -535,6 +535,84 @@ export function GameLayout() {
       toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
     } finally {
       setIsDeliveringNft(false);
+    }
+  };
+
+  // ── NFT delivery for all owned parcels (CommanderPanel claim list) ──────────
+  const allOwnedParcels = gameState?.parcels.filter(p => p.ownerId === player?.id) ?? [];
+  const plotNftQueries = useQueries({
+    queries: allOwnedParcels.slice(0, 25).map(parcel => ({
+      queryKey: ["nft-plot", parcel.plotId],
+      queryFn: async () => {
+        const res = await fetch(`/api/nft/plot/${parcel.plotId}`);
+        if (res.status === 404) return null;
+        if (!res.ok) return null;
+        return res.json() as Promise<{ plotId: number; assetId: number | null; mintedToAddress: string | null } | null>;
+      },
+      staleTime: 30_000,
+    })),
+  });
+
+  const pendingNftPlots = allOwnedParcels.slice(0, 25).flatMap((parcel, idx) => {
+    const d = plotNftQueries[idx]?.data;
+    if (!d?.assetId) return [];
+    const inCustody = !!d.mintedToAddress && d.mintedToAddress !== wallet.address;
+    if (!inCustody) return [];
+    return [{ plotId: parcel.plotId, assetId: d.assetId, biome: parcel.biome as string }];
+  });
+
+  const [isDeliveringPlotNftId, setIsDeliveringPlotNftId] = useState<number | null>(null);
+
+  const handleDeliverPlotNft = async (plotId: number) => {
+    if (!wallet.address) return;
+    const nftEntry = pendingNftPlots.find(p => p.plotId === plotId);
+    if (!nftEntry) return;
+    setIsDeliveringPlotNftId(plotId);
+    try {
+      const res = await fetch(`/api/nft/deliver/${plotId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet.address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "NFT Delivery Failed", description: data.error || "Unknown error", variant: "destructive" });
+        return;
+      }
+      if (data.success) {
+        toast({ title: "NFT Delivered! 🎉", description: `Plot #${plotId} NFT is now in your wallet.` });
+        queryClient.invalidateQueries({ queryKey: ["nft-plot", plotId] });
+        return;
+      }
+      if (data.reason === "not_opted_in") {
+        const optedIn = await signOptInToPlotNft(nftEntry.assetId);
+        if (optedIn) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const retryRes = await fetch(`/api/nft/deliver/${plotId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: wallet.address }),
+          });
+          const retryData = await retryRes.json();
+          if (retryData.success) {
+            toast({ title: "NFT Delivered! 🎉", description: `Plot #${plotId} NFT is now in your wallet.` });
+            queryClient.invalidateQueries({ queryKey: ["nft-plot", plotId] });
+          } else {
+            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try again.", variant: "destructive" });
+          }
+        }
+        return;
+      }
+      if (data.reason === "not_in_custody") {
+        toast({ title: "Already In Your Wallet", description: data.message || "NFT is already delivered." });
+        queryClient.invalidateQueries({ queryKey: ["nft-plot", plotId] });
+        return;
+      }
+      toast({ title: "Claim Issue", description: data.message || "Unexpected state — try again.", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "NFT Delivery Error", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsDeliveringPlotNftId(null);
     }
   };
 
@@ -1143,6 +1221,9 @@ export function GameLayout() {
               selectedParcel={selectedParcel}
               ownedParcels={gameState.parcels.filter(p => p.ownerId === player?.id)}
               wallet={{ isConnected: wallet.isConnected, address: wallet.address }}
+              pendingNftPlots={pendingNftPlots}
+              onDeliverPlotNft={handleDeliverPlotNft}
+              isDeliveringPlotNftId={isDeliveringPlotNftId}
             />
           )}
           {activeTab === "leaderboard" && gameState && (

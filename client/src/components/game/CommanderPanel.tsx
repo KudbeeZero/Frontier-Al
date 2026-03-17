@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock,
   Satellite, Gift, Loader2, Lock, ChevronDown, ChevronUp, Pickaxe, Fuel,
-  AlertTriangle, MapPin, CheckCircle2, XCircle, ChevronsRight,
+  AlertTriangle, MapPin, CheckCircle2, XCircle, ChevronsRight, PackageCheck, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -354,13 +354,16 @@ export interface CommanderPanelProps {
   ownedParcels?: LandParcel[];
   wallet?: { isConnected: boolean; address: string | null };
   className?: string;
+  pendingNftPlots?: { plotId: number; assetId: number; biome: string }[];
+  onDeliverPlotNft?: (plotId: number) => void;
+  isDeliveringPlotNftId?: number | null;
 }
 
 export function CommanderPanel({
   player, onMintAvatar, onDeployDrone, onDeploySatellite, onSwitchCommander,
   onClaimCommanderNft, onAttack, isMinting, isDeployingDrone, isDeployingSatellite,
   isClaimingCommanderNft, isAttacking, selectedParcel, ownedParcels = [],
-  wallet, className,
+  wallet, className, pendingNftPlots = [], onDeliverPlotNft, isDeliveringPlotNftId,
 }: CommanderPanelProps) {
   const queryClient = useQueryClient();
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
@@ -502,6 +505,56 @@ export function CommanderPanel({
 
       <ScrollArea className="flex-1">
         <div className="p-3 space-y-4">
+
+          {/* ── Pending NFT Claims ── */}
+          {pendingNftPlots.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/40">
+                <PackageCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-display uppercase tracking-wide text-amber-400 font-bold">
+                    {pendingNftPlots.length} NFT{pendingNftPlots.length > 1 ? "s" : ""} Awaiting Claim
+                  </p>
+                  <p className="text-[9px] text-amber-300/70">Mining and upgrades are locked until you claim your NFT</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {pendingNftPlots.map(plot => (
+                  <div
+                    key={plot.plotId}
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-mono font-bold text-amber-300">Plot #{plot.plotId}</span>
+                        <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-500/40 text-amber-400 capitalize">{plot.biome}</Badge>
+                      </div>
+                      <a
+                        href={`https://explorer.perawallet.app/assets/${plot.assetId}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[9px] text-muted-foreground font-mono hover:text-amber-300 transition-colors flex items-center gap-0.5"
+                      >
+                        ASA {plot.assetId} <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => onDeliverPlotNft?.(plot.plotId)}
+                      disabled={isDeliveringPlotNftId === plot.plotId}
+                      className="h-8 px-3 text-[10px] font-display uppercase tracking-wide bg-amber-500 hover:bg-amber-600 text-black border-0 shrink-0"
+                    >
+                      {isDeliveringPlotNftId === plot.plotId ? (
+                        <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Claiming…</>
+                      ) : (
+                        <><PackageCheck className="w-3 h-3 mr-1" />Claim NFT</>
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Commander Roster (horizontal scroll) ── */}
           {hasCommander && (

@@ -860,6 +860,57 @@ export function LandSheet({
             </div>
           )}
 
+          {/* ── NFT Claim Banner (top of action area) ── */}
+          {nftInfo && (
+            <div className={cn(
+              "p-2.5 rounded-lg border",
+              nftInfo.inCustody
+                ? "bg-amber-500/10 border-amber-500/40"
+                : "bg-primary/5 border-primary/20"
+            )}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <PackageCheck className={cn("w-4 h-4 shrink-0", nftInfo.inCustody ? "text-amber-400" : "text-primary")} />
+                  <div className="min-w-0">
+                    <span className={cn("text-xs font-display uppercase tracking-wide font-bold block", nftInfo.inCustody ? "text-amber-400" : "text-primary")}>
+                      {nftInfo.inCustody ? "NFT Awaiting Claim" : "Plot NFT"}
+                    </span>
+                    {nftInfo.inCustody && (
+                      <span className="text-[9px] text-amber-300/70">Claim to unlock mining &amp; upgrades</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <a
+                    href={`https://explorer.perawallet.app/assets/${nftInfo.assetId}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[9px] text-muted-foreground font-mono hover:text-primary transition-colors"
+                  >
+                    ASA {nftInfo.assetId} ↗
+                  </a>
+                  {nftInfo.inCustody && onDeliverNft && (
+                    <Button
+                      size="sm"
+                      onClick={onDeliverNft}
+                      disabled={isDeliveringNft}
+                      className="h-7 px-3 text-[10px] font-display uppercase tracking-wide bg-amber-500 hover:bg-amber-600 text-black border-0"
+                    >
+                      {isDeliveringNft ? (
+                        <><ExternalLink className="w-3 h-3 mr-1 animate-pulse" />Claiming…</>
+                      ) : (
+                        <><PackageCheck className="w-3 h-3 mr-1" />Claim NFT</>
+                      )}
+                    </Button>
+                  )}
+                  {!nftInfo.inCustody && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 text-green-400 border-green-500/30 bg-green-500/10">In Wallet ✓</Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Sub-parcel grid — shown for owned plots and subdivided plots */}
           {(parcel.isSubdivided || isOwned) && (
             <SubParcelGrid parcel={parcel} player={player} onNavigate={onNavigateToPlot} />
@@ -871,22 +922,26 @@ export function LandSheet({
                 <Button
                   size="sm"
                   onClick={onMine}
-                  disabled={!canMine || isMining}
+                  disabled={!canMine || isMining || !!nftInfo?.inCustody}
                   className={cn(
                     "flex-1 font-display uppercase tracking-wide text-xs font-semibold",
-                    canMine && !isMining && "bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg"
+                    canMine && !isMining && !nftInfo?.inCustody && "bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg",
+                    !!nftInfo?.inCustody && "opacity-50 cursor-not-allowed"
                   )}
                   data-testid="button-mine"
+                  title={nftInfo?.inCustody ? "Claim your NFT first to unlock mining" : undefined}
                 >
                   <Pickaxe className="w-4 h-4 mr-1.5" />
-                  {isMining ? "Mining..." : "Mine"}
+                  {isMining ? "Mining..." : nftInfo?.inCustody ? "NFT Required" : "Mine"}
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => setExpanded(true)}
-                  className="font-display uppercase tracking-wide text-xs font-semibold"
+                  disabled={!!nftInfo?.inCustody}
+                  className={cn("font-display uppercase tracking-wide text-xs font-semibold", !!nftInfo?.inCustody && "opacity-50 cursor-not-allowed")}
                   data-testid="button-upgrade"
+                  title={nftInfo?.inCustody ? "Claim your NFT first to unlock upgrades" : undefined}
                 >
                   <Hammer className="w-3.5 h-3.5 mr-1" />
                   Upgrade ↑
@@ -1180,48 +1235,6 @@ export function LandSheet({
             </div>
           )}
 
-          {nftInfo && (
-            <div className="mt-2 p-2 bg-primary/5 border border-primary/20 rounded-md">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <PackageCheck className="w-3.5 h-3.5 text-primary" />
-                  <span className="text-xs font-display uppercase tracking-wide text-primary">Plot NFT</span>
-                  <a
-                    href={`https://explorer.perawallet.app/assets/${nftInfo.assetId}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-primary font-mono underline underline-offset-2"
-                  >
-                    ASA {nftInfo.assetId} ↗
-                  </a>
-                </div>
-                <div className="flex items-center gap-1">
-                  <a
-                    href={`https://allo.info/asset/${nftInfo.assetId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-primary transition-colors"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                  {nftInfo.inCustody && onDeliverNft && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={onDeliverNft}
-                      disabled={isDeliveringNft}
-                      className="h-5 px-2 text-[10px] font-display uppercase"
-                    >
-                      {isDeliveringNft ? "Claiming..." : nftInfo.inCustody ? "Claim NFT" : "NFT Claimed ✓"}
-                    </Button>
-                  )}
-                  {!nftInfo.inCustody && nftInfo.assetId && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">In Wallet</Badge>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
