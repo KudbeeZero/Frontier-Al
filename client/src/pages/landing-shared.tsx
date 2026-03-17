@@ -195,7 +195,7 @@ export function CookieConsentBanner() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
-          <a href="/privacy" style={{
+          <a href="/privacy-policy" style={{
             fontSize: 11, color: "rgba(100,160,255,0.7)", textDecoration: "underline",
             textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer",
           }}>Privacy Policy</a>

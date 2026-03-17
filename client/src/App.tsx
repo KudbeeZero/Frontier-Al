@@ -15,6 +15,7 @@ import LandingEconomics from "@/pages/landing-economics";
 import LandingGameplay from "@/pages/landing-gameplay";
 import LandingFeatures from "@/pages/landing-features";
 import LandingUpdates from "@/pages/landing-updates";
+import PrivacyPolicy from "@/pages/privacy-policy";
 
 function App() {
   return (
@@ -57,6 +58,11 @@ function App() {
               <Route path="/testnet">
                 <WalletProvider enableAutoConnect={false}>
                   <TestnetPage />
+                </WalletProvider>
+              </Route>
+              <Route path="/privacy-policy">
+                <WalletProvider enableAutoConnect={false}>
+                  <PrivacyPolicy />
                 </WalletProvider>
               </Route>
               <Route>
