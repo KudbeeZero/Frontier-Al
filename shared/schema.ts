@@ -726,6 +726,43 @@ export interface SubParcel {
   activeBattleId: string | null;
 }
 
+// ─── Sub-Parcel Listings (Player-to-Player Trading) ──────────────────────────
+
+export interface SubParcelListing {
+  id: string;
+  subParcelId: string;
+  parentPlotId: number;
+  subIndex: number;
+  sellerId: string;
+  sellerName: string;
+  askPriceFrontier: number;
+  status: "open" | "sold" | "cancelled";
+  createdAt: number;
+  buyerId: string | null;
+  buyerName: string | null;
+  soldAt: number | null;
+}
+
+export const createSubParcelListingSchema = z.object({
+  subParcelId: z.string(),
+  askPriceFrontier: z.number().int().min(1).max(100000),
+});
+
+export type CreateSubParcelListingAction = z.infer<typeof createSubParcelListingSchema>;
+
+// ─── Sub-Parcel Attack Schema ─────────────────────────────────────────────────
+
+export const attackSubParcelSchema = z.object({
+  attackerParcelId: z.string(),
+  commanderId: z.string().optional(),
+  troops: z.number().int().min(1).max(10),
+  iron: z.number().int().min(0),
+  fuel: z.number().int().min(0),
+  crystal: z.number().int().min(0),
+});
+
+export type AttackSubParcelAction = z.infer<typeof attackSubParcelSchema>;
+
 // ─── Season System ────────────────────────────────────────────────────────────
 // Seasons are ~90-day meta-layers. The world PERSISTS between seasons —
 // ownership, sub-parcels, and improvements carry forward. Season end only

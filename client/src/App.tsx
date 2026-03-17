@@ -9,11 +9,17 @@ import NotFound from "@/pages/not-found";
 import GamePage from "@/pages/game";
 import TestnetPage from "@/pages/testnet";
 import LandingPage from "@/pages/landing";
+import LandingEconomics from "@/pages/landing-economics";
+import LandingGameplay from "@/pages/landing-gameplay";
+import LandingFeatures from "@/pages/landing-features";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
+      <Route path="/info/economics" component={LandingEconomics} />
+      <Route path="/info/gameplay" component={LandingGameplay} />
+      <Route path="/info/features" component={LandingFeatures} />
       <Route path="/game" component={GamePage} />
       <Route path="/testnet" component={TestnetPage} />
       <Route component={NotFound} />

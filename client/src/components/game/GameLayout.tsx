@@ -1080,10 +1080,14 @@ export function GameLayout() {
               onDeploySatellite={handleDeploySatellite}
               onSwitchCommander={handleSwitchCommander}
               onClaimCommanderNft={handleClaimCommanderNft}
+              onAttack={handleAttackConfirm}
               isMinting={mintAvatarMutation.isPending}
               isDeployingDrone={deployDroneMutation.isPending}
               isDeployingSatellite={deploySatelliteMutation.isPending}
               isClaimingCommanderNft={isClaimingCommanderNft}
+              isAttacking={attackMutation.isPending}
+              selectedParcel={selectedParcel}
+              ownedParcels={gameState.parcels.filter(p => p.ownerId === player?.id)}
               wallet={{ isConnected: wallet.isConnected, address: wallet.address }}
             />
           )}

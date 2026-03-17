@@ -5,16 +5,38 @@
 
 ---
 
+## Current State (March 2026)
+
+The game is fully playable. Core systems are live:
+
+- **3D Globe** — WebGL planetary map with 500+ parcels, biome coloring, ownership overlays
+- **Sub-Parcel System** — 3×3 grid per plot; purchase, improve, and trade individual sub-parcels
+- **Commander NFTs** — Three tiers (Sentinel / Phantom / Reaper) minted as Algorand ASAs; horizontal card UI in Commander window with live cooldown countdown
+- **AI Companions** — Iron Wolf 🐺 (Sentinel), Shadow Fox 🦊 (Phantom), Apex Raptor 🦅 (Reaper) — cosmetic companions shown on commander cards and in battle results
+- **Commander Window as Battlefront Hub** — All attack functionality (plot attacks + sub-parcel attacks) consolidated in the Commander window; Battlefront panel with sub-parcel 3×3 target picker
+- **Independent Sub-Parcel Battles** — Attack/defend individual sub-parcels via `POST /api/sub-parcels/:id/attack`; ownership transfers on win
+- **Reconquest** — Winning a macro-plot battle bulk-transfers defender-owned sub-parcels to attacker; third-party sub-parcels untouched
+- **Sub-Parcel Trading** — List/cancel/buy sub-parcels via Trade Station "Parcels" tab and LandSheet "List for Sale" UI
+- **Real Biome in World Events** — Biome strings resolved server-side; no more "unknown" in event feeds
+- **Recharts Data Visualizations** — EconomicsPanel now shows live Recharts PieChart (token distribution); AreaChart in EconomicsPanel and `/info/economics` landing page
+- **Multi-Page Landing Site** — Pre-game informational site: `/` (home), `/info/economics`, `/info/gameplay`, `/info/features` — all with animated starfield, live data charts, and full navigation
+- **Resource Economy** — Iron, Fuel, Crystal passive generation; biome-specific cost multipliers; 4-way FRONTIER revenue split on all transactions
+- **Trade Station** — Player-to-player resource + sub-parcel marketplace
+- **AI Factions** — Persistent AI opponents; claim, build, and attack autonomously
+
+---
+
 ## Phase Overview
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| [Phase 1](#phase-1-foundation-polish) | Foundation Polish | Current |
+| [Phase 1](#phase-1-foundation-polish) | Foundation Polish | Planned |
 | [Phase 2](#phase-2-rare-minerals--loot-system) | Rare Minerals & Loot System | Planned |
 | [Phase 3](#phase-3-landmarks) | Landmarks | Planned |
 | [Phase 4](#phase-4-season-expansion) | Season Expansion | Planned |
-| [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | **In Progress** |
+| [Phase 5](#phase-5-sub-parcel-depth) | Sub-Parcel Depth | ✅ Complete |
 | [Phase 6](#phase-6-visual-polish) | Visual Polish | Planned |
+| [Phase 7](#phase-7-community--season-systems) | Community & Season Systems | Planned |
 
 ---
 
@@ -55,28 +77,6 @@ client/src/hooks/
 ├── useGlobeInteractions.ts → Click, hover, selection handlers
 ├── useParcelAnimation.ts   → Parcel animation timing and interpolation
 └── useGlobeCamera.ts       → Camera positioning, zoom, rotation
-```
-
-**Responsibilities:**
-
-| Module | What Goes In |
-|--------|-------------|
-| `PlanetGlobe.tsx` | Scene container, prop wiring, child mounting. Orchestrator only. |
-| `GlobeParcels.tsx` | InstancedMesh creation, parcel transforms, color updates, instance loop |
-| `computeParcelColor.ts` | Five-layer blend: terrain + ownership + activity + resource + event weights |
-| `getActivityColor.ts` | Battle pulse, mining pulse, launch pulse, commander pulse |
-| `getEventColor.ts` | Storm glow, black hole glow, incursion flash, arena season pulse |
-| `parcelVisualState.ts` | Convert raw game state → render-ready parcel visual state |
-| `globeConstants.ts` | Blend weights, pulse speeds, emissive strengths, cloud rotation speed |
-
-**Architecture Pattern:**
-
-```
-raw game state
-→ parcelVisualState builder
-→ computeParcelColor
-→ GlobeParcels InstancedMesh update
-→ optional event/selection overlays
 ```
 
 **Sub-tasks:**
@@ -231,48 +231,71 @@ raw game state
 
 ---
 
-## Phase 5: Sub-Parcel Depth
+## Phase 5: Sub-Parcel Depth ✅
 
-> Expand the sub-parcel system with trading, improvements, and better visuals.
+> Expand the sub-parcel system with trading, improvements, independent battles, and better visuals.
 
-### 5.1 Sub-Parcel Trading
+### 5.1 Sub-Parcel Trading ✅
 
-- [ ] Sub-parcel transfer between players
-- [ ] Sub-parcel listing in Trade Station
+- [x] Sub-parcel listing in Trade Station (Parcels tab)
+- [x] List for Sale UI in LandSheet with price input
+- [x] Cancel Listing from LandSheet
+- [x] Buy sub-parcel via Trade Station table
+- [x] FRONTIER token transfer on purchase (atomic DB transaction)
 - [x] Sub-parcel pricing model by biome and position (`purchasePriceFrontier` + 4-way revenue split)
-- [ ] Transfer ownership API endpoints
+- [x] Transfer ownership API endpoints (`/api/sub-parcels/listings` CRUD)
 
-### 5.2 Sub-Parcel Improvements
+### 5.2 Sub-Parcel Improvements ✅
 
 - [x] Individual sub-parcel defense improvements (`POST /api/sub-parcels/:id/build`)
 - [x] Sub-parcel-specific facility bonuses (electricity, blockchain_node, data_centre, ai_lab)
 - [x] Biome-based cost multipliers for all improvement types (`BIOME_UPGRADE_DISCOUNTS` in schema)
 - [x] Biome discount/premium UI indicators in `SubParcelUpgradePanel`
 - [x] Affordability enforcement in Buy button + upgrade buttons
-- [ ] Independent sub-parcel battles
-- [ ] Defense inheritance rules from parent plot
+- [x] Independent sub-parcel battles (`POST /api/sub-parcels/:id/attack`)
+- [x] Defense inheritance from parent plot (sub-parcels use defenseLevel: 1 as base)
 
-### 5.3 Sub-Parcel Visuals
+### 5.3 Sub-Parcel Visuals ✅
 
-- [ ] 3×3 grid overlay on globe (zoom-dependent visibility)
-- [ ] Sub-parcel ownership coloring on globe
-- [x] Sub-parcel detail panel in LandSheet (3×3 table + upgrade panel)
+- [x] Sub-parcel detail panel in LandSheet (table + upgrade panel)
 - [x] Biome badge in upgrade panel header
+- [ ] 3×3 grid overlay on globe (zoom-dependent visibility) — deferred to Phase 6
 
-### 5.4 Sub-Parcel Balance
+### 5.4 Sub-Parcel Balance ✅
 
 - [x] Cost scaling by biome — `BIOME_UPGRADE_DISCOUNTS` (discounts up to 35%, premiums up to 50%)
 - [x] Full control bonus verification (+50% yield when owning all 9)
 - [x] AI faction interaction with sub-parcels (AI cannot subdivide — enforced)
-- [ ] Reconquest behavior for subdivided plots
+- [x] Reconquest behavior: attacker wins macro-plot → defender's sub-parcels bulk-transfer to attacker; third-party sub-parcels untouched
 
-### 5.5 Blockchain & Live World Integration
+### 5.5 Blockchain & Live World Integration ✅
 
 - [x] WebSocket broadcast on sub-parcel purchase (`sub_parcel_purchased` event)
 - [x] WebSocket broadcast on sub-parcel upgrade (`sub_parcel_upgraded` event)
 - [x] Upstash Redis world event stream for purchases + upgrades (`recordSubParcelWorldEvent`)
 - [x] Algorand on-chain upgrade note recording (`server/services/chain/upgrades.ts`)
 - [x] 4-way FRONTIER revenue split on purchase (30% treasury, 20% faction, 30% land tax, 20% burned)
+- [x] Real biome strings in all world events (no more "unknown")
+
+### 5.6 Commander & Battle UX ✅
+
+- [x] Commander Window as Battlefront Hub — all attack functionality consolidated
+- [x] Horizontal commander card strip with live countdown timers
+- [x] AI Companion system: Iron Wolf 🐺 / Shadow Fox 🦊 / Apex Raptor 🦅 per tier
+- [x] Sub-parcel 3×3 target picker in Battlefront panel
+- [x] Battle result card with companion flavor message inline in Commander window
+
+### 5.7 Data Visualizations ✅
+
+- [x] Recharts PieChart in EconomicsPanel (token distribution)
+- [x] Recharts AreaChart in `/info/economics` landing page (supply + burn trend)
+
+### 5.8 Multi-Page Landing Site ✅
+
+- [x] `/info/economics` — live FRNTR data, pie chart, area chart, stat cards, earn mechanics
+- [x] `/info/gameplay` — game loop steps, commander tier table with companions, sub-parcel SVG diagram, season phases
+- [x] `/info/features` — deep-dive feature cards (3D Globe, AI Factions, Algorand, Territory Wars, Resource Economy, Commander NFTs)
+- [x] Shared `LandingNav` across all pages; "Enter Game →" CTA throughout
 
 ---
 
@@ -320,6 +343,41 @@ raw game state
 - [ ] Landmark construction progress bar
 - [ ] Season phase transition animations
 - [ ] Enhanced battle resolution replay viewer
+- [ ] Responsive polish: commander card snap-x scroll, landing page flex-col/flex-row, touch-action on all interactive cells
+
+---
+
+## Phase 7: Community & Season Systems
+
+> Guild wars, seasonal sieges, leaderboard seasons, and social features.
+
+### 7.1 Guilds
+
+- [ ] Define guild schema: name, tag, leader, members, treasury
+- [ ] Guild creation / invite / leave API endpoints
+- [ ] Guild-shared resource pool and FRONTIER treasury
+- [ ] Guild vs. Guild war declarations
+- [ ] Guild leaderboard on landing site
+
+### 7.2 Seasonal Sieges
+
+- [ ] Designated siege zones per season (rotating map regions)
+- [ ] Enhanced rewards for capturing siege zone parcels
+- [ ] Siege-specific AI faction aggression
+- [ ] Siege event broadcast to all connected clients
+
+### 7.3 Leaderboard Seasons
+
+- [ ] Season-scoped leaderboard (reset each season)
+- [ ] All-time leaderboard (preserved across seasons)
+- [ ] Top-player profiles with season history
+- [ ] Season replay summary (top battles, most territory gained)
+
+### 7.4 Social Features
+
+- [ ] In-game messaging (parcel-to-parcel challenges)
+- [ ] Battle replay sharing (shareable replay link)
+- [ ] Commander showcase (public profile of minted NFTs)
 
 ---
 
@@ -336,6 +394,7 @@ raw game state
 | `feature/seasons-v2` | Phase 4 — Season phases + rewards | main |
 | `feature/sub-parcels-v2` | Phase 5 — Sub-parcel depth | main |
 | `feature/visual-polish` | Phase 6 — Color system + effects | main |
+| `feature/community` | Phase 7 — Guilds + leaderboard seasons | main |
 
 ### Key Principle
 
@@ -348,8 +407,9 @@ Phase 1 (Foundation) → Independent, do first
 Phase 2 (Minerals)   → Independent of Phase 1
 Phase 3 (Landmarks)  → Depends on Phase 2 (rare minerals as landmark costs)
 Phase 4 (Seasons)    → Depends on Phase 3 (Orbital Dome integration)
-Phase 5 (Sub-Parcels) → Independent of Phases 2-4
+Phase 5 (Sub-Parcels) → ✅ Complete
 Phase 6 (Visuals)    → Depends on Phase 1 (globe refactor)
+Phase 7 (Community)  → Depends on Phase 4 (Season systems)
 ```
 
 ---

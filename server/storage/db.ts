@@ -92,6 +92,7 @@ import {
   orbitalEvents as orbitalEventsTable,
   tradeOrders as tradeOrdersTable,
   subParcels as subParcelsTable,
+  subParcelListings as subParcelListingsTable,
   seasons as seasonsTable,
   treasuryLedger as treasuryLedgerTable,
   predictionMarkets as predictionMarketsTable,
@@ -114,7 +115,7 @@ import {
   type ParcelRow,
   type BattleRow,
 } from "./game-rules";
-import type { SubParcel, Season, PredictionMarket, MarketPosition, MarketOutcome, CreateMarketAction } from "@shared/schema";
+import type { SubParcel, SubParcelListing, Season, PredictionMarket, MarketPosition, MarketOutcome, CreateMarketAction } from "@shared/schema";
 import { MARKET_FEE_RATE } from "@shared/schema";
 import {
   SUB_PARCEL_HOLD_HOURS,
@@ -1647,6 +1648,16 @@ export class DbStorage implements IStorage {
             ? ` Pillaged: ${pillagedIron} iron, ${pillagedFuel} fuel, ${pillagedCrystal} crystal.`
             : "";
 
+          // ── Sub-parcel reconquest: transfer defender-owned sub-parcels to attacker ──
+          if (targetRow.ownerId) {
+            await tx.update(subParcelsTable)
+              .set({ ownerId: attackerRow.id, ownerType: attackerRow.isAi ? "ai" : "player" })
+              .where(and(
+                eq(subParcelsTable.parentPlotId, targetRow.plotId),
+                eq(subParcelsTable.ownerId, targetRow.ownerId)
+              ));
+          }
+
           await this.addEvent({
             type:        "battle_resolved",
             playerId:    attackerRow.id,
@@ -2146,6 +2157,255 @@ export class DbStorage implements IStorage {
       ]);
 
       return { subParcel: rowToSubParcel(updatedSp) };
+    });
+  }
+
+  // ── Sub-Parcel Battle & Listing Methods ─────────────────────────────────────
+
+  /** Fetch a single sub-parcel by its UUID. */
+  async getSubParcel(subParcelId: string): Promise<SubParcel | undefined> {
+    await this.initialize();
+    const [row] = await this.db.select().from(subParcelsTable).where(eq(subParcelsTable.id, subParcelId));
+    return row ? rowToSubParcel(row) : undefined;
+  }
+
+  /** Return the biome string for a macro-plot (used by routes to fix "unknown" world events). */
+  async getParcelBiomeByPlotId(plotId: number): Promise<string> {
+    await this.initialize();
+    const [row] = await this.db.select({ biome: parcelsTable.biome }).from(parcelsTable).where(eq(parcelsTable.plotId, plotId)).limit(1);
+    return row?.biome ?? "plains";
+  }
+
+  /**
+   * Resolve an attack on a single sub-parcel immediately (synchronous resolution,
+   * no scheduled battle queue). Uses the same deterministic engine as plot battles.
+   */
+  async attackSubParcel(
+    subParcelId: string,
+    attackerId: string,
+    params: {
+      attackerParcelId: string;
+      commanderId?: string;
+      troops: number;
+      iron: number;
+      fuel: number;
+      crystal: number;
+    }
+  ): Promise<{ outcome: "attacker_wins" | "defender_wins"; battleId: string; attackerPower: number; defenderPower: number; log: { phase: string; message: string }[]; error?: string }> {
+    await this.initialize();
+
+    const [spRow] = await this.db.select().from(subParcelsTable).where(eq(subParcelsTable.id, subParcelId));
+    if (!spRow) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Sub-parcel not found" };
+    if (!spRow.ownerId) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Sub-parcel is unowned — purchase it instead of attacking" };
+    if (spRow.ownerId === attackerId) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Cannot attack your own sub-parcel" };
+    if (spRow.activeBattleId) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Sub-parcel already has an active battle" };
+
+    const [attackerRow] = await this.db.select().from(playersTable).where(eq(playersTable.id, attackerId));
+    if (!attackerRow) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Attacker not found" };
+
+    // Validate resources
+    if (attackerRow.iron < params.iron) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Insufficient iron" };
+    if (attackerRow.fuel < params.fuel) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Insufficient fuel" };
+    if (attackerRow.crystal < params.crystal) return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Insufficient crystal" };
+
+    // Validate & lock commander
+    let commanderBonus = 0;
+    let commanderIdx = -1;
+    if (params.commanderId) {
+      const cmds: CommanderAvatar[] = Array.isArray(attackerRow.commanders) ? (attackerRow.commanders as CommanderAvatar[]) : [];
+      commanderIdx = cmds.findIndex(c => c.id === params.commanderId);
+      if (commanderIdx >= 0) {
+        const cmd = cmds[commanderIdx];
+        if (cmd.lockedUntil && Date.now() < cmd.lockedUntil) {
+          return { outcome: "defender_wins", battleId: "", attackerPower: 0, defenderPower: 0, log: [], error: "Commander is locked (on cooldown)" };
+        }
+        commanderBonus = cmd.attackBonus;
+      }
+    }
+
+    // Fetch parent plot biome
+    const [parcelRow] = await this.db.select({ biome: parcelsTable.biome }).from(parcelsTable).where(eq(parcelsTable.plotId, spRow.parentPlotId)).limit(1);
+    const biome = (parcelRow?.biome ?? "plains") as import("../engine/battle/types.js").BiomeType;
+
+    // Build BattleInput — sub-parcels use defenseLevel=1 as base; improvements from sub-parcel
+    const { resolveBattle } = await import("../engine/battle/resolve.js");
+    const battleId = randomUUID();
+    const now = Date.now();
+    const improvementsForEngine = (Array.isArray(spRow.improvements) ? (spRow.improvements as { type: string; level: number }[]) : [])
+      .filter(i => ["turret", "shield_gen", "fortress"].includes(i.type))
+      .map(i => ({ type: i.type as import("../engine/battle/types.js").ImprovementType, level: i.level }));
+
+    const input = {
+      battleId,
+      attackerId,
+      defenderId: spRow.ownerId,
+      plotId: spRow.parentPlotId,
+      troopsCommitted: params.troops,
+      resourcesBurned: { iron: params.iron, fuel: params.fuel },
+      commanderBonus,
+      moraleDebuffActive: false,
+      defenseLevel: 1, // sub-parcels have a base defense of 1
+      biome,
+      improvements: improvementsForEngine,
+      orbitalHazardActive: false,
+      randomSeed: now % 2147483647,
+    };
+
+    const result = resolveBattle(input);
+    const attackerWins = result.outcome === "attacker_wins";
+
+    // Deduct resources from attacker
+    const newCommanders = (() => {
+      const cmds: CommanderAvatar[] = Array.isArray(attackerRow.commanders) ? ([...attackerRow.commanders] as CommanderAvatar[]) : [];
+      if (commanderIdx >= 0) {
+        cmds[commanderIdx] = { ...cmds[commanderIdx], lockedUntil: now + COMMANDER_LOCK_MS };
+      }
+      return cmds;
+    })();
+
+    await this.db.update(playersTable).set({
+      iron:       attackerRow.iron    - params.iron,
+      fuel:       attackerRow.fuel    - params.fuel,
+      crystal:    attackerRow.crystal - params.crystal,
+      commanders: newCommanders,
+    }).where(eq(playersTable.id, attackerId));
+
+    if (attackerWins) {
+      // Transfer ownership
+      await this.db.update(subParcelsTable).set({
+        ownerId:    attackerId,
+        ownerType:  "player",
+        acquiredAt: now,
+        activeBattleId: null,
+      }).where(eq(subParcelsTable.id, subParcelId));
+    }
+
+    return {
+      outcome: result.outcome,
+      battleId,
+      attackerPower: result.attackerPower,
+      defenderPower: result.defenderPower,
+      log: result.log,
+    };
+  }
+
+  // ── Sub-Parcel Listings ──────────────────────────────────────────────────────
+
+  async getOpenSubParcelListings(): Promise<SubParcelListing[]> {
+    await this.initialize();
+    const rows = await this.db.select().from(subParcelListingsTable).where(eq(subParcelListingsTable.status, "open"));
+    return rows.map(r => ({
+      id:               r.id,
+      subParcelId:      r.subParcelId,
+      parentPlotId:     r.parentPlotId,
+      subIndex:         r.subIndex,
+      sellerId:         r.sellerId,
+      sellerName:       r.sellerName,
+      askPriceFrontier: r.askPriceFrontier,
+      status:           r.status as SubParcelListing["status"],
+      createdAt:        r.createdAt,
+      buyerId:          r.buyerId ?? null,
+      buyerName:        r.buyerName ?? null,
+      soldAt:           r.soldAt ?? null,
+    }));
+  }
+
+  async createSubParcelListing(sellerId: string, subParcelId: string, askPriceFrontier: number): Promise<{ listing: SubParcelListing; error?: string }> {
+    await this.initialize();
+
+    const [spRow] = await this.db.select().from(subParcelsTable).where(eq(subParcelsTable.id, subParcelId));
+    if (!spRow) return { listing: null as any, error: "Sub-parcel not found" };
+    if (spRow.ownerId !== sellerId) return { listing: null as any, error: "You don't own this sub-parcel" };
+
+    // Check for existing open listing
+    const [existingListing] = await this.db.select({ id: subParcelListingsTable.id }).from(subParcelListingsTable).where(
+      eq(subParcelListingsTable.subParcelId, subParcelId)
+    ).limit(1);
+    if (existingListing) return { listing: null as any, error: "Sub-parcel is already listed for sale" };
+
+    const [sellerRow] = await this.db.select({ name: playersTable.name }).from(playersTable).where(eq(playersTable.id, sellerId));
+    if (!sellerRow) return { listing: null as any, error: "Seller not found" };
+
+    const now = Date.now();
+    const [inserted] = await this.db.insert(subParcelListingsTable).values({
+      id:               randomUUID(),
+      subParcelId,
+      parentPlotId:     spRow.parentPlotId,
+      subIndex:         spRow.subIndex,
+      sellerId,
+      sellerName:       sellerRow.name,
+      askPriceFrontier,
+      status:           "open",
+      createdAt:        now,
+    }).returning();
+
+    return {
+      listing: {
+        id: inserted.id, subParcelId: inserted.subParcelId,
+        parentPlotId: inserted.parentPlotId, subIndex: inserted.subIndex,
+        sellerId: inserted.sellerId, sellerName: inserted.sellerName,
+        askPriceFrontier: inserted.askPriceFrontier,
+        status: inserted.status as SubParcelListing["status"],
+        createdAt: inserted.createdAt,
+        buyerId: null, buyerName: null, soldAt: null,
+      },
+    };
+  }
+
+  async cancelSubParcelListing(sellerId: string, listingId: string): Promise<{ error?: string }> {
+    await this.initialize();
+    const [row] = await this.db.select().from(subParcelListingsTable).where(eq(subParcelListingsTable.id, listingId));
+    if (!row) return { error: "Listing not found" };
+    if (row.sellerId !== sellerId) return { error: "Not your listing" };
+    if (row.status !== "open") return { error: "Listing is not open" };
+    await this.db.update(subParcelListingsTable).set({ status: "cancelled" }).where(eq(subParcelListingsTable.id, listingId));
+    return {};
+  }
+
+  async buySubParcelListing(buyerId: string, listingId: string): Promise<{ listing: SubParcelListing; error?: string }> {
+    await this.initialize();
+    return this.db.transaction(async (tx) => {
+      const [listing] = await tx.select().from(subParcelListingsTable).where(eq(subParcelListingsTable.id, listingId));
+      if (!listing) return { listing: null as any, error: "Listing not found" };
+      if (listing.status !== "open") return { listing: null as any, error: "Listing is no longer available" };
+      if (listing.sellerId === buyerId) return { listing: null as any, error: "Cannot buy your own listing" };
+
+      const [[buyerRow], [spRow], [sellerRow]] = await Promise.all([
+        tx.select().from(playersTable).where(eq(playersTable.id, buyerId)),
+        tx.select().from(subParcelsTable).where(eq(subParcelsTable.id, listing.subParcelId)),
+        tx.select().from(playersTable).where(eq(playersTable.id, listing.sellerId)),
+      ]);
+
+      if (!buyerRow) return { listing: null as any, error: "Buyer not found" };
+      if (!spRow || spRow.ownerId !== listing.sellerId) return { listing: null as any, error: "Sub-parcel ownership changed — listing invalid" };
+
+      const costMicro = toMicroFRNTR(listing.askPriceFrontier);
+      if (buyerRow.frntrBalanceMicro < costMicro) return { listing: null as any, error: `Insufficient FRONTIER — need ${listing.askPriceFrontier}` };
+
+      const now = Date.now();
+      const buyerName = buyerRow.name;
+
+      // Transfer FRONTIER buyer → seller
+      await Promise.all([
+        tx.update(playersTable).set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} - ${costMicro}` }).where(eq(playersTable.id, buyerId)),
+        tx.update(playersTable).set({ frntrBalanceMicro: sql`${playersTable.frntrBalanceMicro} + ${costMicro}` }).where(eq(playersTable.id, listing.sellerId)),
+        // Transfer sub-parcel ownership
+        tx.update(subParcelsTable).set({ ownerId: buyerId, ownerType: "player", acquiredAt: now }).where(eq(subParcelsTable.id, listing.subParcelId)),
+        // Mark listing sold
+        tx.update(subParcelListingsTable).set({ status: "sold", buyerId, buyerName, soldAt: now }).where(eq(subParcelListingsTable.id, listingId)),
+      ]);
+
+      return {
+        listing: {
+          id: listing.id, subParcelId: listing.subParcelId,
+          parentPlotId: listing.parentPlotId, subIndex: listing.subIndex,
+          sellerId: listing.sellerId, sellerName: listing.sellerName,
+          askPriceFrontier: listing.askPriceFrontier,
+          status: "sold" as SubParcelListing["status"],
+          createdAt: listing.createdAt,
+          buyerId, buyerName, soldAt: now,
+        },
+      };
     });
   }
 

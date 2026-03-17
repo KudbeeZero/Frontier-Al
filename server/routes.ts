@@ -2162,13 +2162,15 @@ export async function registerRoutes(
       });
 
       // Persist to Upstash world event stream (fire-and-forget)
-      recordSubParcelWorldEvent({
-        type:     "sub_parcel_purchased",
-        plotId:   sp.parentPlotId,
-        subIndex: sp.subIndex,
-        biome:    "unknown", // biome resolved client-side from parent plot
-        playerId,
-        price:    sp.purchasePriceFrontier,
+      storage.getParcelBiomeByPlotId(sp.parentPlotId).then(biome => {
+        recordSubParcelWorldEvent({
+          type:     "sub_parcel_purchased",
+          plotId:   sp.parentPlotId,
+          subIndex: sp.subIndex,
+          biome,
+          playerId,
+          price:    sp.purchasePriceFrontier,
+        }).catch(() => {});
       }).catch(() => {});
 
       res.json({ success: true, subParcel: sp });
@@ -2206,29 +2208,129 @@ export async function registerRoutes(
       });
 
       // Persist to Upstash world event stream (fire-and-forget)
-      recordSubParcelWorldEvent({
-        type:           "sub_parcel_upgraded",
-        plotId:         sp.parentPlotId,
-        subIndex:       sp.subIndex,
-        biome:          "unknown", // biome is on parent plot; client resolves
-        playerId,
-        improvementType,
-        level:          newLevel,
-      }).catch(() => {});
-
-      // Record on-chain via Algorand self-transfer note (fire-and-forget)
-      recordUpgradeOnChain({
-        plotId:         sp.parentPlotId,
-        subIndex:       sp.subIndex,
-        biome:          "unknown",
-        improvementType,
-        level:          newLevel,
-        playerId,
+      storage.getParcelBiomeByPlotId(sp.parentPlotId).then(biome => {
+        recordSubParcelWorldEvent({
+          type:           "sub_parcel_upgraded",
+          plotId:         sp.parentPlotId,
+          subIndex:       sp.subIndex,
+          biome,
+          playerId,
+          improvementType,
+          level:          newLevel,
+        }).catch(() => {});
+        recordUpgradeOnChain({
+          plotId:         sp.parentPlotId,
+          subIndex:       sp.subIndex,
+          biome,
+          improvementType,
+          level:          newLevel,
+          playerId,
+        }).catch(() => {});
       }).catch(() => {});
 
       res.json({ success: true, subParcel: sp });
     } catch (err) {
       console.error("[sub-parcels] buildSubParcelImprovement error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Sub-Parcel Battle ──────────────────────────────────────────────────────
+
+  /** POST /api/sub-parcels/:subParcelId/attack — immediate sub-parcel battle */
+  app.post("/api/sub-parcels/:subParcelId/attack", async (req, res) => {
+    const { subParcelId } = req.params;
+    const { attackerParcelId, commanderId, troops, iron, fuel, crystal, attackerId } = req.body;
+    if (!subParcelId)     return res.status(400).json({ error: "subParcelId required" });
+    if (!attackerId)      return res.status(400).json({ error: "attackerId required" });
+    if (!attackerParcelId) return res.status(400).json({ error: "attackerParcelId required" });
+    try {
+      const result = await storage.attackSubParcel(subParcelId, attackerId, {
+        attackerParcelId,
+        commanderId: commanderId ?? undefined,
+        troops: Math.max(1, parseInt(troops ?? "1") || 1),
+        iron:    Math.max(0, parseInt(iron ?? "0") || 0),
+        fuel:    Math.max(0, parseInt(fuel ?? "0") || 0),
+        crystal: Math.max(0, parseInt(crystal ?? "0") || 0),
+      });
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      if (result.outcome === "attacker_wins") {
+        const sp = await storage.getSubParcel(subParcelId);
+        broadcastRaw({ type: "sub_parcel_battle_resolved", subParcelId, outcome: result.outcome, newOwnerId: attackerId });
+        // World event with real biome
+        if (sp) {
+          storage.getParcelBiomeByPlotId(sp.parentPlotId).then(biome => {
+            recordSubParcelWorldEvent({ type: "sub_parcel_purchased", plotId: sp.parentPlotId, subIndex: sp.subIndex, biome, playerId: attackerId }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+      res.json({ success: true, ...result });
+    } catch (err) {
+      console.error("[sub-parcels] attackSubParcel error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Sub-Parcel Listings ────────────────────────────────────────────────────
+
+  /** GET /api/sub-parcels/listings — all open listings */
+  app.get("/api/sub-parcels/listings", async (_req, res) => {
+    try {
+      const listings = await storage.getOpenSubParcelListings();
+      res.json({ listings });
+    } catch (err) {
+      console.error("[listings] getOpenSubParcelListings error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/sub-parcels/listings — create a listing */
+  app.post("/api/sub-parcels/listings", async (req, res) => {
+    const { sellerId, subParcelId, askPriceFrontier } = req.body;
+    if (!sellerId)         return res.status(400).json({ error: "sellerId required" });
+    if (!subParcelId)      return res.status(400).json({ error: "subParcelId required" });
+    if (!askPriceFrontier) return res.status(400).json({ error: "askPriceFrontier required" });
+    try {
+      const result = await storage.createSubParcelListing(sellerId, subParcelId, Number(askPriceFrontier));
+      if (result.error) return res.status(400).json({ error: result.error });
+      broadcastRaw({ type: "sub_parcel_listed", listing: result.listing });
+      res.json({ success: true, listing: result.listing });
+    } catch (err) {
+      console.error("[listings] createSubParcelListing error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** DELETE /api/sub-parcels/listings/:id — cancel a listing */
+  app.delete("/api/sub-parcels/listings/:id", async (req, res) => {
+    const { id } = req.params;
+    const { sellerId } = req.body;
+    if (!sellerId) return res.status(400).json({ error: "sellerId required" });
+    try {
+      const result = await storage.cancelSubParcelListing(sellerId, id);
+      if (result.error) return res.status(400).json({ error: result.error });
+      broadcastRaw({ type: "sub_parcel_listing_cancelled", listingId: id });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[listings] cancelSubParcelListing error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/sub-parcels/listings/:id/buy — purchase a listed sub-parcel */
+  app.post("/api/sub-parcels/listings/:id/buy", async (req, res) => {
+    const { id } = req.params;
+    const { buyerId } = req.body;
+    if (!buyerId) return res.status(400).json({ error: "buyerId required" });
+    try {
+      const result = await storage.buySubParcelListing(buyerId, id);
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      broadcastRaw({ type: "sub_parcel_sold", listing: result.listing });
+      res.json({ success: true, listing: result.listing });
+    } catch (err) {
+      console.error("[listings] buySubParcelListing error", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
