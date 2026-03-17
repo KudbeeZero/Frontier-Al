@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { LandingNav, LandingFooter, Starfield, SHARED_CSS } from "./landing-shared";
+import { LandingNav, LandingFooter, CookieConsentBanner, Starfield, SHARED_CSS } from "./landing-shared";
 
 const CARD: React.CSSProperties = {
   background: "rgba(10,12,30,0.82)", border: "1px solid rgba(60,90,180,0.25)",
@@ -159,6 +159,9 @@ export default function LandingFeatures() {
 
         <LandingFooter />
       </div>
+
+      <CookieConsentBanner />
+
       <style>{SHARED_CSS}</style>
     </div>
   );

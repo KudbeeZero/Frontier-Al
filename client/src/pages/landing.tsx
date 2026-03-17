@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { LandingNav, LandingFooter, Starfield, SHARED_CSS } from "./landing-shared";
+import { LandingNav, LandingFooter, CookieConsentBanner, Starfield, SHARED_CSS } from "./landing-shared";
 
 // ─── Animated Rocket ──────────────────────────────────────────────────────────
 function Rocket() {
@@ -643,6 +643,8 @@ export default function LandingPage() {
 
         <LandingFooter />
       </div>
+
+      <CookieConsentBanner />
 
       <style>{`
         ${SHARED_CSS}
