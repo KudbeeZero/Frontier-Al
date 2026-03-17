@@ -2355,6 +2355,85 @@ export class DbStorage implements IStorage {
     };
   }
 
+  // ── Terraforming ──────────────────────────────────────────────────────────────
+
+  async terraformParcel(
+    plotId: number,
+    playerId: string,
+    action: import("@shared/schema").TerraformAction["action"],
+  ): Promise<{ parcel: LandParcel; error?: string }> {
+    await this.initialize();
+
+    const { TERRAFORM_COSTS, TERRAFORM_BIOME_MAP } = await import("@shared/schema");
+
+    return this.db.transaction(async (tx) => {
+      const [[parcelRow], [playerRow]] = await Promise.all([
+        tx.select().from(parcelsTable).where(eq(parcelsTable.plotId, plotId)).limit(1),
+        tx.select().from(playersTable).where(eq(playersTable.id, playerId)).limit(1),
+      ]);
+
+      if (!parcelRow) return { parcel: null as any, error: "Plot not found" };
+      if (!playerRow) return { parcel: null as any, error: "Player not found" };
+      if (parcelRow.ownerId !== playerId) return { parcel: rowToParcel(parcelRow), error: "You do not own this plot" };
+
+      const costFrontier = TERRAFORM_COSTS[action.type] ?? 10;
+      const playerFrontier = fromMicroFRNTR(playerRow.frntrBalanceMicro);
+      if (playerFrontier < costFrontier) {
+        return { parcel: rowToParcel(parcelRow), error: `Insufficient FRONTIER — need ${costFrontier}, have ${playerFrontier.toFixed(2)}` };
+      }
+
+      const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
+
+      let updates: Partial<typeof parcelRow> = {};
+
+      switch (action.type) {
+        case "convert_biome": {
+          const mapped = TERRAFORM_BIOME_MAP[action.targetBiome] ?? action.targetBiome;
+          if (mapped === parcelRow.biome) return { parcel: rowToParcel(parcelRow), error: "Plot already has that biome" };
+          updates.biome     = mapped;
+          updates.stability = clamp((parcelRow.stability ?? 100) - 5);
+          break;
+        }
+        case "reduce_hazard":
+          updates.hazardLevel = clamp((parcelRow.hazardLevel ?? 0) - action.amount);
+          break;
+        case "increase_stability":
+          updates.stability = clamp((parcelRow.stability ?? 100) + action.amount);
+          break;
+        case "boost_resources":
+          updates.yieldMultiplier = Number(((parcelRow.yieldMultiplier ?? 1) + action.amount).toFixed(4));
+          break;
+        case "corrupt_land":
+          updates.hazardLevel = clamp((parcelRow.hazardLevel ?? 0) + action.amount);
+          updates.stability   = clamp((parcelRow.stability   ?? 100) - action.amount);
+          if (parcelRow.biome === "plains") updates.biome = "volcanic";
+          break;
+        default:
+          return { parcel: rowToParcel(parcelRow), error: "Unknown terraform action" };
+      }
+
+      const costMicro = toMicroFRNTR(costFrontier);
+      await Promise.all([
+        tx.update(parcelsTable).set(updates).where(eq(parcelsTable.plotId, plotId)),
+        tx.update(playersTable)
+          .set({ frntrBalanceMicro: playerRow.frntrBalanceMicro - costMicro })
+          .where(eq(playersTable.id, playerId)),
+      ]);
+
+      const now = Date.now();
+      await this.addEvent({
+        type:        "terraform",
+        playerId,
+        parcelId:    parcelRow.id,
+        description: `Terraform action "${action.type}" applied to plot #${plotId}`,
+        timestamp:   now,
+      }, tx);
+      await this.bumpLastTs(now, tx);
+
+      return { parcel: rowToParcel({ ...parcelRow, ...updates } as typeof parcelRow) };
+    });
+  }
+
   // ── Sub-Parcel Listings ──────────────────────────────────────────────────────
 
   async getOpenSubParcelListings(): Promise<SubParcelListing[]> {

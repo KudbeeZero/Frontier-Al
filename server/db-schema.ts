@@ -192,6 +192,10 @@ export const parcels = pgTable(
     handoverCount:        integer("handover_count").notNull().default(0),     // exchanges between same player+faction
     influence:            integer("influence").notNull().default(100),
     influenceRepairRate:  real("influence_repair_rate").notNull().default(2.0),
+
+    // ── Terraforming ────────────────────────────────────────────────────────
+    hazardLevel:          integer("hazard_level").notNull().default(0),       // 0–100
+    stability:            integer("stability").notNull().default(100),        // 0–100
   },
   (t) => ({
     /** Fast lookup of all plots owned by a given player. */

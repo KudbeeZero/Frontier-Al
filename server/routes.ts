@@ -3,7 +3,7 @@ import { getBattleReplay, recordSubParcelWorldEvent, recordArchetypeWorldEvent }
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
 import { storage } from "./storage";
-import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema, placeBetSchema, createMarketSchema, resolveMarketSchema } from "@shared/schema";
+import { mineActionSchema, upgradeActionSchema, attackActionSchema, buildActionSchema, purchaseActionSchema, collectActionSchema, claimFrontierActionSchema, mintAvatarActionSchema, specialAttackActionSchema, deployDroneActionSchema, deploySatelliteActionSchema, SlimGameState, createTradeOrderSchema, placeBetSchema, createMarketSchema, resolveMarketSchema, terraformActionSchema } from "@shared/schema";
 import { z } from "zod";
 import { db, withDbRetry } from "./db";
 import { parcels as parcelsTable, plotNfts as plotNftsTable, players as playersTable, mintIdempotency as mintIdempotencyTable, battles as battlesTable, gameEvents as gameEventsTable, gameMeta, tradeOrders as tradeOrdersTable, subParcels as subParcelsTable, orbitalEvents as orbitalEventsTable, commanderNfts as commanderNftsTable, commanderMintIdempotency as commanderMintIdempotencyTable } from "./db-schema";
@@ -2136,6 +2136,23 @@ export async function registerRoutes(
       res.json({ success: true, subParcels: result.subParcels });
     } catch (err) {
       console.error("[sub-parcels] subdivideParcel error", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  /** POST /api/plots/:plotId/terraform — apply a terraform action to an owned plot */
+  app.post("/api/plots/:plotId/terraform", async (req, res) => {
+    const plotId = parseInt(req.params.plotId);
+    if (!plotId || isNaN(plotId)) return res.status(400).json({ error: "Invalid plotId" });
+    const parsed = terraformActionSchema.safeParse({ ...req.body, plotId });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    try {
+      const result = await storage.terraformParcel(plotId, parsed.data.playerId, parsed.data.action);
+      if (result.error) return res.status(400).json({ error: result.error });
+      markDirty();
+      res.json({ success: true, parcel: result.parcel });
+    } catch (err) {
+      console.error("[terraform] error", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
