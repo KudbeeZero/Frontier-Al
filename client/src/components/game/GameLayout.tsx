@@ -1370,6 +1370,14 @@ export function GameLayout() {
         onBack={tutorial.back}
         onSkip={tutorial.complete}
         onFinish={tutorial.complete}
+        onClaim={async () => {
+          if (!player || !selectedParcel || !selectedParcelId) return;
+          // Trigger the purchase (which will pop the wallet and sign)
+          handlePurchase();
+          // Wait a bit for the mutation to be called
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }}
+        isClaimingPlot={purchaseMutation.isPending}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TutorialStep } from "@/hooks/useTutorial";
 
 const HIGHLIGHT_CLASS = "tutorial-highlight";
@@ -11,6 +11,8 @@ interface TutorialOverlayProps {
   onBack: () => void;
   onSkip: () => void;
   onFinish: () => void;
+  onClaim?: () => Promise<void>;
+  isClaimingPlot?: boolean;
 }
 
 export function TutorialOverlay({
@@ -21,8 +23,13 @@ export function TutorialOverlay({
   onBack,
   onSkip,
   onFinish,
+  onClaim,
+  isClaimingPlot = false,
 }: TutorialOverlayProps) {
   const prevTargetRef = useRef<HTMLElement | null>(null);
+  const [localClaiming, setLocalClaiming] = useState(false);
+  
+  const isBuyPlotStep = currentStep?.id === "buy-plot";
 
   // Apply/remove highlight on the targeted element
   useEffect(() => {
@@ -66,6 +73,7 @@ export function TutorialOverlay({
   if (!isOpen) return null;
 
   const currentStep = steps[step];
+  const isBuyPlotStep = currentStep?.id === "buy-plot";
   const isFirst = step === 0;
   const isLast = step === steps.length - 1;
   const isActionGated = currentStep.completionRule !== "next";
@@ -267,7 +275,78 @@ export function TutorialOverlay({
             </button>
           )}
 
-          {isLast ? (
+          {isBuyPlotStep ? (
+            /* Claim Free Plot button with loading state */
+            <button
+              onClick={async () => {
+                if (!onClaim) return;
+                setLocalClaiming(true);
+                try {
+                  await onClaim();
+                } finally {
+                  setLocalClaiming(false);
+                }
+              }}
+              disabled={localClaiming || isClaimingPlot}
+              style={{
+                minHeight: 42,
+                padding: "8px 28px",
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                borderRadius: 8,
+                border: "none",
+                background: localClaiming || isClaimingPlot
+                  ? "linear-gradient(135deg, rgba(34,197,94,0.85), rgba(22,163,74,0.85))"
+                  : "linear-gradient(135deg, rgba(34,197,94,0.95), rgba(22,163,74,0.9))",
+                color: "#000d14",
+                cursor: localClaiming || isClaimingPlot ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                boxShadow: localClaiming || isClaimingPlot
+                  ? "0 0 20px rgba(34,197,94,0.4)"
+                  : "0 0 20px rgba(34,197,94,0.3)",
+                opacity: localClaiming || isClaimingPlot ? 0.9 : 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+              onMouseEnter={(e) => {
+                if (localClaiming || isClaimingPlot) return;
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(52,211,153,1), rgba(34,197,94,1))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 30px rgba(34,197,94,0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, rgba(34,197,94,0.95), rgba(22,163,74,0.9))";
+                e.currentTarget.style.boxShadow =
+                  "0 0 20px rgba(34,197,94,0.3)";
+              }}
+            >
+              {localClaiming || isClaimingPlot ? (
+                <>
+                  <span style={{
+                    display: "inline-block",
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    border: "2.5px solid rgba(0,0,0,0.3)",
+                    borderTopColor: "currentColor",
+                    animation: "tutorial-spin 1s linear infinite",
+                  }} />
+                  Claiming...
+                </>
+              ) : (
+                <>
+                  ✓ Claim Free Plot
+                </>
+              )}
+            </button>
+          ) : isLast ? (
             <button
               onClick={onFinish}
               style={{
@@ -401,11 +480,15 @@ export function TutorialOverlay({
         </div>
       </div>
 
-      {/* Keyframe for the pulsing dot */}
+      {/* Keyframes for tutorial animations */}
       <style>{`
         @keyframes tutorial-pulse {
           0%, 100% { opacity: 0.3; transform: scale(0.85); }
           50% { opacity: 1; transform: scale(1.15); }
+        }
+        @keyframes tutorial-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>
