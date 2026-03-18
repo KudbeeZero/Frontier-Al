@@ -635,6 +635,11 @@ export function GameLayout() {
           } else {
             toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle! ${frntrCost} FRNTR spent.` });
           }
+          // Invalidate the NFT status query so CommanderNftStatus begins polling
+          // for the on-chain confirmation (fire-and-forget mint in progress).
+          if (data.avatar?.id) {
+            queryClient.invalidateQueries({ queryKey: ["/api/nft/commander", data.avatar.id] });
+          }
         },
         onError: (error: unknown) => toast({ title: "Mint Failed", description: (error as Error).message, variant: "destructive" }),
       }

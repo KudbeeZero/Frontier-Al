@@ -603,6 +603,8 @@ export async function registerRoutes(
 
   // ── Commander NFT on-chain record lookup ────────────────────────────────────
   // GET /api/nft/commander/:commanderId
+  // Returns { exists, status, assetId, ... }
+  // status: "minting" | "minted" (in custody) | "delivered" (in buyer's wallet)
   app.get("/api/nft/commander/:commanderId", async (req, res) => {
     const { commanderId } = req.params;
     if (!commanderId) return res.status(400).json({ error: "commanderId required" });
@@ -610,9 +612,26 @@ export async function registerRoutes(
 
     try {
       const [row] = await db.select().from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId));
-      if (!row) return res.status(404).json({ error: "No NFT record for this commander" });
+
+      if (!row) {
+        // Check if a mint is currently in-flight (fire-and-forget async pending)
+        const pendingRows = await db
+          .select()
+          .from(commanderMintIdempotencyTable)
+          .where(sql`${commanderMintIdempotencyTable.key} LIKE ${'%:' + commanderId}`)
+          .limit(1);
+        if (pendingRows.length > 0 && pendingRows[0].status === "pending") {
+          return res.json({ exists: true, status: "minting", assetId: null, commanderId });
+        }
+        return res.status(404).json({ error: "No NFT record for this commander" });
+      }
+
+      const adminAddr = getAdminAddress();
+      const status = row.mintedToAddress === adminAddr ? "minted" : "delivered";
 
       res.json({
+        exists:          true,
+        status,
         commanderId:     row.commanderId,
         assetId:         row.assetId ? Number(row.assetId) : null,
         mintedToAddress: row.mintedToAddress,
