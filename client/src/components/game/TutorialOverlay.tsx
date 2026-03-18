@@ -28,8 +28,6 @@ export function TutorialOverlay({
 }: TutorialOverlayProps) {
   const prevTargetRef = useRef<HTMLElement | null>(null);
   const [localClaiming, setLocalClaiming] = useState(false);
-  
-  const isBuyPlotStep = currentStep?.id === "buy-plot";
 
   // Apply/remove highlight on the targeted element
   useEffect(() => {
