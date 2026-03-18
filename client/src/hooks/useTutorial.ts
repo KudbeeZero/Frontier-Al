@@ -47,7 +47,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: "buy-plot",
     title: "Claim Your First Plot — Free",
     description:
-      "Your first plot is on us — no ALGO required. Hit Claim Free Plot to own it instantly. Territory earns FRONTIER tokens and lets you build, mine, and defend.",
+      "Your first plot is free — no ALGO cost. Hit Claim Free Plot, approve the transaction in your wallet, and the land is yours. Territory earns FRONTIER tokens and lets you build, mine, and defend.",
     target: "acquire-territory",
     completionRule: "plot_purchased",
   },

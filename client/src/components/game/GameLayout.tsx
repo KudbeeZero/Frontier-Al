@@ -391,8 +391,10 @@ export function GameLayout() {
       return;
     }
 
-    if (!isFreeClaimEligible && selectedParcel.purchasePriceAlgo !== null) {
-      const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
+    // All plot claims require transaction signing — free plots sign for 0 ALGO.
+    const priceToSign = selectedParcel.purchasePriceAlgo ?? (isFreeClaimEligible ? 0 : null);
+    if (priceToSign !== null) {
+      const result = await signPurchaseAction(selectedParcel.plotId, priceToSign);
       if (result === "cancelled") return;
     }
 
