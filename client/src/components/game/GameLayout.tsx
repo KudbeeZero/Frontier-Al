@@ -645,7 +645,7 @@ export function GameLayout() {
           } else {
             toast({
               title: "Commander Minted!",
-              description: `${data.avatar?.name || tier} is ready for battle. ${frntrCost} FRNTR spent. Open the Commander Panel — a Claim button will appear once your NFT is ready (within ~30s).`,
+              description: `${data.avatar?.name || tier} — NFT claim coming to bottom-left panel.`,
             });
           }
           // Invalidate the NFT status query so CommanderNftStatus begins polling
