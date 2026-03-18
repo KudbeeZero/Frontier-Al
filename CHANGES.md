@@ -1,5 +1,43 @@
 # FRONTIER — Change Log & Status
 
+## Session: fix-commander-mint-delivery-J7kDI
+**Date:** 2026-03-18
+**Branch:** `claude/fix-commander-mint-delivery-J7kDI`
+
+---
+
+## What Was Done
+
+### Commander Mint Delivery — Ghost Mint Fix
+
+**Problem:** Commander mint transaction completed successfully but no NFT appeared in the user's wallet. UI showed nothing. No claim button. Users left in broken state.
+
+**Root Causes Found (3 bugs):**
+
+1. **API missing `exists` + `status` fields** — `GET /api/nft/commander/:commanderId` returned raw DB fields but `CommanderNftStatus` checked `data?.exists` which was always `undefined` → component always returned null → NFT UI never rendered.
+2. **No `status` derivation** — Even if `exists` was present, the API never sent `status: "minted"/"delivered"` so claim button logic was dead.
+3. **No polling / no query invalidation** — After mint, no query invalidation was triggered. With `staleTime: 30s` + `retry: false`, a cached 404 sat for 30 seconds and never refreshed.
+
+**Fixes Applied:**
+
+- `server/routes.ts` — NFT status endpoint now returns `exists: true` + derived `status` field; also checks idempotency table to surface `"minting"` while async is in-flight
+- `client/src/components/game/CommanderPanel.tsx` — `CommanderNftStatus` polls every 8s while minting/not found; new "Minting…" spinner badge for in-flight state
+- `client/src/components/game/GameLayout.tsx` — Invalidates NFT query on mint `onSuccess` so polling starts immediately
+
+**Flow (fixed):**
+```
+Click mint → Toast → CommanderNftStatus shows "Minting…" (polls 8s)
+→ ASA confirmed on-chain → "ASA {id}" badge + Claim button appears
+→ User opts-in + claims → NFT delivered to wallet → green "NFT" badge
+```
+
+**Files Changed:**
+- `server/routes.ts`
+- `client/src/components/game/CommanderPanel.tsx`
+- `client/src/components/game/GameLayout.tsx`
+
+---
+
 ## Session: terraforming-state-sync-fmFyy
 **Date:** 2026-03-17
 **Branch:** `claude/terraforming-state-sync-fmFyy`
