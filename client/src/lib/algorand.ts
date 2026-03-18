@@ -209,6 +209,43 @@ export async function createClaimFrontierTransaction(
   return txId;
 }
 
+export async function createCommanderMintTransaction(
+  fromAddress: string,
+  tier: string,
+  frntrCost: number
+): Promise<string> {
+  console.log(`[TXN-DEBUG] createCommanderMintTransaction triggered | tier: ${tier} | frntrCost: ${frntrCost} | txns: 1 | groupID: NO | ts: ${Date.now()} | from: ${fromAddress.slice(0,8)}...`);
+  const suggestedParams = await getTransactionParams();
+
+  const actionData = JSON.stringify({
+    game: "FRONTIER",
+    v: 1,
+    action: "mint_commander",
+    tier,
+    frntrCost,
+    player: fromAddress.slice(0, 8),
+    ts: Date.now(),
+    network: "testnet",
+  });
+
+  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: fromAddress,
+    receiver: fromAddress,
+    amount: 0,
+    note: new TextEncoder().encode(`FRNTR:${actionData}`),
+    suggestedParams,
+  });
+
+  const signedTxnBlob = await signTransactionWithActiveWallet(txn, fromAddress);
+  console.log(`[TXN-DEBUG] createCommanderMintTransaction submitting | ts: ${Date.now()}`);
+  const response = await algodClient.sendRawTransaction(signedTxnBlob).do();
+  const txId = response.txid || txn.txID();
+  await algosdk.waitForConfirmation(algodClient, txId, 4);
+  console.log(`[TXN-DEBUG] createCommanderMintTransaction confirmed | txId: ${txId} | ts: ${Date.now()}`);
+
+  return txId;
+}
+
 export function formatAddress(address: string, startChars = 6, endChars = 4): string {
   if (address.length <= startChars + endChars) return address;
   return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;

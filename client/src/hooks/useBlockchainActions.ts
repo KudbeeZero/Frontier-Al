@@ -4,6 +4,7 @@ import {
   createGameActionTransaction,
   createPurchaseWithAlgoTransaction,
   createClaimFrontierTransaction,
+  createCommanderMintTransaction,
   registerTxnQueueAddress,
   registerBatchStatusCallback,
   enqueueGameAction,
@@ -176,6 +177,35 @@ export function useBlockchainActions() {
       }
     },
     [isReady, address]
+  );
+
+  // Direct wallet-sign for Commander mint — opens wallet immediately (like land purchase),
+  // NOT queued to the batch relay. Returns txId on success, "cancelled" if rejected, null on error.
+  const signCommanderMintAction = useCallback(
+    async (tier: string, frntrCost: number): Promise<string | null | "cancelled"> => {
+      if (!isReady || !address) {
+        toast({ title: "Wallet Not Ready", description: "Connect your wallet first.", variant: "destructive" });
+        return null;
+      }
+      setIsPending(true);
+      try {
+        console.log(`[ACTION-DEBUG] signCommanderMintAction | path: direct wallet sign | tier: ${tier} | frntrCost: ${frntrCost} | ts: ${Date.now()}`);
+        const txId = await createCommanderMintTransaction(address, tier, frntrCost);
+        setLastTxId(txId);
+        return txId;
+      } catch (err: unknown) {
+        const msg = (err as Error)?.message ?? String(err);
+        if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("reject")) {
+          toast({ title: "Mint Cancelled", description: "Transaction rejected in wallet.", variant: "destructive" });
+          return "cancelled";
+        }
+        toast({ title: "Wallet Error", description: msg, variant: "destructive" });
+        return null;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [isReady, address, toast]
   );
 
   const queueSpecialAttackAction = useCallback(
@@ -480,6 +510,7 @@ export function useBlockchainActions() {
     queueAttackAction,
     queueBuildAction,
     queueMintAvatarAction,
+    signCommanderMintAction,
     queueSpecialAttackAction,
     queueSwitchCommanderAction,
     queueDeployDroneAction,
