@@ -411,4 +411,14 @@ export const SHARED_CSS = `
     .token-stats-grid { grid-template-columns: repeat(2, 1fr); }
     .footer-grid      { grid-template-columns: 1fr !important; gap: 20px !important; }
   }
+
+  /* ── Planet + Rocket: mobile portrait ── */
+  @media (max-width: 640px) {
+    .planet-wrap {
+      zoom: 0.72;
+      margin-top: -10px;
+      margin-bottom: -20px;
+      overflow: visible;
+    }
+  }
 `;
