@@ -602,6 +602,7 @@ interface LandSheetProps {
   isBuilding: boolean;
   isPurchasing: boolean;
   isWalletConnected: boolean;
+  isFreeClaimEligible?: boolean;
   isSpecialAttacking?: boolean;
   nftInfo?: { assetId: number; inCustody: boolean } | null;
   onDeliverNft?: () => void;
@@ -665,6 +666,7 @@ export function LandSheet({
   isBuilding,
   isPurchasing,
   isWalletConnected,
+  isFreeClaimEligible = false,
   isSpecialAttacking,
   nftInfo,
   onDeliverNft,
@@ -1008,16 +1010,16 @@ export function LandSheet({
                 </Button>
               </>
             )}
-            {isUnclaimed && player && parcel.purchasePriceAlgo !== null && (
+            {isUnclaimed && player && (isFreeClaimEligible || parcel.purchasePriceAlgo !== null) && (
               <Button
                 size="sm"
                 onClick={onPurchase}
-                disabled={isPurchasing || !isWalletConnected}
-                className="flex-1 font-display uppercase tracking-wide text-xs"
+                disabled={isPurchasing || (!isFreeClaimEligible && !isWalletConnected)}
+                className={`flex-1 font-display uppercase tracking-wide text-xs ${isFreeClaimEligible ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400" : ""}`}
                 data-testid="button-purchase"
               >
                 <Coins className="w-3.5 h-3.5 mr-1" />
-                Buy ({parcel.purchasePriceAlgo} ALGO)
+                {isFreeClaimEligible ? "Claim Free Plot" : `Buy (${parcel.purchasePriceAlgo} ALGO)`}
               </Button>
             )}
           </div>

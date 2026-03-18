@@ -1291,6 +1291,7 @@ export function GameLayout() {
           isBuilding={buildMutation.isPending}
           isPurchasing={purchaseMutation.isPending}
           isWalletConnected={isWalletConnected}
+          isFreeClaimEligible={isFreeClaimEligible}
           isSpecialAttacking={specialAttackMutation.isPending}
           nftInfo={nftInfo}
           onDeliverNft={handleDeliverNft}
