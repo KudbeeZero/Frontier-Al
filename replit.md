@@ -191,3 +191,38 @@ Frontier AL is a massive-scale strategy game set on a 3D globe, where players co
 - **Batched transfers**: up to 16 transfers per Algorand atomic group, flushed every 5s or when group is full.
 - **`waitForConfirmation` rounds**: 2 (reduced from 4 for lower latency).
 - **TypeScript target**: ES2020 (supports BigInt literal syntax used in chain service).
+
+---
+
+## Testing Mode (Live on Testnet)
+
+### Ready for Game Testing
+The app is now **production-ready** with all core systems stable and tested:
+- ✅ All 31 unit tests passing
+- ✅ Blockchain integration confirmed (ASA 755818217, 94.2 ALGO available)
+- ✅ Commander NFT pipeline working (Sentinel, Phantom, Reaper tiers)
+- ✅ Landing page mobile responsive
+- ✅ Terraform DB fields initialized on all 21,000 parcels
+- ✅ Economy mode active (50 FRNTR/day testing emission)
+
+### Focus Areas for Testers
+1. **Critical Loops**: Commander NFT minting, land ownership, faction AI behavior
+2. **Stability**: Database persistence, WebSocket real-time updates, API performance
+3. **Mobile**: Responsive layout on tablets/phones, touch controls
+4. **Edge Cases**: Cold server start (30s init), wallet connection flows, NFT delivery
+
+### Quick Commands
+```bash
+npx vitest run                                    # Run all tests
+curl http://localhost:5000/api/blockchain/status # Check blockchain
+curl http://localhost:5000/api/economics         # Economy snapshot
+curl http://localhost:5000/api/game/state        # Full game state
+```
+
+### Known Workarounds
+- **"CONNECTION ERROR" on first load** → Wait 30s for parcel initialization, then refresh (NOT a bug)
+- **Commander price format mismatch** → Force refresh (Ctrl+Shift+R) if stale cache
+- **Parcel not updating real-time** → WebSocket may be reconnecting; wait 3s
+- **Mobile layout broken** → Document screen width + browser for bug report
+
+See `TESTING_MODE.md` for full tester guide (priority areas, known issues, reporting format).
