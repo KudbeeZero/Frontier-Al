@@ -113,22 +113,22 @@ export function WalletConnect({ className }: { className?: string }) {
 
   if (error) {
     return (
-      <div className="flex items-center gap-1">
+      <div className={cn("flex items-center gap-2", className)}>
         <Button
           variant="destructive"
           onClick={openPicker}
-          className={cn("gap-2 font-display uppercase tracking-wide text-xs", className)}
+          className="flex-1 gap-2 font-display uppercase tracking-wide text-xs"
           data-testid="button-wallet-error"
           title={error}
         >
           <AlertCircle className="w-4 h-4 shrink-0" />
-          Retry
+          Try Again
         </Button>
         <Button
           variant="ghost"
           size="icon"
           onClick={clearError}
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
           data-testid="button-wallet-error-dismiss"
           title="Dismiss"
         >
@@ -234,7 +234,7 @@ function WalletPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[85vh] overflow-y-auto rounded-xl">
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[80vh] overflow-y-auto rounded-xl pb-8">
         <DialogHeader>
           <DialogTitle className="font-display uppercase tracking-wide text-center">
             Connect Wallet

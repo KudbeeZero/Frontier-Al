@@ -860,23 +860,25 @@ export function GameLayout() {
 
   if (!isConnected) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-background" data-testid="wallet-gate">
-        <div className="text-center p-8 max-w-md space-y-6">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-              <Globe className="w-10 h-10 text-primary" />
+      <div className="min-h-screen overflow-y-auto bg-background flex flex-col" data-testid="wallet-gate">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-16">
+          <div className="text-center w-full max-w-sm space-y-6">
+            <div className="flex justify-center">
+              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+                <Globe className="w-10 h-10 text-primary" />
+              </div>
             </div>
+            <h1 className="font-display text-3xl uppercase tracking-wide text-primary">FRONTIER</h1>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              Connect your Algorand wallet to enter the game. Compete for 21,000 land plots on a 3D globe, build facilities, and earn FRONTIER tokens.
+            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+              <Shield className="w-4 h-4" />
+              <span>New players receive 500 FRONTIER tokens</span>
+            </div>
+            <WalletConnect className="w-full" />
+            <p className="text-[10px] text-muted-foreground/60">Algorand TestNet | Pera Wallet & LUTE Wallet Supported</p>
           </div>
-          <h1 className="font-display text-3xl uppercase tracking-wide text-primary">FRONTIER</h1>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            Connect your Algorand wallet to enter the game. Compete for 21,000 land plots on a 3D globe, build facilities, and earn FRONTIER tokens.
-          </p>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
-            <Shield className="w-4 h-4" />
-            <span>New players receive 500 FRONTIER tokens</span>
-          </div>
-          <WalletConnect className="w-full" />
-          <p className="text-[10px] text-muted-foreground/60">Algorand TestNet | Pera Wallet & LUTE Wallet Supported</p>
         </div>
       </div>
     );

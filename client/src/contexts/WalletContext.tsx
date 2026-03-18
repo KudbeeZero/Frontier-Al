@@ -149,16 +149,43 @@ export function WalletProvider({ children, enableAutoConnect = false }: WalletPr
   const connect = useCallback(async (walletId: string) => {
     setIsConnecting(true);
     setError(null);
-    try {
+
+    const attemptConnect = async () => {
       const wallet = wallets.find((w: any) => w.id === walletId);
       if (!wallet) throw new Error(`Wallet ${walletId} not configured`);
-      console.log(`[WALLET] Connecting to ${walletId}...`, wallet);
       await wallet.connect();
-      console.log(`[WALLET] Connected to ${walletId}`);
+    };
+
+    try {
+      try {
+        console.log(`[WALLET] Connecting to ${walletId}...`);
+        await attemptConnect();
+        console.log(`[WALLET] Connected to ${walletId}`);
+      } catch (firstErr: unknown) {
+        const e1 = firstErr as { message?: string; data?: { type?: string }; code?: string };
+        const msg1 = e1?.message || String(firstErr) || "";
+
+        // User cancelled — don't retry, don't show error.
+        if (isUserCancellation(msg1, e1?.data)) return;
+
+        // Mobile wallets (Pera, Defly) sometimes fail on the first attempt due to
+        // WalletConnect session initialisation timing. Retry once silently.
+        const isMobileWallet = walletId === "pera" || walletId === "defly";
+        if (isMobileWallet) {
+          console.warn(`[WALLET] First attempt failed for ${walletId}, retrying...`, msg1);
+          await new Promise((r) => setTimeout(r, 400));
+          await attemptConnect();
+          console.log(`[WALLET] Connected to ${walletId} on retry`);
+          return;
+        }
+
+        // For extension wallets, surface the error immediately.
+        throw firstErr;
+      }
     } catch (err: unknown) {
       const e = err as { message?: string; data?: { type?: string }; code?: string };
       const msg = e?.message || String(err) || "";
-      console.error(`[WALLET] Error connecting to ${walletId}:`, { message: msg, data: e?.data, code: e?.code, fullError: err });
+      console.error(`[WALLET] Error connecting to ${walletId}:`, { message: msg, data: e?.data, code: e?.code });
       if (!isUserCancellation(msg, e?.data)) {
         setError(friendlyErrorMessage(walletId, msg));
       }
