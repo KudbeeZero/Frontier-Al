@@ -90,7 +90,7 @@ export function MobilePlotSheet({
   const biomeLabel = BIOME_LABELS[parcel.biome] ?? parcel.biome;
   const { label: richnessLabel, className: richnessClass } = richnessBadge(parcel.richness);
 
-  const showClaimCta = isUnclaimed && player && isWalletConnected;
+  const showClaimCta = isUnclaimed && player && (isFreeClaimEligible || isWalletConnected);
   const claimPrice = parcel.purchasePriceAlgo;
   const priceLabel = isFreeClaimEligible ? "FREE" : claimPrice !== null ? `${claimPrice} ALGO` : "—";
 

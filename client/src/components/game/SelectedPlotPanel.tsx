@@ -255,7 +255,7 @@ function DesktopPlotPanel({
 
           {/* CTA — always visible at panel bottom */}
           <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-border/50 bg-card/90 space-y-2">
-            {isUnclaimed && player && isWalletConnected && (
+            {isUnclaimed && player && (isFreeClaimEligible || isWalletConnected) && (
               <Button
                 size="lg"
                 className={cn(
@@ -281,7 +281,7 @@ function DesktopPlotPanel({
               </Button>
             )}
 
-            {isUnclaimed && (!player || !isWalletConnected) && (
+            {isUnclaimed && (!player || (!isFreeClaimEligible && !isWalletConnected)) && (
               <Button size="lg" variant="outline" className="w-full font-display uppercase tracking-widest" disabled>
                 Connect Wallet to Claim
               </Button>

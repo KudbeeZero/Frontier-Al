@@ -376,10 +376,14 @@ export function GameLayout() {
     );
   };
 
+  const isFreeClaimEligible = (player?.territoriesCaptured ?? 0) === 0;
+
   const handlePurchase = async () => {
     if (!player || !selectedParcelId || !selectedParcel) return;
 
-    if (!isWalletConnected) {
+    // First plot is free — no wallet or ALGO signing required.
+    // All subsequent plots require a connected wallet and ALGO payment.
+    if (!isFreeClaimEligible && !isWalletConnected) {
       toast({
         title: "Wallet Required",
         description: "Connect your Algorand wallet to purchase territory.",
@@ -388,7 +392,7 @@ export function GameLayout() {
       return;
     }
 
-    if (selectedParcel.purchasePriceAlgo !== null) {
+    if (!isFreeClaimEligible && selectedParcel.purchasePriceAlgo !== null) {
       const result = await signPurchaseAction(selectedParcel.plotId, selectedParcel.purchasePriceAlgo);
       if (result === "cancelled") return;
     }
@@ -1257,6 +1261,7 @@ export function GameLayout() {
           onClaim={handlePurchase}
           isClaiming={purchaseMutation.isPending}
           isWalletConnected={isWalletConnected}
+          isFreeClaimEligible={isFreeClaimEligible}
           onOpenFullSheet={() => {
             setShowFullLandSheet(true);
             tutorial.notifyEvent("landsheet_opened");

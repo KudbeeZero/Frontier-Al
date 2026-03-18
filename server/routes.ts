@@ -1205,15 +1205,19 @@ export async function registerRoutes(
       const player = await storage.getPlayer(action.playerId);
       if (!player) return res.status(404).json({ error: "Player not found" });
 
-      // Reject purchases from placeholder/unconnected wallet addresses.
-      // This mirrors the client-side guard and cannot be bypassed by direct API calls.
-      if (
-        !player.address ||
-        player.address === "PLAYER_WALLET" ||
-        player.address.startsWith("AI_") ||
-        !algosdk.isValidAddress(player.address)
-      ) {
-        return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
+      // First plot is free — no wallet required.
+      // All subsequent plots require a connected Algorand wallet.
+      const isFirstPlot = (player.territoriesCaptured ?? 0) === 0;
+
+      if (!isFirstPlot) {
+        if (
+          !player.address ||
+          player.address === "PLAYER_WALLET" ||
+          player.address.startsWith("AI_") ||
+          !algosdk.isValidAddress(player.address)
+        ) {
+          return res.status(403).json({ error: "A connected Algorand wallet is required to purchase territory." });
+        }
       }
 
       const buyerAddress = player.address;
@@ -1231,7 +1235,8 @@ export async function registerRoutes(
         metadata: { plotId: parcel.plotId, playerName: buyerForEvent?.name ?? "Unknown", biome: parcel.biome }
       });
 
-      // Mint a Plot NFT (Algorand ASA) for human players only.
+      // Mint a Plot NFT (Algorand ASA) for human players with connected wallets.
+      // First-plot free claims may not have a valid wallet yet — skip NFT for those.
       let nftAssetId: number | null = null;
       const isHumanBuyer =
         buyerAddress &&
