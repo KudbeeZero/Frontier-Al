@@ -60,6 +60,13 @@ const ATTACK_ICONS: Record<SpecialAttackType, React.ElementType> = {
   orbital_strike: Target, emp_blast: Zap, siege_barrage: Crosshair, sabotage: Skull,
 };
 
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r},${g},${b}`;
+}
+
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "Ready";
   const h = Math.floor(ms / 3600000);
@@ -224,14 +231,29 @@ function AvatarCard({ cmd, isActive, onDeploy, onClaim, isClaiming, walletConnec
   return (
     <div
       className={cn(
-        "rounded-xl border flex flex-col overflow-hidden transition-all cursor-pointer select-none",
-        isActive
-          ? "border-red-500/70 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
-          : "border-white/10 hover:border-white/25",
+        "rounded-xl flex flex-col overflow-hidden transition-all cursor-pointer select-none",
         isLocked && "opacity-60"
       )}
-      style={{ background: "rgba(12,8,16,0.92)" }}
+      style={{
+        background: isActive
+          ? "linear-gradient(160deg, rgba(6,2,20,0.97) 0%, rgba(20,4,8,0.97) 100%)"
+          : "linear-gradient(160deg, rgba(4,2,16,0.95) 0%, rgba(8,4,20,0.95) 100%)",
+        border: isActive
+          ? "1px solid rgba(239,68,68,0.6)"
+          : "1px solid rgba(60,80,180,0.2)",
+        boxShadow: isActive
+          ? "0 0 15px rgba(239,68,68,0.15), inset 0 0 20px rgba(239,68,68,0.04)"
+          : "0 0 8px rgba(0,0,60,0.4)",
+      }}
     >
+      {/* Active top stripe */}
+      {isActive && (
+        <div
+          className="h-0.5 w-full shrink-0"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(239,68,68,0.9), transparent)" }}
+        />
+      )}
+
       {/* Image area */}
       <div className="relative aspect-square w-full overflow-hidden">
         <img
@@ -281,8 +303,8 @@ function AvatarCard({ cmd, isActive, onDeploy, onClaim, isClaiming, walletConnec
             className={cn(
               "w-full py-1.5 rounded-md text-[10px] font-display font-bold uppercase tracking-wider transition-colors",
               isActive
-                ? "bg-red-600 text-white border border-red-500"
-                : "bg-transparent text-red-400 border border-red-500/60 hover:bg-red-500/10"
+                ? "commander-selected-btn bg-red-600 text-white border border-red-500/80"
+                : "bg-transparent text-red-400 border border-red-500/40 hover:bg-red-500/10 hover:border-red-500/70"
             )}
           >
             {isActive ? "SELECTED" : "SELECT TO PLAY"}
@@ -556,51 +578,120 @@ export function CommanderPanel({
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="commander-panel">
 
-      {/* ── Stats Header ── */}
-      <div className="shrink-0 px-3 pt-3 pb-2 border-b border-white/10">
-        <h2 className="font-display text-sm font-bold uppercase tracking-widest text-white mb-2">Commanders</h2>
+      {/* ── Sci-Fi Stats Header ── */}
+      <div
+        className="shrink-0 px-3 pt-3 pb-2.5 relative overflow-hidden"
+        style={{
+          background: "linear-gradient(180deg, rgba(0,0,30,0.98) 0%, rgba(8,4,30,0.96) 100%)",
+          borderBottom: "1px solid rgba(0,229,255,0.15)",
+        }}
+      >
+        {/* Scanline bar */}
+        <div
+          className="absolute inset-x-0 h-8 pointer-events-none"
+          style={{
+            background: "linear-gradient(180deg, rgba(0,229,255,0.03) 0%, transparent 100%)",
+            animation: "hud-scan 4s linear infinite",
+            top: 0,
+          }}
+        />
+
+        {/* HUD label */}
+        <p
+          className="text-[8px] font-mono mb-1.5"
+          style={{ color: "rgba(0,229,255,0.4)", letterSpacing: "0.3em" }}
+        >
+          ◈ FRONTIER AL · COMMANDER HUD
+        </p>
+
+        {/* Title */}
+        <h2
+          className="font-display text-sm font-bold uppercase mb-3"
+          style={{
+            background: "linear-gradient(135deg, #60a5fa 0%, #a78bfa 60%, #f472b6 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            letterSpacing: "0.15em",
+          }}
+        >
+          COMMANDERS
+        </h2>
+
+        {/* Stats grid */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-3">
           {[
-            { icon: <Target className="w-3.5 h-3.5" />, value: totalBattles, label: "My Battles" },
-            { icon: <CheckCircle2 className="w-3.5 h-3.5" />, value: player.attacksWon ?? 0, label: "Victories" },
-            { icon: <Activity className="w-3.5 h-3.5" />, value: `${winRate}%`, label: "Win Rate" },
-            { icon: <Star className="w-3.5 h-3.5" />, value: player.frontier.toFixed(0), label: "FRNTR Balance" },
-            { icon: <Shield className="w-3.5 h-3.5" />, value: commanders.length, label: "Commanders" },
-            { icon: <Clock className="w-3.5 h-3.5" />, value: player.totalFrontierBurned.toFixed(0), label: "FRNTR Burned" },
-          ].map(({ icon, value, label }) => (
+            { icon: <Target className="w-3.5 h-3.5" />, value: totalBattles, label: "My Battles", color: "#4fc3f7" },
+            { icon: <CheckCircle2 className="w-3.5 h-3.5" />, value: player.attacksWon ?? 0, label: "Victories", color: "#4ade80" },
+            { icon: <Activity className="w-3.5 h-3.5" />, value: `${winRate}%`, label: "Win Rate", color: "#a78bfa" },
+            { icon: <Star className="w-3.5 h-3.5" />, value: player.frontier.toFixed(0), label: "FRNTR Balance", color: "#fbbf24" },
+            { icon: <Shield className="w-3.5 h-3.5" />, value: commanders.length, label: "Commanders", color: "#60a5fa" },
+            { icon: <Clock className="w-3.5 h-3.5" />, value: player.totalFrontierBurned.toFixed(0), label: "FRNTR Burned", color: "#f472b6" },
+          ].map(({ icon, value, label, color }) => (
             <div key={label} className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white/50"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                style={{
+                  background: `rgba(${hexToRgb(color)},0.08)`,
+                  border: `1px solid rgba(${hexToRgb(color)},0.25)`,
+                  color,
+                }}
+              >
                 {icon}
               </div>
               <div>
-                <p className="text-xs font-bold text-white leading-none">{value}</p>
-                <p className="text-[9px] text-white/40 mt-0.5">{label}</p>
+                <p className="text-xs font-bold leading-none" style={{ color: "rgba(255,255,255,0.9)" }}>{value}</p>
+                <p className="text-[9px] mt-0.5" style={{ color: "rgba(100,160,255,0.5)" }}>{label}</p>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Player name + rank + mint button */}
+        {/* Player row */}
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-white truncate">{player.id.slice(0, 12)}…</p>
+            <p
+              className="text-sm font-bold truncate font-mono"
+              style={{ color: "rgba(255,255,255,0.85)" }}
+            >
+              {player.id.slice(0, 14)}…
+            </p>
             {activeCommander && (
-              <div className="mt-1 px-2 py-1 rounded-md text-[9px] font-display uppercase tracking-wide truncate"
-                style={{ background: "rgba(180,120,20,0.2)", border: "1px solid rgba(180,120,20,0.4)", color: "#f0b429" }}>
+              <div
+                className="mt-1 px-2 py-1 rounded-md text-[9px] font-display uppercase tracking-wide truncate"
+                style={{
+                  background: "linear-gradient(90deg, rgba(180,120,20,0.2) 0%, rgba(120,80,10,0.1) 100%)",
+                  border: "1px solid rgba(251,191,36,0.35)",
+                  color: "#fbbf24",
+                  boxShadow: "0 0 8px rgba(251,191,36,0.1)",
+                }}
+              >
                 {activeCommander.name} · {activeCommander.tier} · +{activeCommander.attackBonus} ATK
               </div>
             )}
           </div>
           <button
             onClick={() => setShowMintSection(!showMintSection)}
-            className="shrink-0 px-3 py-2 rounded-lg text-[10px] font-display font-bold uppercase tracking-wide leading-tight text-center transition-colors"
-            style={{ background: showMintSection ? "rgba(239,68,68,0.5)" : "rgba(239,68,68,0.85)", border: "1px solid rgba(239,68,68,0.6)", color: "white", minWidth: 72 }}
+            className="shrink-0 px-3 py-2 rounded-lg text-[10px] font-display font-bold uppercase tracking-wide leading-tight text-center transition-all"
+            style={{
+              background: showMintSection
+                ? "rgba(239,68,68,0.4)"
+                : "linear-gradient(135deg, rgba(239,68,68,0.9) 0%, rgba(185,28,28,0.95) 100%)",
+              border: "1px solid rgba(239,68,68,0.6)",
+              boxShadow: showMintSection ? "none" : "0 0 12px rgba(239,68,68,0.3), inset 0 1px 0 rgba(255,255,255,0.1)",
+              color: "white",
+              minWidth: 76,
+            }}
           >
             MINT<br />
-            <span className="font-mono">{COMMANDER_INFO[selectedTier]?.mintCostFrontier ?? 10} FRNTR</span>
+            <span className="font-mono text-[9px] opacity-80">{COMMANDER_INFO[selectedTier]?.mintCostFrontier ?? 10} FRNTR</span>
           </button>
         </div>
+
+        {/* Bottom border glow */}
+        <div
+          className="absolute bottom-0 inset-x-0 h-px"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(0,229,255,0.3), rgba(100,100,255,0.2), transparent)" }}
+        />
       </div>
 
       <ScrollArea className="flex-1">

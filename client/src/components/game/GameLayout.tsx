@@ -21,6 +21,7 @@ import { PredictionMarketsPanel } from "./PredictionMarkets";
 import { useWorldEvents } from "@/hooks/useWorldEvents";
 import { WalletConnect } from "./WalletConnect";
 import { OrbitalEventToast } from "./OrbitalEventToast";
+import { NftClaimNotification } from "./NftClaimNotification";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
@@ -978,6 +979,20 @@ export function GameLayout() {
       </div>
 
       {impactEvents.length > 0 && <OrbitalEventToast events={impactEvents} />}
+
+      {/* ── Floating NFT Claim Notifications ── */}
+      {player && (
+        <NftClaimNotification
+          commanders={player.commanders ?? []}
+          ownedParcels={gameState?.parcels.filter(p => p.ownerId === player.id) ?? []}
+          walletAddress={wallet.address}
+          walletConnected={wallet.isConnected}
+          onClaimCommander={handleClaimCommanderNft}
+          onDeliverPlotNft={handleDeliverPlotNft}
+          isClaimingCommander={isClaimingCommanderNft}
+          isDeliveringPlotId={isDeliveringPlotNftId}
+        />
+      )}
 
       {/* Morale debuff warning badge */}
       {player?.moraleDebuffUntil && player.moraleDebuffUntil > Date.now() && (
