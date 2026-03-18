@@ -542,7 +542,10 @@ export async function registerRoutes(
 
       // Look up the player whose commanders array contains this commanderId
       const { COMMANDER_INFO } = await import("@shared/schema");
-      const players = await db.select({ id: playersTable.id, commanders: playersTable.commanders }).from(playersTable);
+      const [players, nftRows] = await Promise.all([
+        db.select({ id: playersTable.id, commanders: playersTable.commanders }).from(playersTable),
+        db.select({ assetId: commanderNftsTable.assetId }).from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId)),
+      ]);
       let avatar: any = null;
       for (const p of players) {
         const cmds = (p.commanders as any[]) ?? [];
@@ -552,6 +555,8 @@ export async function registerRoutes(
 
       if (!avatar) return res.status(404).json({ error: "Commander not found" });
 
+      const onChainAssetId = nftRows[0]?.assetId ? Number(nftRows[0].assetId) : null;
+
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "public, max-age=86400");
       res.json({
@@ -560,6 +565,7 @@ export async function registerRoutes(
         image:        `${baseUrl}/nft/images/commander/${avatar.tier}`,
         external_url: `${baseUrl}/commander/${avatar.id}`,
         properties: {
+          nftId:          onChainAssetId,
           commanderId:    avatar.id,
           tier:           avatar.tier,
           name:           avatar.name,

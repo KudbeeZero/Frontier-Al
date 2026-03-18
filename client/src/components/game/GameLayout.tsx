@@ -665,39 +665,61 @@ export function GameLayout() {
     if (!wallet.address) return;
     setIsClaimingCommanderNft(true);
     try {
-      const res = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: wallet.address }),
-      });
-      const data = await res.json();
+      const attemptCommanderDeliver = async (): Promise<boolean> => {
+        const res = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: wallet.address }),
+        });
+        const data = await res.json();
 
-      if (data.success) {
-        toast({ title: "Commander NFT Delivered!", description: `Your NFT is now in your wallet. TX: ${data.txId?.slice(0, 8)}...` });
-        queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
-      } else if (data.reason === "not_opted_in") {
-        // Auto opt-in (standard Algorand ASA self-send), then retry delivery
-        const optedIn = await signOptInToPlotNft(data.assetId);
-        if (optedIn) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // wait for indexer propagation
-          const retryRes = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ address: wallet.address }),
-          });
-          const retryData = await retryRes.json();
-          if (retryData.success) {
-            toast({ title: "Commander NFT Delivered!", description: `Your Commander NFT is now in your wallet. TX: ${retryData.txId?.slice(0, 8)}...` });
-            queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
-          } else {
-            toast({ title: "Claim Failed", description: "Opt-in confirmed but delivery failed. Try claiming again.", variant: "destructive" });
-          }
+        if (data.success) {
+          toast({ title: "Commander NFT Delivered!", description: `Your Commander NFT is now in your wallet. TX: ${data.txId?.slice(0, 8)}...` });
+          queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+          return true;
         }
-      } else if (data.reason === "not_in_custody") {
-        toast({ title: "Already In Your Wallet", description: data.message || "NFT has already been delivered." });
-      } else {
+
+        if (data.reason === "not_in_custody") {
+          toast({ title: "Already In Your Wallet", description: data.message || "NFT has already been delivered." });
+          queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+          return true;
+        }
+
+        if (data.reason === "not_opted_in") {
+          // Prompt user to opt-in to the ASA first
+          const optedIn = await signOptInToPlotNft(data.assetId);
+          if (!optedIn) return false;
+
+          // Algorand block time is ~3.3s — retry up to 3 times with 4s gaps
+          // to give the opt-in transaction time to be confirmed on-chain
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 4000));
+            const retryRes = await fetch(`/api/nft/deliver-commander/${commanderId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ address: wallet.address }),
+            });
+            const retryData = await retryRes.json();
+            if (retryData.success) {
+              toast({ title: "Commander NFT Delivered!", description: `Your Commander NFT is now in your wallet. TX: ${retryData.txId?.slice(0, 8)}...` });
+              queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+              return true;
+            }
+            if (retryData.reason !== "not_opted_in") break;
+          }
+          // Opt-in confirmed but delivery still pending — badge stays visible for retry
+          toast({
+            title: "Opt-In Confirmed",
+            description: "Your opt-in was approved. Click 'Claim NFT' one more time to complete the transfer.",
+          });
+          return false;
+        }
+
         toast({ title: "Claim Info", description: data.message || "Unexpected state — try again.", variant: "destructive" });
-      }
+        return false;
+      };
+
+      await attemptCommanderDeliver();
     } catch (err) {
       toast({ title: "Claim Failed", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
     } finally {
