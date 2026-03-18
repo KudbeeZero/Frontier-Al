@@ -155,12 +155,12 @@ function CommanderNftStatus({ commanderId, onClaim, isClaiming, walletConnected 
       if (!res.ok) return { exists: false };
       return res.json();
     },
-    staleTime: 15_000,
+    staleTime: 5_000,
     retry: false,
-    // Poll every 8s while minting is in-flight or NFT not yet found
+    // Poll every 4s while minting is in-flight or NFT not yet found; stop once confirmed
     refetchInterval: (query) => {
       const d = query.state.data;
-      if (!d?.exists || d?.status === "minting") return 8_000;
+      if (!d?.exists || d?.status === "minting") return 4_000;
       return false;
     },
   });
@@ -170,19 +170,28 @@ function CommanderNftStatus({ commanderId, onClaim, isClaiming, walletConnected 
   const delivered  = data.status === "delivered";
   const inCustody  = data.status === "minted";
   return (
-    <div className="mt-1 flex items-center gap-1 flex-wrap">
+    <div className="mt-1 flex flex-col gap-1">
       {isMinting ? (
-        <Badge variant="outline" className="text-[8px] text-blue-400 border-blue-500/30 gap-1"><Loader2 className="w-2 h-2 animate-spin" />Minting…</Badge>
+        <Badge variant="outline" className="text-[8px] text-blue-400 border-blue-500/30 gap-1 w-fit"><Loader2 className="w-2 h-2 animate-spin" />Minting NFT…</Badge>
       ) : delivered ? (
-        <Badge className="text-[8px] bg-green-500/20 text-green-400 border-green-500/30 gap-1"><Gift className="w-2 h-2" />NFT</Badge>
+        <Badge className="text-[8px] bg-green-500/20 text-green-400 border-green-500/30 gap-1 w-fit"><Gift className="w-2 h-2" />NFT in Wallet</Badge>
       ) : inCustody ? (
         <>
-          <Badge variant="outline" className="text-[8px] text-yellow-400 border-yellow-500/30 gap-1"><Gift className="w-2 h-2" />ASA {data.assetId}</Badge>
-          {walletConnected && onClaim && (
-            <Button size="sm" variant="outline" className="text-[8px] h-4 px-1.5 border-yellow-500/50 text-yellow-400" onClick={() => onClaim(commanderId)} disabled={isClaiming}>
-              {isClaiming ? <Loader2 className="w-2 h-2 animate-spin" /> : "Claim"}
+          <Badge variant="outline" className="text-[8px] text-yellow-400 border-yellow-500/30 gap-1 w-fit"><Gift className="w-2 h-2" />NFT Ready · ASA {data.assetId}</Badge>
+          {walletConnected && onClaim ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[9px] h-6 px-2 border-yellow-500/60 text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 w-full font-semibold"
+              onClick={() => onClaim(commanderId)}
+              disabled={isClaiming}
+            >
+              {isClaiming ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Gift className="w-3 h-3 mr-1" />}
+              {isClaiming ? "Claiming…" : "Claim NFT to Wallet"}
             </Button>
-          )}
+          ) : !walletConnected ? (
+            <p className="text-[8px] text-yellow-400/70">Connect wallet to claim</p>
+          ) : null}
         </>
       ) : null}
     </div>

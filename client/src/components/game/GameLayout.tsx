@@ -50,6 +50,7 @@ export function GameLayout() {
     signPurchaseAction,
     signClaimFrontierAction,
     signOptInToFrontier,
+    signCommanderMintAction,
     queueMineAction,
     queueUpgradeAction,
     queueAttackAction,
@@ -619,9 +620,14 @@ export function GameLayout() {
       return;
     }
 
-    // No ALGO game-level payment required — FRNTR is deducted server-side via mintAvatarMutation.
-    // The minimal Algorand network fee is covered automatically by the wallet during NFT minting.
-    queueMintAvatarAction(tier);
+    // Step 1: Open wallet for confirmation BEFORE touching the server.
+    // This matches the land purchase flow (wallet → confirm → success popup).
+    if (wallet.address) {
+      const txResult = await signCommanderMintAction(tier, frntrCost);
+      if (!txResult || txResult === "cancelled") return; // wallet rejected or closed
+    }
+
+    // Step 2: Server creates avatar + fires async NFT mint (FRNTR deducted via clawback).
     mintAvatarMutation.mutate(
       { playerId: player.id, tier },
       {
@@ -630,10 +636,13 @@ export function GameLayout() {
           if (nft?.assetId) {
             toast({
               title: "Commander Minted + NFT Created!",
-              description: `${data.avatar?.name || tier} Commander is ready. ${frntrCost} FRNTR spent. NFT ASA ${nft.assetId} held in custody — claim from Commander page.`,
+              description: `${data.avatar?.name || tier} Commander is ready. ${frntrCost} FRNTR spent. NFT ASA ${nft.assetId} held in custody — open Commander Panel to claim.`,
             });
           } else {
-            toast({ title: "Commander Minted", description: `${data.avatar?.name || tier} Commander is ready for battle! ${frntrCost} FRNTR spent.` });
+            toast({
+              title: "Commander Minted!",
+              description: `${data.avatar?.name || tier} is ready for battle. ${frntrCost} FRNTR spent. Open the Commander Panel — a Claim button will appear once your NFT is ready (within ~30s).`,
+            });
           }
           // Invalidate the NFT status query so CommanderNftStatus begins polling
           // for the on-chain confirmation (fire-and-forget mint in progress).
