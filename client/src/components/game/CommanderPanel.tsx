@@ -3,6 +3,7 @@ import {
   Shield, Swords, Zap, Target, Radio, Crosshair, Skull, Radar, Clock,
   Satellite, Gift, Loader2, Lock, ChevronDown, ChevronUp, Pickaxe, Fuel,
   AlertTriangle, MapPin, CheckCircle2, XCircle, ChevronsRight, PackageCheck, ExternalLink,
+  ChevronLeft, ChevronRight, Crosshair as AimIcon, Activity, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -198,9 +199,9 @@ function CommanderNftStatus({ commanderId, onClaim, isClaiming, walletConnected 
   );
 }
 
-// ── Commander Card (horizontal roster) ───────────────────────────────────────
+// ── Avatar Card (2-column gallery style) ─────────────────────────────────────
 
-function CommanderCard({ cmd, isActive, onDeploy, onClaim, isClaiming, walletConnected }: {
+function AvatarCard({ cmd, isActive, onDeploy, onClaim, isClaiming, walletConnected }: {
   cmd: Player["commanders"][0]; isActive: boolean;
   onDeploy: () => void; onClaim?: (id: string) => void; isClaiming?: boolean; walletConnected?: boolean;
 }) {
@@ -218,61 +219,76 @@ function CommanderCard({ cmd, isActive, onDeploy, onClaim, isClaiming, walletCon
   }, [cmd.lockedUntil]);
 
   const isLocked = countdown > 0;
+  const tierColor = TIER_COLORS[cmd.tier as CommanderTier];
 
   return (
-    <div className={cn(
-      "flex-shrink-0 w-40 rounded-lg border-2 p-2.5 flex flex-col gap-1.5 transition-all cursor-pointer select-none snap-start",
-      isActive ? cn("border-2", TIER_BORDER[cmd.tier as CommanderTier]) : "border-border/60 bg-muted/10",
-      isLocked && "opacity-70"
-    )}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <span className="text-lg">{companion.emoji}</span>
-        <div className="flex items-center gap-1">
-          {isActive && <Badge className="text-[8px] px-1 py-0 bg-primary/20 text-primary border-primary/30">ACTIVE</Badge>}
-          {isLocked && <Lock className="w-3 h-3 text-muted-foreground" />}
-        </div>
+    <div
+      className={cn(
+        "rounded-xl border flex flex-col overflow-hidden transition-all cursor-pointer select-none",
+        isActive
+          ? "border-red-500/70 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+          : "border-white/10 hover:border-white/25",
+        isLocked && "opacity-60"
+      )}
+      style={{ background: "rgba(12,8,16,0.92)" }}
+    >
+      {/* Image area */}
+      <div className="relative aspect-square w-full overflow-hidden">
+        <img
+          src={COMMANDER_IMAGES[cmd.tier as CommanderTier]}
+          alt={cmd.name}
+          className="w-full h-full object-cover"
+        />
+        {/* Online dot */}
+        <span
+          className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full border border-black"
+          style={{ background: isActive ? "#22c55e" : "#6b7280" }}
+        />
+        {/* Lock overlay */}
+        {isLocked && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+            <Lock className="w-5 h-5 text-white/80" />
+            <span className="text-[9px] font-mono text-white/80 mt-1">{formatCountdown(countdown)}</span>
+          </div>
+        )}
       </div>
 
-      {/* Commander image + name */}
-      <div className="flex items-center gap-2">
-        <img src={COMMANDER_IMAGES[cmd.tier as CommanderTier]} alt={cmd.name} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
-        <div className="min-w-0">
-          <p className="text-[10px] font-display uppercase font-bold leading-tight truncate" style={{ color: TIER_COLORS[cmd.tier as CommanderTier] }}>{cmd.name}</p>
-          <p className="text-[9px] text-muted-foreground capitalize">{cmd.tier}</p>
-          <p className="text-[9px] text-muted-foreground font-mono">☠ {cmd.totalKills}</p>
-        </div>
-      </div>
-
-      {/* Companion name */}
-      <p className="text-[9px] text-cyan-400/80 font-display uppercase tracking-wide">{companion.name}</p>
-
-      {/* Stats */}
-      <div className="flex gap-2 text-[9px]">
-        <span className="font-mono">ATK <span className="text-green-400">+{cmd.attackBonus}</span></span>
-        <span className="font-mono">DEF <span className="text-blue-400">+{cmd.defenseBonus}</span></span>
-      </div>
-
-      {/* NFT status */}
-      <CommanderNftStatus commanderId={cmd.id} onClaim={onClaim} isClaiming={isClaiming} walletConnected={walletConnected} />
-
-      {/* Deploy button */}
-      {isLocked ? (
-        <div className="text-center mt-auto">
-          <div className="flex items-center justify-center gap-1 text-[9px] text-destructive/80 font-mono">
-            <Clock className="w-2.5 h-2.5" /> {formatCountdown(countdown)}
+      {/* Info + button */}
+      <div className="px-2.5 py-2 flex flex-col gap-1.5">
+        <div>
+          <p className="text-[11px] font-display font-bold uppercase tracking-wide text-white leading-tight truncate">
+            {cmd.name}
+          </p>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="text-[9px] capitalize" style={{ color: tierColor }}>{cmd.tier}</span>
+            <span className="text-[9px] text-white/30">·</span>
+            <span className="text-[9px] text-white/50 truncate">{COMMANDER_INFO[cmd.tier as CommanderTier]?.specialAbility ?? "operative"}</span>
+          </div>
+          <div className="flex gap-2 text-[8px] font-mono mt-0.5 text-white/40">
+            <span>ATK +{cmd.attackBonus}</span>
+            <span>DEF +{cmd.defenseBonus}</span>
+            <span>☠ {cmd.totalKills}</span>
           </div>
         </div>
-      ) : (
-        <Button
-          size="sm"
-          variant={isActive ? "default" : "outline"}
-          onClick={onDeploy}
-          className={cn("h-6 text-[9px] font-display uppercase tracking-wide mt-auto w-full", isActive && "bg-primary/20 border-primary/40 text-primary")}
-        >
-          {isActive ? "Deployed ✓" : "Deploy"}
-        </Button>
-      )}
+
+        {/* NFT status */}
+        <CommanderNftStatus commanderId={cmd.id} onClaim={onClaim} isClaiming={isClaiming} walletConnected={walletConnected} />
+
+        {/* Deploy button */}
+        {!isLocked && (
+          <button
+            onClick={onDeploy}
+            className={cn(
+              "w-full py-1.5 rounded-md text-[10px] font-display font-bold uppercase tracking-wider transition-colors",
+              isActive
+                ? "bg-red-600 text-white border border-red-500"
+                : "bg-transparent text-red-400 border border-red-500/60 hover:bg-red-500/10"
+            )}
+          >
+            {isActive ? "SELECTED" : "SELECT TO PLAY"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -386,6 +402,8 @@ export function CommanderPanel({
   const queryClient = useQueryClient();
   const [selectedTier, setSelectedTier] = useState<CommanderTier>("sentinel");
   const [showMintSection, setShowMintSection] = useState(false);
+  const [rosterPage, setRosterPage] = useState(0);
+  const ROSTER_PER_PAGE = 4;
 
   // Battlefront state
   const [battlefrontOpen, setBattlefrontOpen] = useState(false);
@@ -530,17 +548,59 @@ export function CommanderPanel({
     });
   };
 
+  const totalBattles = (player.attacksWon ?? 0) + (player.attacksLost ?? 0);
+  const winRate = totalBattles > 0 ? Math.round(((player.attacksWon ?? 0) / totalBattles) * 100) : 0;
+  const rosterPageCount = Math.max(1, Math.ceil(commanders.length / ROSTER_PER_PAGE));
+  const rosterSlice = commanders.slice(rosterPage * ROSTER_PER_PAGE, (rosterPage + 1) * ROSTER_PER_PAGE);
+
   return (
     <div className={cn("flex flex-col h-full", className)} data-testid="commander-panel">
-      {/* ── Header ── */}
-      <div className="p-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <Shield className="w-4 h-4 text-primary" />
-          <h2 className="font-display text-base font-bold uppercase tracking-wide">Commander</h2>
+
+      {/* ── Stats Header ── */}
+      <div className="shrink-0 px-3 pt-3 pb-2 border-b border-white/10">
+        <h2 className="font-display text-sm font-bold uppercase tracking-widest text-white mb-2">Commanders</h2>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-3">
+          {[
+            { icon: <Target className="w-3.5 h-3.5" />, value: totalBattles, label: "My Battles" },
+            { icon: <CheckCircle2 className="w-3.5 h-3.5" />, value: player.attacksWon ?? 0, label: "Victories" },
+            { icon: <Activity className="w-3.5 h-3.5" />, value: `${winRate}%`, label: "Win Rate" },
+            { icon: <Star className="w-3.5 h-3.5" />, value: player.frontier.toFixed(0), label: "FRNTR Balance" },
+            { icon: <Shield className="w-3.5 h-3.5" />, value: commanders.length, label: "Commanders" },
+            { icon: <Clock className="w-3.5 h-3.5" />, value: player.totalFrontierBurned.toFixed(0), label: "FRNTR Burned" },
+          ].map(({ icon, value, label }) => (
+            <div key={label} className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white/50"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                {icon}
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white leading-none">{value}</p>
+                <p className="text-[9px] text-white/40 mt-0.5">{label}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <p className="text-[9px] text-muted-foreground font-mono">
-          FRNTR: {player.frontier.toFixed(1)} · Burned: {player.totalFrontierBurned.toFixed(1)} · Avatars: {commanders.length}
-        </p>
+
+        {/* Player name + rank + mint button */}
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white truncate">{player.id.slice(0, 12)}…</p>
+            {activeCommander && (
+              <div className="mt-1 px-2 py-1 rounded-md text-[9px] font-display uppercase tracking-wide truncate"
+                style={{ background: "rgba(180,120,20,0.2)", border: "1px solid rgba(180,120,20,0.4)", color: "#f0b429" }}>
+                {activeCommander.name} · {activeCommander.tier} · +{activeCommander.attackBonus} ATK
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setShowMintSection(!showMintSection)}
+            className="shrink-0 px-3 py-2 rounded-lg text-[10px] font-display font-bold uppercase tracking-wide leading-tight text-center transition-colors"
+            style={{ background: showMintSection ? "rgba(239,68,68,0.5)" : "rgba(239,68,68,0.85)", border: "1px solid rgba(239,68,68,0.6)", color: "white", minWidth: 72 }}
+          >
+            MINT<br />
+            <span className="font-mono">{COMMANDER_INFO[selectedTier]?.mintCostFrontier ?? 10} FRNTR</span>
+          </button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
@@ -596,25 +656,76 @@ export function CommanderPanel({
             </div>
           )}
 
-          {/* ── Commander Roster (horizontal scroll) ── */}
-          {hasCommander && (
+          {/* ── Avatar Gallery (2-column grid + pagination) ── */}
+          {hasCommander ? (
             <div>
-              <h3 className="text-[10px] font-display uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
-                <Swords className="w-3 h-3" /> Commander Roster
-              </h3>
-              <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x scroll-smooth" style={{ scrollbarWidth: "none" }}>
-                {commanders.map((cmd, idx) => (
-                  <CommanderCard
-                    key={cmd.id}
-                    cmd={cmd}
-                    isActive={activeCommander?.id === cmd.id}
-                    onDeploy={() => onSwitchCommander?.(idx)}
-                    onClaim={onClaimCommanderNft}
-                    isClaiming={isClaimingCommanderNft}
-                    walletConnected={isRealWallet}
-                  />
-                ))}
+              {/* 2-col grid */}
+              <div className="grid grid-cols-2 gap-2.5">
+                {rosterSlice.map((cmd, sliceIdx) => {
+                  const globalIdx = rosterPage * ROSTER_PER_PAGE + sliceIdx;
+                  return (
+                    <AvatarCard
+                      key={cmd.id}
+                      cmd={cmd}
+                      isActive={activeCommander?.id === cmd.id}
+                      onDeploy={() => onSwitchCommander?.(globalIdx)}
+                      onClaim={onClaimCommanderNft}
+                      isClaiming={isClaimingCommanderNft}
+                      walletConnected={isRealWallet}
+                    />
+                  );
+                })}
+                {/* Empty filler card so last row is always even */}
+                {rosterSlice.length % 2 === 1 && (
+                  <div className="rounded-xl border border-white/5 bg-white/[0.02] aspect-square flex items-center justify-center">
+                    <span className="text-[10px] text-white/20 font-display uppercase">Empty</span>
+                  </div>
+                )}
               </div>
+
+              {/* Pagination bar */}
+              {rosterPageCount > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <button
+                    onClick={() => setRosterPage(p => Math.max(0, p - 1))}
+                    disabled={rosterPage === 0}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-md text-[10px] font-display uppercase tracking-wide text-white/60 disabled:opacity-30 hover:text-white transition-colors"
+                    style={{ border: "1px solid rgba(255,255,255,0.12)" }}
+                  >
+                    <ChevronLeft className="w-3 h-3" /> Back
+                  </button>
+
+                  {Array.from({ length: rosterPageCount }, (_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setRosterPage(i)}
+                      className="w-7 h-7 rounded-md text-[10px] font-mono font-bold transition-colors"
+                      style={{
+                        background: i === rosterPage ? "rgba(239,68,68,0.85)" : "rgba(255,255,255,0.06)",
+                        border: `1px solid ${i === rosterPage ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.1)"}`,
+                        color: i === rosterPage ? "white" : "rgba(255,255,255,0.5)",
+                      }}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => setRosterPage(p => Math.min(rosterPageCount - 1, p + 1))}
+                    disabled={rosterPage === rosterPageCount - 1}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-md text-[10px] font-display uppercase tracking-wide text-white/60 disabled:opacity-30 hover:text-white transition-colors"
+                    style={{ border: "1px solid rgba(255,255,255,0.12)" }}
+                  >
+                    Next <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Shield className="w-10 h-10 mb-3 opacity-20" />
+              <p className="text-[10px] text-white/40 font-display uppercase">No commanders yet</p>
+              <p className="text-[9px] text-white/25 mt-1">Use the Mint button above to enlist your first Commander</p>
             </div>
           )}
 
@@ -665,9 +776,9 @@ export function CommanderPanel({
               </Card>
             </div>
           )}
-          {hasCommander && (
-            <Button variant="outline" size="sm" onClick={() => setShowMintSection(!showMintSection)} className="w-full font-display uppercase tracking-wide text-xs" data-testid="button-toggle-mint">
-              <Zap className="w-3 h-3 mr-1.5" />{showMintSection ? "Hide Mint" : "Mint Another Commander"}
+          {hasCommander && showMintSection && (
+            <Button variant="outline" size="sm" onClick={() => setShowMintSection(false)} className="w-full font-display uppercase tracking-wide text-xs border-red-500/40 text-red-400 hover:bg-red-500/10" data-testid="button-toggle-mint">
+              <ChevronUp className="w-3 h-3 mr-1.5" /> Hide Mint
             </Button>
           )}
 
