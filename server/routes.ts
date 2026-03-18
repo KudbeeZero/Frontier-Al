@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import path from "path";
 import { getBattleReplay, recordSubParcelWorldEvent, recordArchetypeWorldEvent } from "./services/redis";
 import { createServer, type Server } from "http";
 import algosdk from "algosdk";
@@ -504,13 +505,21 @@ export async function registerRoutes(
 
   // ── Commander NFT Image Serving ─────────────────────────────────────────────
   // Serves Commander tier PNGs as stable public URLs baked into on-chain ASA metadata.
-  // GET /nft/images/commander/:tier  (legacy redirect → static file)
   const VALID_COMMANDER_TIERS = new Set(["sentinel", "phantom", "reaper"]);
-  app.get("/nft/images/commander/:tier", (req, res) => {
-    const { tier } = req.params;
-    if (!VALID_COMMANDER_TIERS.has(tier)) return res.status(404).json({ error: "Unknown commander tier" });
-    res.redirect(301, `/nft/commanders/${tier}.png`);
-  });
+
+  const serveCommanderImage = (req: any, res: any) => {
+    const tier = req.params.tier?.replace(/\.png$/, "");
+    if (!tier || !VALID_COMMANDER_TIERS.has(tier)) return res.status(404).json({ error: "Unknown commander tier" });
+    const filePath = path.resolve(process.cwd(), "client", "public", "nft", "commanders", `${tier}.png`);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(filePath, (err: any) => {
+      if (err && !res.headersSent) res.status(404).json({ error: "Image not found" });
+    });
+  };
+
+  app.get("/nft/images/commander/:tier", serveCommanderImage);
+  app.get("/nft/commanders/:tier", serveCommanderImage);
 
   // ── Commander NFT Metadata (ARC-3) ──────────────────────────────────────────
   // GET /nft/metadata/commander/:commanderId
