@@ -504,24 +504,12 @@ export async function registerRoutes(
 
   // ── Commander NFT Image Serving ─────────────────────────────────────────────
   // Serves Commander tier PNGs as stable public URLs baked into on-chain ASA metadata.
-  // GET /nft/images/commander/:tier
-  const COMMANDER_IMAGE_FILES: Record<string, string> = {
-    sentinel: "image_1771570491560.png",
-    phantom:  "image_1771570495782.png",
-    reaper:   "image_1771570500912.png",
-  };
-
+  // GET /nft/images/commander/:tier  (legacy redirect → static file)
+  const VALID_COMMANDER_TIERS = new Set(["sentinel", "phantom", "reaper"]);
   app.get("/nft/images/commander/:tier", (req, res) => {
     const { tier } = req.params;
-    const filename = COMMANDER_IMAGE_FILES[tier];
-    if (!filename) return res.status(404).json({ error: "Unknown commander tier" });
-
-    const filePath = require("path").resolve(
-      __dirname, "..", "client", "src", "assets", filename
-    );
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.sendFile(filePath);
+    if (!VALID_COMMANDER_TIERS.has(tier)) return res.status(404).json({ error: "Unknown commander tier" });
+    res.redirect(301, `/nft/commanders/${tier}.png`);
   });
 
   // ── Commander NFT Metadata (ARC-3) ──────────────────────────────────────────
@@ -557,18 +545,22 @@ export async function registerRoutes(
 
       const onChainAssetId = nftRows[0]?.assetId ? Number(nftRows[0].assetId) : null;
 
+      // Use ASA ID in the display name when available (like land parcels use plotId)
+      const tierLabel = (avatar.tier as string).charAt(0).toUpperCase() + (avatar.tier as string).slice(1);
+      const displayId = onChainAssetId ?? avatar.id.slice(0, 8);
+      const nftName = `Frontier ${tierLabel} #${displayId}`;
+
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "public, max-age=86400");
       res.json({
-        name:         `Frontier Commander — ${avatar.name}`,
+        name:         nftName,
         description:  COMMANDER_INFO[avatar.tier as keyof typeof COMMANDER_INFO]?.description ?? `A ${avatar.tier} commander on the Frontier globe.`,
-        image:        `${baseUrl}/nft/images/commander/${avatar.tier}`,
-        external_url: `${baseUrl}/commander/${avatar.id}`,
+        image:        `${baseUrl}/nft/commanders/${avatar.tier}.png`,
+        external_url: `${baseUrl}/commander/${onChainAssetId ?? avatar.id}`,
         properties: {
           nftId:          onChainAssetId,
           commanderId:    avatar.id,
           tier:           avatar.tier,
-          name:           avatar.name,
           attackBonus:    avatar.attackBonus,
           defenseBonus:   avatar.defenseBonus,
           specialAbility: avatar.specialAbility,
