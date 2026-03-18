@@ -31,7 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock, Flag, BookOpen } from "lucide-react";
+import { Coins, Shield, Globe, Trophy, ArrowLeftRight, AlertTriangle, Clock, Flag, BookOpen, Swords } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ImprovementType, CommanderTier, SpecialAttackType } from "@shared/schema";
 import { startSpaceAmbience, stopSpaceAmbience } from "@/audio/spaceAmbience";
@@ -116,7 +116,7 @@ export function GameLayout() {
   const [attackModalOpen, setAttackModalOpen] = useState(false);
   const [watchingBattleId, setWatchingBattleId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("map");
-  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade" | "factions" | "markets">("warroom");
+  const [desktopRightTab, setDesktopRightTab] = useState<"warroom" | "rankings" | "trade" | "factions" | "markets" | "commander">("warroom");
   const [showGamerTag, setShowGamerTag] = useState(false);
   const [newPlayerId, setNewPlayerId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -1052,66 +1052,32 @@ export function GameLayout() {
 
       <aside className="hidden md:flex flex-col w-60 lg:w-72 absolute top-16 right-0 bottom-0 z-30 backdrop-blur-md bg-background/70 border-l border-border overflow-hidden">
         <div className="flex border-b border-border shrink-0">
-          <button
-            onClick={() => setDesktopRightTab("warroom")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
-              desktopRightTab === "warroom"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            War Room
-          </button>
-          <button
-            onClick={() => setDesktopRightTab("rankings")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
-              desktopRightTab === "rankings"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Trophy className="w-3.5 h-3.5" />
-            Rankings
-          </button>
-          <button
-            onClick={() => setDesktopRightTab("trade")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
-              desktopRightTab === "trade"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            Trade
-          </button>
-          <button
-            onClick={() => setDesktopRightTab("factions")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
-              desktopRightTab === "factions"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Flag className="w-3.5 h-3.5" />
-            Factions
-          </button>
-          <button
-            onClick={() => setDesktopRightTab("markets")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-display uppercase tracking-wide transition-colors border-b-2",
-              desktopRightTab === "markets"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Coins className="w-3.5 h-3.5" />
-            Markets
-          </button>
+          {(
+            [
+              { id: "warroom",   icon: Swords,          label: "War"      },
+              { id: "commander", icon: Shield,          label: "Commander"},
+              { id: "rankings",  icon: Trophy,          label: "Rankings" },
+              { id: "trade",     icon: ArrowLeftRight,  label: "Trade"    },
+              { id: "factions",  icon: Flag,            label: "Factions" },
+              { id: "markets",   icon: Coins,           label: "Markets"  },
+            ] as const
+          ).map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              onClick={() => setDesktopRightTab(id)}
+              title={label}
+              aria-label={label}
+              className={cn(
+                "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors border-b-2",
+                desktopRightTab === id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              <span className="text-[9px] font-display uppercase tracking-wide leading-none">{label}</span>
+            </button>
+          ))}
         </div>
         {isLoading ? (
           <div className="p-4 space-y-4">
@@ -1134,6 +1100,27 @@ export function GameLayout() {
             currentPlayerId={player?.id ?? ""}
             currentPlayerFrontier={player?.frontier ?? 0}
             className="flex-1 border-0 rounded-none overflow-hidden"
+          />
+        ) : desktopRightTab === "commander" ? (
+          <CommanderPanel
+            player={player}
+            onMintAvatar={handleMintAvatar}
+            onDeployDrone={handleDeployDrone}
+            onDeploySatellite={handleDeploySatellite}
+            onSwitchCommander={handleSwitchCommander}
+            onClaimCommanderNft={handleClaimCommanderNft}
+            onAttack={handleAttackConfirm}
+            isMinting={mintAvatarMutation.isPending}
+            isDeployingDrone={deployDroneMutation.isPending}
+            isDeployingSatellite={deploySatelliteMutation.isPending}
+            isClaimingCommanderNft={isClaimingCommanderNft}
+            isAttacking={attackMutation.isPending}
+            selectedParcel={selectedParcel}
+            ownedParcels={gameState?.parcels.filter(p => p.ownerId === player?.id) ?? []}
+            wallet={{ isConnected: wallet.isConnected, address: wallet.address }}
+            onDeliverPlotNft={handleDeliverPlotNft}
+            isDeliveringPlotNftId={isDeliveringPlotNftId}
+            className="flex-1 border-0 rounded-none overflow-auto"
           />
         ) : gameState ? (
           desktopRightTab === "warroom" ? (
