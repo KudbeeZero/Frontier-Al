@@ -46,7 +46,6 @@ import algosdk from "algosdk";
 export function GameLayout() {
   const wallet = useWallet();
   const { isConnected, balance, walletStatus } = wallet;
-  const isOnboarded = true;
   const {
     signPurchaseAction,
     signClaimFrontierAction,
@@ -859,7 +858,7 @@ export function GameLayout() {
     );
   }
 
-  if (!isConnected && !isOnboarded) {
+  if (!isConnected) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background" data-testid="wallet-gate">
         <div className="text-center p-8 max-w-md space-y-6">

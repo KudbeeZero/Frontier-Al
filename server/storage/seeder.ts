@@ -227,23 +227,6 @@ export async function seedDatabase(db: DB): Promise<void> {
       }
     }
 
-    // ── Human player ─────────────────────────────────────────────────────
-    const humanId = randomUUID();
-    await tx.insert(playersTable).values({
-      id:      humanId,
-      address: "PLAYER_WALLET",
-      name:    "Commander",
-      iron:    200,
-      fuel:    150,
-      crystal: 50,
-    });
-
-    // Give the human player the first plot (plotId=1)
-    await tx
-      .update(parcelsTable)
-      .set({ ownerId: humanId, ownerType: "player", defenseLevel: 3, purchasePriceAlgo: null, lastFrontierClaimTs: now })
-      .where(eq(parcelsTable.plotId, 1));
-
     // ── AI players ───────────────────────────────────────────────────────
     const AI_NAMES     = ["NEXUS-7", "KRONOS", "VANGUARD", "SPECTRE"];
     const AI_BEHAVIORS: Player["aiBehavior"][] = ["expansionist", "defensive", "raider", "economic"];

@@ -149,48 +149,6 @@ export class MemStorage implements IStorage {
       this.parcelByPlotId.set(coord.plotId, id);
     }
 
-    const humanPlayerId = randomUUID();
-    const humanPlayer: Player = {
-      id: humanPlayerId,
-      address: "PLAYER_WALLET",
-      name: "Commander",
-      iron: 200,
-      fuel: 150,
-      crystal: 50,
-      frontier: 0,
-      ownedParcels: [],
-      isAI: false,
-      totalIronMined: 0,
-      totalFuelMined: 0,
-      totalCrystalMined: 0,
-      totalFrontierEarned: 0,
-      totalFrontierBurned: 0,
-      attacksWon: 0,
-      attacksLost: 0,
-      territoriesCaptured: 0,
-      commander: null,
-      commanders: [],
-      activeCommanderIndex: 0,
-      specialAttacks: [],
-      drones: [],
-      satellites: [],
-      welcomeBonusReceived: false,
-      testnetProgress: [],
-    };
-    this.players.set(humanPlayerId, humanPlayer);
-
-    const startPlotId = this.parcelByPlotId.get(1);
-    if (startPlotId) {
-      const startParcel = this.parcels.get(startPlotId);
-      if (startParcel) {
-        startParcel.ownerId = humanPlayerId;
-        startParcel.ownerType = "player";
-        startParcel.defenseLevel = 3;
-        startParcel.purchasePriceAlgo = null;
-        humanPlayer.ownedParcels.push(startParcel.id);
-      }
-    }
-
     const aiStartPlots = [5250, 10500, 15750, 20000];
     for (let i = 0; i < 4; i++) {
       const aiId = randomUUID();

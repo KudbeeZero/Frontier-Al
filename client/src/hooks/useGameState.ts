@@ -24,12 +24,9 @@ export function usePlayer(playerId: string | null) {
 
 export function useCurrentPlayer(walletAddress?: string | null) {
   const { data: gameState } = useGameState();
-  if (!gameState) return null;
-  if (walletAddress) {
-    const lower = walletAddress.toLowerCase();
-    return gameState.players.find((p) => p.address.toLowerCase() === lower) ?? null;
-  }
-  return gameState.players.find((p) => !p.isAI) ?? null;
+  if (!gameState || !walletAddress) return null;
+  const lower = walletAddress.toLowerCase();
+  return gameState.players.find((p) => p.address.toLowerCase() === lower) ?? null;
 }
 
 export function useMine() {
