@@ -600,6 +600,33 @@ export function GameLayout() {
   };
 
   const [isClaimingCommanderNft, setIsClaimingCommanderNft] = useState(false);
+  const [isRetryingCommanderMintId, setIsRetryingCommanderMintId] = useState<string | null>(null);
+
+  const handleRetryCommanderMint = async (commanderId: string) => {
+    if (!player) return;
+    setIsRetryingCommanderMintId(commanderId);
+    try {
+      const res = await fetch(`/api/nft/retry-commander/${commanderId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: player.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Mint Restarted", description: "Your Commander NFT is being minted. The badge will update when it's ready to claim." });
+        queryClient.invalidateQueries({ queryKey: ["/api/nft/commander", commanderId] });
+      } else if (data.reason === "already_minted") {
+        toast({ title: "Already Minted", description: `ASA ${data.assetId} — check your badge to claim.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/nft/commander"] });
+      } else {
+        toast({ title: "Retry Failed", description: data.error || "Could not restart mint.", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Retry Failed", description: err instanceof Error ? err.message : "Unexpected error", variant: "destructive" });
+    } finally {
+      setIsRetryingCommanderMintId(null);
+    }
+  };
 
   const handleMintAvatar = async (tier: CommanderTier) => {
     if (!player) return;
@@ -1016,9 +1043,12 @@ export function GameLayout() {
           ownedParcels={gameState?.parcels.filter(p => p.ownerId === player.id) ?? []}
           walletAddress={wallet.address}
           walletConnected={wallet.isConnected}
+          playerId={player.id}
           onClaimCommander={handleClaimCommanderNft}
+          onRetryCommanderMint={handleRetryCommanderMint}
           onDeliverPlotNft={handleDeliverPlotNft}
           isClaimingCommander={isClaimingCommanderNft}
+          isRetryingCommanderMint={isRetryingCommanderMintId}
           isDeliveringPlotId={isDeliveringPlotNftId}
         />
       )}

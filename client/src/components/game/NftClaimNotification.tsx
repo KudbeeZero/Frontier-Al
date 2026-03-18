@@ -16,9 +16,12 @@ interface NftClaimNotificationProps {
   ownedParcels: LandParcel[];
   walletAddress: string | null;
   walletConnected: boolean;
+  playerId?: string;
   onClaimCommander: (commanderId: string) => void;
+  onRetryCommanderMint: (commanderId: string) => void;
   onDeliverPlotNft: (plotId: number, assetId: number) => void;
   isClaimingCommander?: boolean;
+  isRetryingCommanderMint?: string | null;
   isDeliveringPlotId?: number | null;
 }
 
@@ -27,9 +30,12 @@ export function NftClaimNotification({
   ownedParcels = [],
   walletAddress,
   walletConnected,
+  playerId,
   onClaimCommander,
+  onRetryCommanderMint,
   onDeliverPlotNft,
   isClaimingCommander,
+  isRetryingCommanderMint,
   isDeliveringPlotId,
 }: NftClaimNotificationProps) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -46,7 +52,8 @@ export function NftClaimNotification({
       staleTime: 5_000,
       refetchInterval: (query: any) => {
         const d = query.state.data;
-        if (!d?.exists || d?.status === "minting") return 5_000;
+        // Keep polling while minting or failed (user may trigger retry)
+        if (!d?.exists || d?.status === "minting" || d?.status === "failed") return 5_000;
         return false;
       },
     })),
@@ -67,13 +74,15 @@ export function NftClaimNotification({
     })),
   });
 
-  // Commander NFTs ready to claim (status === "minted" = in escrow, not yet delivered)
+  // Commander NFTs: show when minted (in escrow) or failed (retry available)
   const claimableCommanders = commanders.slice(0, 10).flatMap((cmd, idx) => {
     const d = commanderNftQueries[idx]?.data;
-    if (!d?.exists || d.status !== "minted" || !d.assetId) return [];
+    if (!d?.exists) return [];
+    // Show "minted" badges (claimable) and "failed" badges (retryable)
+    if (d.status !== "minted" && d.status !== "failed") return [];
     const key = `cmd-${cmd.id}`;
     if (dismissed.has(key)) return [];
-    return [{ key, type: "commander" as const, id: cmd.id, name: cmd.name, tier: cmd.tier, assetId: d.assetId }];
+    return [{ key, type: "commander" as const, id: cmd.id, name: cmd.name, tier: cmd.tier, assetId: d.assetId ?? null, mintStatus: d.status as "minted" | "failed" }];
   });
 
   // Plot NFTs in escrow (minted but mintedToAddress !== wallet)
@@ -146,37 +155,57 @@ export function NftClaimNotification({
               <>
                 <p className="text-[11px] font-bold text-white mb-0.5 truncate">{item.name}</p>
                 <p className="text-[9px] capitalize mb-2" style={{ color: "rgba(192,132,252,0.75)" }}>
-                  {item.tier} · ASA {item.assetId}
+                  {item.tier} {item.mintStatus === "failed" ? "· Mint failed — tap Retry" : item.assetId ? `· ASA ${item.assetId}` : "· Minting…"}
                 </p>
                 <div className="flex gap-2">
                   {walletConnected ? (
-                    <button
-                      onClick={() => onClaimCommander(item.id)}
-                      disabled={!!isClaimingCommander}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[9px] font-display font-bold uppercase tracking-wide transition-colors"
-                      style={{
-                        background: "rgba(168,85,247,0.25)",
-                        border: "1px solid rgba(168,85,247,0.6)",
-                        color: "#c084fc",
-                      }}
-                    >
-                      {isClaimingCommander
-                        ? <><Loader2 className="w-3 h-3 animate-spin" />Claiming…</>
-                        : <><Gift className="w-3 h-3" />Claim NFT</>
-                      }
-                    </button>
+                    item.mintStatus === "failed" ? (
+                      <button
+                        onClick={() => onRetryCommanderMint(item.id)}
+                        disabled={isRetryingCommanderMint === item.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[9px] font-display font-bold uppercase tracking-wide transition-colors"
+                        style={{
+                          background: "rgba(239,68,68,0.2)",
+                          border: "1px solid rgba(239,68,68,0.6)",
+                          color: "#f87171",
+                        }}
+                      >
+                        {isRetryingCommanderMint === item.id
+                          ? <><Loader2 className="w-3 h-3 animate-spin" />Retrying…</>
+                          : <>↻ Retry Mint</>
+                        }
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onClaimCommander(item.id)}
+                        disabled={!!isClaimingCommander}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[9px] font-display font-bold uppercase tracking-wide transition-colors"
+                        style={{
+                          background: "rgba(168,85,247,0.25)",
+                          border: "1px solid rgba(168,85,247,0.6)",
+                          color: "#c084fc",
+                        }}
+                      >
+                        {isClaimingCommander
+                          ? <><Loader2 className="w-3 h-3 animate-spin" />Claiming…</>
+                          : <><Gift className="w-3 h-3" />Claim NFT</>
+                        }
+                      </button>
+                    )
                   ) : (
                     <p className="text-[9px] text-white/35">Connect wallet to claim</p>
                   )}
-                  <a
-                    href={`https://explorer.perawallet.app/assets/${item.assetId}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[9px] text-white/40 hover:text-white/70 transition-colors"
-                    style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  {item.assetId && (
+                    <a
+                      href={`https://explorer.perawallet.app/assets/${item.assetId}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[9px] text-white/40 hover:text-white/70 transition-colors"
+                      style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               </>
             ) : (

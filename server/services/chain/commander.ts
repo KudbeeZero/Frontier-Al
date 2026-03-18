@@ -49,6 +49,11 @@ export async function mintCommanderNft(params: MintCommanderParams): Promise<Min
   const baseUrl = metadataBaseUrl.replace(/\/+$/, "");
   const shortId = commanderId.slice(0, 8);
 
+  // Algorand ASA name limit is 32 bytes. Keep well under the limit.
+  // "FRONTIER SENTINEL #aa4a26e8" = 27 chars (longest tier "sentinel" = 8 chars)
+  const tierUpper = tier.toUpperCase(); // SENTINEL / PHANTOM / REAPER (7–8 chars)
+  const assetName = `FRONTIER ${tierUpper} #${shortId}`; // max 27 chars
+
   const createSp = await algod.getTransactionParams().do();
 
   const createTxn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
@@ -57,7 +62,7 @@ export async function mintCommanderNft(params: MintCommanderParams): Promise<Min
     decimals:       0,
     defaultFrozen:  false,
     unitName:       "CMDR",
-    assetName:      `Frontier Commander - ${tier} #${shortId}`,
+    assetName,
     assetURL:       `${baseUrl}/nft/metadata/commander/${commanderId}`,
     manager:        account.addr.toString(),
     reserve:        account.addr.toString(),

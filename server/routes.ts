@@ -610,7 +610,7 @@ export async function registerRoutes(
   // ── Commander NFT on-chain record lookup ────────────────────────────────────
   // GET /api/nft/commander/:commanderId
   // Returns { exists, status, assetId, ... }
-  // status: "minting" | "minted" (in custody) | "delivered" (in buyer's wallet)
+  // status: "minting" | "minted" (in custody) | "delivered" (in buyer's wallet) | "failed" (mint error)
   app.get("/api/nft/commander/:commanderId", async (req, res) => {
     const { commanderId } = req.params;
     if (!commanderId) return res.status(400).json({ error: "commanderId required" });
@@ -620,14 +620,17 @@ export async function registerRoutes(
       const [row] = await db.select().from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId));
 
       if (!row) {
-        // Check if a mint is currently in-flight (fire-and-forget async pending)
-        const pendingRows = await db
+        // Check idempotency table for pending or failed state
+        const [idempotencyRow] = await db
           .select()
           .from(commanderMintIdempotencyTable)
           .where(sql`${commanderMintIdempotencyTable.key} LIKE ${'%:' + commanderId}`)
           .limit(1);
-        if (pendingRows.length > 0 && pendingRows[0].status === "pending") {
+        if (idempotencyRow?.status === "pending") {
           return res.json({ exists: true, status: "minting", assetId: null, commanderId });
+        }
+        if (idempotencyRow?.status === "failed") {
+          return res.json({ exists: true, status: "failed", assetId: null, commanderId });
         }
         return res.status(404).json({ error: "No NFT record for this commander" });
       }
@@ -647,6 +650,78 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[api/nft/commander] lookup error:", error);
       res.status(500).json({ error: "Failed to fetch Commander NFT record" });
+    }
+  });
+
+  // ── Commander NFT Retry Mint ────────────────────────────────────────────────
+  // POST /api/nft/retry-commander/:commanderId  body: { playerId: string }
+  // Triggers a fresh on-chain mint for a commander whose previous mint failed.
+  app.post("/api/nft/retry-commander/:commanderId", async (req, res) => {
+    const { commanderId } = req.params;
+    const { playerId } = req.body;
+    if (!commanderId || !playerId) return res.status(400).json({ error: "commanderId and playerId required" });
+    if (!db) return res.status(503).json({ error: "Database not available" });
+
+    try {
+      // Verify player owns this commander
+      const player = await storage.getPlayer(playerId);
+      if (!player) return res.status(404).json({ error: "Player not found" });
+      const avatar = (player.commanders as any[])?.find((c: any) => c.id === commanderId);
+      if (!avatar) return res.status(404).json({ error: "Commander not found for this player" });
+
+      // Check no NFT already exists
+      const [existingNft] = await db.select().from(commanderNftsTable).where(eq(commanderNftsTable.commanderId, commanderId));
+      if (existingNft?.assetId) {
+        return res.json({ success: false, reason: "already_minted", assetId: Number(existingNft.assetId) });
+      }
+
+      // Reset idempotency key to "failed" so the mint fires again
+      const idempotencyKey = `cmdr:mint:${playerId}:${commanderId}`;
+      await db.delete(commanderMintIdempotencyTable).where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+
+      const now = Date.now();
+      const rawBase = process.env.PUBLIC_BASE_URL ||
+        (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "");
+      const PUBLIC_BASE_URL = rawBase.replace(/\/+$/, "");
+
+      if (!PUBLIC_BASE_URL) {
+        return res.status(503).json({ error: "PUBLIC_BASE_URL not configured" });
+      }
+
+      // Insert fresh pending key
+      await db.insert(commanderMintIdempotencyTable).values({
+        key: idempotencyKey, status: "pending", assetId: null, txId: null, createdAt: now, updatedAt: now,
+      }).onConflictDoNothing();
+
+      // Fire async mint
+      mintCommanderNft({
+        commanderId,
+        tier: avatar.tier as "sentinel" | "phantom" | "reaper",
+        receiverAddress: player.address!,
+        metadataBaseUrl: PUBLIC_BASE_URL,
+      }).then(async (result) => {
+        await db!.insert(commanderNftsTable).values({
+          commanderId, assetId: result.assetId, mintedToAddress: result.mintedToAddress,
+          mintedAt: Date.now(), algoPaymentTxId: null,
+        }).onConflictDoUpdate({
+          target: commanderNftsTable.commanderId,
+          set: { assetId: result.assetId, mintedToAddress: result.mintedToAddress, mintedAt: Date.now(), algoPaymentTxId: null },
+        });
+        await db!.update(commanderMintIdempotencyTable)
+          .set({ status: "confirmed", assetId: result.assetId, txId: result.createTxId, updatedAt: Date.now() })
+          .where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+        console.log(`[retry-commander] commanderId=${commanderId} assetId=${result.assetId} minted`);
+      }).catch(async (err) => {
+        await db!.update(commanderMintIdempotencyTable)
+          .set({ status: "failed", updatedAt: Date.now() })
+          .where(eq(commanderMintIdempotencyTable.key, idempotencyKey));
+        console.error(`[retry-commander] commanderId=${commanderId} mint failed:`, err instanceof Error ? err.message : err);
+      });
+
+      res.json({ success: true, status: "minting", commanderId, message: "NFT mint restarted — check the badge for updates." });
+    } catch (error) {
+      console.error("[retry-commander] error:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Retry failed" });
     }
   });
 
