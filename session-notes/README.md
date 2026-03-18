@@ -16,3 +16,4 @@ Use these notes to track decisions, context, and progress across sessions.
 - [2026-03-17](./2026-03-17.md) — Find Plot button in SubParcelGrid (subdivision UI)
 - [2026-03-17-frntr-emissions-test](./2026-03-17-frntr-emissions-test.md) — Centralized FRNTR emission config; testing rate raised to 50 FRNTR/day per parcel
 - [2026-03-17-terraforming-state-sync](./2026-03-17-terraforming-state-sync.md) — Terraforming state sync; same land identity, no burn/remint, dynamic metadata
+- [2026-03-18-commander-mint-delivery](./2026-03-18-commander-mint-delivery.md) — Commander mint delivery fix; ghost mint resolved; NFT status polling + claim UI

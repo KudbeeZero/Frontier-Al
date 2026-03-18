@@ -148,22 +148,32 @@ function DroneCard({ drone, index }: { drone: Player["drones"][0]; index: number
 function CommanderNftStatus({ commanderId, onClaim, isClaiming, walletConnected }: {
   commanderId: string; onClaim?: (id: string) => void; isClaiming?: boolean; walletConnected?: boolean;
 }) {
-  const { data, isLoading } = useQuery<{ exists: boolean; status?: string; assetId?: number }>({
+  const { data, isLoading } = useQuery<{ exists: boolean; status?: string; assetId?: number | null }>({
     queryKey: ["/api/nft/commander", commanderId],
     queryFn: async () => {
       const res = await fetch(`/api/nft/commander/${commanderId}`);
       if (!res.ok) return { exists: false };
       return res.json();
     },
-    staleTime: 30_000, retry: false,
+    staleTime: 15_000,
+    retry: false,
+    // Poll every 8s while minting is in-flight or NFT not yet found
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d?.exists || d?.status === "minting") return 8_000;
+      return false;
+    },
   });
   if (isLoading) return <div className="flex items-center gap-1 text-[9px] text-muted-foreground mt-1"><Loader2 className="w-2.5 h-2.5 animate-spin" /><span>NFT…</span></div>;
   if (!data?.exists) return null;
-  const delivered = data.status === "delivered";
-  const inCustody = data.status === "minted" || data.status === "pending";
+  const isMinting  = data.status === "minting";
+  const delivered  = data.status === "delivered";
+  const inCustody  = data.status === "minted";
   return (
     <div className="mt-1 flex items-center gap-1 flex-wrap">
-      {delivered ? (
+      {isMinting ? (
+        <Badge variant="outline" className="text-[8px] text-blue-400 border-blue-500/30 gap-1"><Loader2 className="w-2 h-2 animate-spin" />Minting…</Badge>
+      ) : delivered ? (
         <Badge className="text-[8px] bg-green-500/20 text-green-400 border-green-500/30 gap-1"><Gift className="w-2 h-2" />NFT</Badge>
       ) : inCustody ? (
         <>
