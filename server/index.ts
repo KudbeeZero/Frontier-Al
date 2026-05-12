@@ -1,9 +1,10 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { initSeasonManager } from "./engine/season/manager";
 import { hydrateWorldEventsFromRedis } from "./worldEventStore";
-import { warmUpDb } from "./db";
+import { warmUpDb, logPoolStats } from "./db";
 import { assertChainConfig } from "./services/chain/client";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -19,6 +20,41 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// ── Memory Usage Tracking ────────────────────────────────────────────────────
+/**
+ * Log current memory usage with breakdown.
+ * Call this periodically or on-demand to track memory pressure.
+ */
+export function logMemoryUsage(source = "periodic"): void {
+  const memUsage = process.memoryUsage();
+  const memInfo = {
+    source,
+    rss: `${(memUsage.rss / 1024 / 1024).toFixed(1)} MB`,
+    heapTotal: `${(memUsage.heapTotal / 1024 / 1024).toFixed(1)} MB`,
+    heapUsed: `${(memUsage.heapUsed / 1024 / 1024).toFixed(1)} MB`,
+    external: `${(memUsage.external / 1024 / 1024).toFixed(1)} MB`,
+    arrayBuffers: `${(memUsage.arrayBuffers / 1024 / 1024).toFixed(1)} MB`,
+  };
+  console.log(`[memory] ${JSON.stringify(memInfo)}`);
+}
+
+// Log memory usage every 60 seconds
+const _memoryInterval = setInterval(() => {
+  logMemoryUsage("periodic");
+}, 60_000);
+
+// Log memory on process exit
+process.on("exit", () => {
+  clearInterval(_memoryInterval);
+  logMemoryUsage("exit");
+});
+
+// Log memory on uncaught exceptions
+process.on("uncaughtException", (err) => {
+  logMemoryUsage("uncaughtException");
+  console.error("[uncaughtException]", err);
+});
 
 app.use(
   express.json({
@@ -177,6 +213,10 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
+  // Log initial system stats
+  logMemoryUsage("startup");
+  logPoolStats();
+
   const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
   httpServer.listen(
     {
@@ -188,4 +228,7 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
-})();
+})().catch((err) => {
+  console.error("[startup] Fatal error during server startup:", err);
+  process.exit(1);
+});

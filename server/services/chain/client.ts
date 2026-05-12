@@ -9,6 +9,74 @@
 import algosdk from "algosdk";
 import type { ChainNetwork } from "./types";
 
+// ── Algorand RPC Diagnostics ─────────────────────────────────────────────────
+const _rpcTimings: Record<string, { count: number; totalTimeMs: number; maxTimeMs: number; errorCount: number }> = {};
+const SLOW_RPC_THRESHOLD_MS = 2000; // Log warnings for RPC calls taking >2s
+
+/**
+ * Wrap an Algorand RPC call with timing diagnostics.
+ */
+async function withRpcTiming<T>(
+  operation: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  if (!_rpcTimings[operation]) {
+    _rpcTimings[operation] = { count: 0, totalTimeMs: 0, maxTimeMs: 0, errorCount: 0 };
+  }
+  _rpcTimings[operation].count++;
+
+  const start = Date.now();
+  try {
+    const result = await fn();
+    const duration = Date.now() - start;
+    _rpcTimings[operation].totalTimeMs += duration;
+    if (duration > _rpcTimings[operation].maxTimeMs) {
+      _rpcTimings[operation].maxTimeMs = duration;
+    }
+
+    // Log slow RPC calls
+    if (duration > SLOW_RPC_THRESHOLD_MS) {
+      console.warn(
+        `[algorand] SLOW RPC: ${operation} took ${duration}ms ` +
+        `(avg: ${(_rpcTimings[operation].totalTimeMs / _rpcTimings[operation].count).toFixed(0)}ms, ` +
+        `max: ${_rpcTimings[operation].maxTimeMs}ms)`
+      );
+    }
+
+    return result;
+  } catch (err) {
+    _rpcTimings[operation].errorCount++;
+    const duration = Date.now() - start;
+    console.error(
+      `[algorand] RPC ERROR: ${operation} failed after ${duration}ms:`,
+      err instanceof Error ? err.message : err
+    );
+    throw err;
+  }
+}
+
+/**
+ * Log aggregate Algorand RPC timing stats.
+ */
+export function logAlgorandRpcStats(): void {
+  const entries = Object.entries(_rpcTimings).filter(([, stats]) => stats.count > 0);
+  if (entries.length === 0) return;
+
+  console.log("[algorand] RPC timing stats:");
+  for (const [operation, stats] of entries) {
+    const avg = stats.totalTimeMs / stats.count;
+    console.log(
+      `  ${operation}: calls=${stats.count}, avg=${avg.toFixed(0)}ms, ` +
+      `max=${stats.maxTimeMs}ms, errors=${stats.errorCount}`
+    );
+  }
+}
+
+// Log RPC stats every 120 seconds
+setInterval(() => {
+  logAlgorandRpcStats();
+}, 120_000);
+
 export function assertChainConfig(): void {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -111,7 +179,9 @@ export async function getAdminBalance(frontierAsaId?: number | null): Promise<{ 
   try {
     const account     = getAdminAccount();
     const algod       = getAlgodClient();
-    const accountInfo = await algod.accountInformation(account.addr.toString()).do();
+    const accountInfo = await withRpcTiming("accountInformation", () =>
+      algod.accountInformation(account.addr.toString()).do()
+    );
     const algoBalance = Number(accountInfo.amount) / 1_000_000;
 
     let frontierAsa = 0;

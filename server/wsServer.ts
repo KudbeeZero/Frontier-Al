@@ -26,6 +26,13 @@ import type { IStorage } from "./storage";
 
 const FLUSH_INTERVAL_MS = 1_500;
 
+// ── Diagnostic counters ──────────────────────────────────────────────────────
+let _flushCount = 0;
+let _flushErrorCount = 0;
+let _totalFlushTimeMs = 0;
+let _maxFlushTimeMs = 0;
+let _maxPayloadSize = 0;
+
 let _wss: WebSocketServer | null = null;
 let _storage: IStorage | null = null;
 let _dirty = false;
@@ -37,6 +44,7 @@ export function initWsServer(httpServer: Server, storage: IStorage): WebSocketSe
 
   _wss.on("connection", (ws) => {
     let alive = true;
+    console.log(`[ws] Client connected (total: ${_wss!.clients.size + 1})`);
 
     ws.on("message", (data) => {
       try {
@@ -56,7 +64,10 @@ export function initWsServer(httpServer: Server, storage: IStorage): WebSocketSe
       }
     }, 25_000);
 
-    ws.on("close", () => clearInterval(pingInterval));
+    ws.on("close", () => {
+      clearInterval(pingInterval);
+      console.log(`[ws] Client disconnected (total: ${_wss!.clients.size})`);
+    });
 
     // Send current state immediately to the newly connected client
     markDirty();
@@ -67,11 +78,49 @@ export function initWsServer(httpServer: Server, storage: IStorage): WebSocketSe
     if (!_dirty || !_storage || !_wss) return;
     if (_wss.clients.size === 0) { _dirty = false; return; }
     _dirty = false;
+    _flushCount++;
+
+    const flushStart = Date.now();
+    const clientCount = _wss.clients.size;
+
     try {
       const gameState = await _storage.getGameState();
-      _broadcastRaw({ type: "game_state_update", payload: gameState });
+      const payload = { type: "game_state_update", payload: gameState };
+      const msg = JSON.stringify(payload);
+      const payloadSize = msg.length;
+
+      // Track payload size metrics
+      if (payloadSize > _maxPayloadSize) {
+        _maxPayloadSize = payloadSize;
+      }
+
+      // Log large payloads (>500KB) as potential performance issues
+      if (payloadSize > 500_000) {
+        console.warn(`[ws] Large broadcast payload: ${(payloadSize / 1024).toFixed(1)} KB to ${clientCount} clients`);
+      }
+
+      _broadcastRaw(payload);
+
+      const flushDuration = Date.now() - flushStart;
+      _totalFlushTimeMs += flushDuration;
+      if (flushDuration > _maxFlushTimeMs) {
+        _maxFlushTimeMs = flushDuration;
+      }
+
+      // Log slow flushes (>500ms)
+      if (flushDuration > 500) {
+        console.warn(`[ws] Slow flush #${_flushCount}: ${flushDuration}ms (payload: ${(payloadSize / 1024).toFixed(1)} KB, clients: ${clientCount})`);
+      }
+
+      // Periodic stats dump every 100 flushes (~2.5 minutes)
+      if (_flushCount % 100 === 0) {
+        const avgFlushTime = _totalFlushTimeMs / _flushCount;
+        console.log(`[ws] Stats: flushes=${_flushCount}, errors=${_flushErrorCount}, avg=${avgFlushTime.toFixed(0)}ms, max=${_maxFlushTimeMs}ms, maxPayload=${(_maxPayloadSize / 1024).toFixed(1)}KB`);
+      }
     } catch (err) {
-      console.warn("[ws] flush error:", err instanceof Error ? err.message : err);
+      _flushErrorCount++;
+      const flushDuration = Date.now() - flushStart;
+      console.error(`[ws] Flush #${_flushCount} FAILED after ${flushDuration}ms:`, err instanceof Error ? err.message : err);
       _dirty = true;
     }
   }, FLUSH_INTERVAL_MS);

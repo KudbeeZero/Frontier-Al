@@ -51,18 +51,69 @@ const pool = new Pool({
   keepAlive: false,
 });
 
+// ── DB Pool Diagnostic Counters ──────────────────────────────────────────────
+let _poolQueryCount = 0;
+let _poolErrorCount = 0;
+let _poolConnectCount = 0;
+let _poolRemoveCount = 0;
+let _totalQueryTimeMs = 0;
+let _maxQueryTimeMs = 0;
+let _slowQueryCount = 0;
+
+pool.on("connect", () => {
+  _poolConnectCount++;
+  console.log(`[db] New client connected (total connections: ${_poolConnectCount})`);
+});
+
+pool.on("remove", () => {
+  _poolRemoveCount++;
+  console.log(`[db] Client removed (total removed: ${_poolRemoveCount})`);
+});
+
 pool.on("error", (err) => {
+  _poolErrorCount++;
   // These are transient — the pool removes the dead client automatically
   // and creates a fresh one for the next query. No action needed.
   if ((err as NodeJS.ErrnoException).code === "ECONNRESET" ||
       err.message.includes("Connection terminated")) {
-    console.warn("[db] Pool client terminated by remote host — will reconnect automatically");
+    console.warn(`[db] Pool client terminated by remote host (error #${_poolErrorCount}) — will reconnect automatically`);
   } else {
     console.error("[db] Unexpected pool error:", err.message);
   }
 });
 
 export const db = drizzle(pool, { schema });
+
+/**
+ * Log pool stats periodically. Call this from startup or on-demand.
+ */
+export function logPoolStats(): void {
+  const poolInfo = {
+    totalCount: pool.totalCount,
+    idleCount: pool.idleCount,
+    waitingCount: pool.waitingCount,
+    connectCount: _poolConnectCount,
+    removeCount: _poolRemoveCount,
+    errorCount: _poolErrorCount,
+    queryCount: _poolQueryCount,
+    avgQueryTimeMs: _poolQueryCount > 0 ? (_totalQueryTimeMs / _poolQueryCount).toFixed(1) : "0",
+    maxQueryTimeMs: _maxQueryTimeMs,
+    slowQueryCount: _slowQueryCount,
+  };
+  console.log(`[db] Pool stats:`, JSON.stringify(poolInfo));
+}
+
+/**
+ * Periodic pool stats dump every 60 seconds.
+ */
+const _poolStatsInterval = setInterval(() => {
+  if (pool.totalCount > 0 || _poolErrorCount > 0) {
+    logPoolStats();
+  }
+}, 60_000);
+
+// Clean up interval on process exit
+process.on("exit", () => clearInterval(_poolStatsInterval));
 
 /**
  * Retry wrapper for background tasks and API routes that hit stale Neon
@@ -77,9 +128,24 @@ const CONN_ERR = /Connection terminated|ECONNRESET|connection timeout|ETIMEDOUT/
 export async function withDbRetry<T>(fn: () => Promise<T>, label = "db", maxRetries = 3): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const queryStart = Date.now();
     try {
-      return await fn();
+      _poolQueryCount++;
+      const result = await fn();
+      const queryDuration = Date.now() - queryStart;
+      _totalQueryTimeMs += queryDuration;
+      if (queryDuration > _maxQueryTimeMs) {
+        _maxQueryTimeMs = queryDuration;
+      }
+      // Log slow queries (>200ms)
+      if (queryDuration > 200) {
+        _slowQueryCount++;
+        console.warn(`[db] Slow query "${label}": ${queryDuration}ms (attempt ${attempt + 1})`);
+      }
+      return result;
     } catch (err) {
+      const queryDuration = Date.now() - queryStart;
+      _totalQueryTimeMs += queryDuration;
       const msg = err instanceof Error ? err.message : String(err);
       if (CONN_ERR.test(msg)) {
         const delay = 600 * Math.pow(2, attempt); // 600 ms → 1200 ms → 2400 ms
