@@ -163,3 +163,13 @@ export function broadcastGameState(payload: unknown): void {
   _dirty = false;
   _broadcastRaw({ type: "game_state_update", payload });
 }
+
+/**
+ * broadcastWorldEvent — send a single world event to all connected clients
+ * immediately (not waiting for the flush tick). Used by appendWorldEvent()
+ * to stream real-time activity to the client Activity Feed overlay.
+ * Message format: { type: "world_event", payload: WorldEvent }
+ */
+export function broadcastWorldEvent(event: unknown): void {
+  _broadcastRaw({ type: "world_event", payload: event });
+}

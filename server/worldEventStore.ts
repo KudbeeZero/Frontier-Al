@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { WorldEvent, WorldEventFilters } from "@shared/worldEvents";
 import { redisAppendWorldEvent, redisGetWorldEvents } from "./services/redis";
+import { broadcastWorldEvent } from "./wsServer";
 
 const MAX_EVENTS = 5000;
 // In-memory store remains as the primary/fallback layer.
@@ -13,6 +14,8 @@ export function appendWorldEvent(
   const full: WorldEvent = { ...event, id: event.id ?? randomUUID() };
   store.push(full);
   if (store.length > MAX_EVENTS) store.splice(0, store.length - MAX_EVENTS);
+  // Stream to all WebSocket clients immediately for the Activity Feed overlay
+  broadcastWorldEvent(full);
   // Fire-and-forget Redis write — never blocks game logic
   redisAppendWorldEvent(full as unknown as { id: string; timestamp: number; [key: string]: unknown }).catch(() => {});
   return full;

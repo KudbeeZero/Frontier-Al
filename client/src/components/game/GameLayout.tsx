@@ -25,7 +25,7 @@ import { NftClaimNotification } from "./NftClaimNotification";
 import { useOrbitalEngine } from "@/hooks/useOrbitalEngine";
 import { useWallet } from "@/hooks/useWallet";
 import { useBlockchainActions } from "@/hooks/useBlockchainActions";
-import { useGameSocket } from "@/hooks/useGameSocket";
+import { useGameSocket, useLiveWorldEvents } from "@/hooks/useGameSocket";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { useGameState, useCurrentPlayer, useMine, useUpgrade, useAttack, useBuild, usePurchase, useCollectAll, useClaimFrontier, useMintAvatar, useSwitchCommander, useSpecialAttack, useDeployDrone, useDeploySatellite } from "@/hooks/useGameState";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,7 @@ import { SelectedPlotPanel } from "./SelectedPlotPanel";
 import { useTutorial, TUTORIAL_STEPS } from "@/hooks/useTutorial";
 import { sendPaymentTransaction } from "@/lib/algorand";
 import algosdk from "algosdk";
+import { ActivityFeed } from "./ActivityFeed";
 
 export function GameLayout() {
   const wallet = useWallet();
@@ -1431,6 +1432,9 @@ export function GameLayout() {
         }}
         isClaimingPlot={purchaseMutation.isPending}
       />
+
+      {/* Live Activity Feed overlay — streams world events in real-time */}
+      <ActivityFeed />
     </div>
   );
 }
