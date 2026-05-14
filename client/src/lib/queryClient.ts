@@ -1,5 +1,18 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// ── API base URL ──────────────────────────────────────────────────────────────
+// In production (split-host: Vercel SPA + separate Node backend) set
+// VITE_API_URL to the backend origin, e.g. https://frontier-api.onrender.com
+// In local dev this is empty — the Vite dev-server proxy handles /api/* → :5000
+const _API_BASE: string =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ??
+  "";
+
+/** Resolve a relative /api (or /nft, /faction) path to an absolute URL. */
+export function resolveApiUrl(path: string): string {
+  return `${_API_BASE}${path}`;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,7 +25,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  const res = await fetch(resolveApiUrl(url), {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +42,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const url = queryKey[0] as string;
+    const url = resolveApiUrl(queryKey[0] as string);
     const res = await fetch(url, {
       credentials: "include",
     });

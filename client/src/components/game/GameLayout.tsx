@@ -393,14 +393,18 @@ export function GameLayout() {
     }
 
     // All plot claims require transaction signing — free plots sign for 0 ALGO.
+    // Capture the returned txId so it can be forwarded to the server for
+    // on-chain payment verification (SEV1 #2 fix).
+    let algoPaymentTxId: string | undefined;
     const priceToSign = selectedParcel.purchasePriceAlgo ?? (isFreeClaimEligible ? 0 : null);
     if (priceToSign !== null) {
       const result = await signPurchaseAction(selectedParcel.plotId, priceToSign);
       if (result === "cancelled") return;
+      if (typeof result === "string") algoPaymentTxId = result;
     }
 
     purchaseMutation.mutate(
-      { playerId: player.id, parcelId: selectedParcelId },
+      { playerId: player.id, parcelId: selectedParcelId, algoPaymentTxId },
       {
         onSuccess: () => {
           toast({ title: "Territory Acquired", description: "New land is now yours." });

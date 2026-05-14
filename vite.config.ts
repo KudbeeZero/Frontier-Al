@@ -31,11 +31,17 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
     allowedHosts: true,
-    hmr: {
-      path: "/vite-hmr",
-      clientPort: 443,
-      protocol: "wss",
-    },
+    // HMR: if running behind an HTTPS reverse proxy (Replit, Lightning.ai, etc.)
+    // set VITE_HMR_CLIENT_PORT=443 in .env to override; defaults to the dev server port.
+    ...(process.env.VITE_HMR_CLIENT_PORT
+      ? {
+          hmr: {
+            path: "/vite-hmr",
+            clientPort: parseInt(process.env.VITE_HMR_CLIENT_PORT),
+            protocol: process.env.VITE_HMR_PROTOCOL ?? "wss",
+          },
+        }
+      : {}),
     proxy: {
       "/api": {
         target: "http://0.0.0.0:5000",

@@ -146,7 +146,7 @@ export async function getOrCreateFrontierAsa(
     console.log("[chain/asa] No existing FRONTIER ASA found. Creating new token.");
   }
 
-  // 3. Create
+  // 3. Create — clawback MUST be set so fireBurn / clawbackFrontierAsa work on-chain.
   const { assetId } = await createAsa({
     name:     "FRONTIER",
     unitName: "FRNTR",
@@ -154,6 +154,8 @@ export async function getOrCreateFrontierAsa(
     decimals: FRONTIER_ASA_DECIMALS,
     url:      process.env.PUBLIC_BASE_URL ?? "https://frontier-al.app",
     note:     `FRONTIER Game Token - ${getNetwork()}`,
+    // SEV1 fix: clawback role = admin so clawbackFrontierAsa / fireBurn succeed on-chain.
+    clawback: adminAddr,
   });
 
   _frontierAsaId = assetId;

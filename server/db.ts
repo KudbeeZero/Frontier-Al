@@ -37,18 +37,21 @@ const _dbUrl = process.env.DATABASE_URL;
 const pool = new Pool({
   connectionString: sanitizeDbUrl(_dbUrl),
   ssl: getSslConfig(_dbUrl),
-  max: 5,
+  // 10 clients gives enough headroom for concurrent API requests without
+  // overwhelming Neon's free-tier connection limit.
+  max: 10,
   connectionTimeoutMillis: 15000,
-  // Drop idle connections after 10 s — well under Neon's ~5-minute idle-kill
-  // threshold. This prevents the pool from holding stale sockets that Neon
-  // has already terminated on its side, which causes "Connection terminated
-  // unexpectedly" errors in background tasks.
-  idleTimeoutMillis: 10_000,
+  // Keep idle connections alive for 30 s. The previous 10 s value caused
+  // constant churn (create → idle 10 s → remove → create …) which drove
+  // connectCount into the hundreds for only ~100 queries.
+  idleTimeoutMillis: 30_000,
   allowExitOnIdle: false,
-  // Disable TCP keepalive — we want the pool to release connections quickly,
-  // not hold onto them. keepAlive here competes with Neon's own pooler and
-  // produces stale connections during low-traffic windows.
-  keepAlive: false,
+  // Enable TCP keepalive so the OS sends keepalive probes and we detect
+  // dead sockets before the pool tries to reuse them. This prevents the
+  // silent ECONNRESET / "Connection terminated unexpectedly" errors that
+  // previously triggered constant reconnects.
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
 });
 
 // ── DB Pool Diagnostic Counters ──────────────────────────────────────────────

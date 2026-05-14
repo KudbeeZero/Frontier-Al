@@ -112,7 +112,9 @@ export function useBuild() {
 
 export function usePurchase() {
   return useMutation({
-    mutationFn: async (action: PurchaseAction) => {
+    // algoPaymentTxId is part of PurchaseAction (optional for the free-claim path,
+    // required for paid plots — verified server-side via verifyAlgoPayment).
+    mutationFn: async (action: PurchaseAction & { algoPaymentTxId?: string }) => {
       const response = await apiRequest("POST", "/api/actions/purchase", action);
       return response.json();
     },

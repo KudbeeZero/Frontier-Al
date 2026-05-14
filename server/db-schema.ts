@@ -509,3 +509,34 @@ export const lootBoxInventory = pgTable(
 
 export type LootBoxInventoryRow    = typeof lootBoxInventory.$inferSelect;
 export type InsertLootBoxInventory = typeof lootBoxInventory.$inferInsert;
+
+// ─── pending_frontier_transfers ───────────────────────────────────────────────
+// Persistent retry queue for on-chain FRONTIER (FRNTR) ASA transfers.
+// A row is inserted when a transfer is owed (welcome bonus, claim, mining yield).
+// The background worker (services/chain/transferQueue.ts) drains this table,
+// retrying until the recipient opts-in and the tx confirms on-chain.
+//
+// Status lifecycle: pending → sent | failed (failed after MAX_ATTEMPTS)
+
+export const pendingFrontierTransfers = pgTable(
+  "pending_frontier_transfers",
+  {
+    id:                 text("id").primaryKey(),                                    // UUID
+    recipientAddress:   text("recipient_address").notNull(),                        // Algorand wallet address
+    recipientPlayerId:  text("recipient_player_id"),                               // nullable — populated for known players
+    amount:             bigint("amount", { mode: "number" }).notNull(),             // FRONTIER tokens (whole units, not micro)
+    reason:             text("reason").notNull(),                                   // 'welcome_bonus' | 'claim_frontier' | 'mining_yield'
+    status:             varchar("status", { length: 10 }).notNull().default("pending"), // pending | sent | failed
+    attempts:           integer("attempts").notNull().default(0),
+    lastError:          text("last_error"),
+    txId:               text("tx_id"),                                             // populated on success
+    createdAt:          bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt:          bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (t) => ({
+    statusIdx: index("pending_frontier_transfers_status_idx").on(t.status),
+  })
+);
+
+export type PendingFrontierTransferRow    = typeof pendingFrontierTransfers.$inferSelect;
+export type InsertPendingFrontierTransfer = typeof pendingFrontierTransfers.$inferInsert;

@@ -497,6 +497,7 @@ export const buildActionSchema = z.object({
 export const purchaseActionSchema = z.object({
   playerId: z.string(),
   parcelId: z.string(),
+  algoPaymentTxId: z.string().min(1).optional(), // optional for the free-claim path (first plot)
 });
 
 export const collectActionSchema = z.object({

@@ -91,11 +91,25 @@ app.use(
   })
 );
 
-// CORS — allow cross-origin requests from the Vercel frontend in production
+// CORS — allow cross-origin requests from the Vercel (or other) frontend in production.
+// CLIENT_ORIGIN can be a comma-separated list of allowed origins, e.g.:
+//   CLIENT_ORIGIN=https://frontier.vercel.app,https://frontier-git-main.vercel.app
 app.use((req, res, next) => {
-  const origin = process.env.CLIENT_ORIGIN;
-  if (origin) {
-    res.header("Access-Control-Allow-Origin", origin);
+  const rawOrigin = process.env.CLIENT_ORIGIN;
+  if (!rawOrigin) { next(); return; }
+
+  const allowedOrigins = rawOrigin.split(",").map((o) => o.trim()).filter(Boolean);
+  const requestOrigin = req.headers.origin ?? "";
+
+  // Allow if the request origin matches any configured origin
+  const matched =
+    allowedOrigins.includes(requestOrigin) ||
+    // Also allow same-origin / non-browser requests (no Origin header)
+    !requestOrigin;
+
+  if (matched) {
+    const effectiveOrigin = requestOrigin || allowedOrigins[0];
+    res.header("Access-Control-Allow-Origin", effectiveOrigin);
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -192,6 +206,10 @@ app.use((req, res, next) => {
   // Start season lifecycle manager (auto-expiry + countdown broadcasts)
   initSeasonManager(storage);
   console.log("[startup] Season manager initialised ✓");
+  // Start persistent FRONTIER transfer retry worker (SEV2 #6 + #7 fix)
+  const { startFrontierTransferWorker } = await import("./services/chain/transferQueue");
+  startFrontierTransferWorker();
+  console.log("[startup] FRONTIER transfer retry worker started ✓");
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

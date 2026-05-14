@@ -16,6 +16,7 @@ import { appendWorldEvent, listWorldEvents, getRecentWorldEvents } from "./world
 // All algosdk usage is now isolated in server/services/chain/*.
 // Routes import ONLY from the service layer — never from algosdk directly.
 import { getFrontierAsaId, getOrCreateFrontierAsa, isAddressOptedIn, setFrontierAsaId, batchedTransferFrontierAsa, clawbackFrontierAsa } from "./services/chain/asa";
+import { enqueueFrontierTransfer } from "./services/chain/transferQueue";
 import { getAdminAddress, getAdminBalance, getAlgodClient, getIndexerClient } from "./services/chain/client";
 import { mintLandNft, transferLandNft } from "./services/chain/land";
 import { recordUpgradeOnChain } from "./services/chain/upgrades";
@@ -142,7 +143,7 @@ export async function registerRoutes(
   let blockchainReady = false;
   (async () => {
     try {
-      const forceNew = process.env.FORCE_NEW_ASA === "true";
+      const forceNew = process.env.FORCE_NEW_FRONTIER_ASA === "true" || process.env.FORCE_NEW_ASA === "true";
       const asaId    = await getOrCreateFrontierAsa({ forceNew });
       setFrontierAsaId(asaId);
       blockchainReady = true;
@@ -195,7 +196,7 @@ export async function registerRoutes(
       const asaId      = getFrontierAsaId();
       const adminAddress = getAdminAddress();
       const balance    = await getAdminBalance();
-      const forceNew   = process.env.FORCE_NEW_ASA === "true";
+      const forceNew   = process.env.FORCE_NEW_FRONTIER_ASA === "true" || process.env.FORCE_NEW_ASA === "true";
       const network    = process.env.ALGORAND_NETWORK ?? "testnet";
       const factionAsaIds = getAllFactionAsaIds();
       res.json({
@@ -857,27 +858,25 @@ export async function registerRoutes(
 
       const player = await storage.getPlayer(playerId);
       let welcomeBonus = false;
-      let welcomeBonusTxId: string | undefined;
       if (player && !player.welcomeBonusReceived) {
         await storage.grantWelcomeBonus(playerId);
         welcomeBonus = true;
         console.log(`Welcome bonus of 500 FRONTIER granted to player ${player.name} (${address})`);
 
-        const asaId = getFrontierAsaId();
-        if (asaId && address && !address.startsWith("AI_")) {
-          try {
-            const optedIn = await isAddressOptedIn(address);
-            if (optedIn) {
-              welcomeBonusTxId = await batchedTransferFrontierAsa(address, 500);
-              console.log(`Welcome bonus ASA transfer: 500 FRONTIER to ${address}, TX: ${welcomeBonusTxId}`);
-            }
-          } catch (err) {
-            console.error("Welcome bonus ASA transfer failed (in-game balance still granted):", err);
-          }
+        // SEV2 #7 fix: enqueue regardless of asaId / opt-in state; worker retries.
+        if (address && !address.startsWith("AI_")) {
+          enqueueFrontierTransfer({
+            recipientAddress:  address,
+            recipientPlayerId: playerId,
+            amount:            500,
+            reason:            "welcome_bonus",
+          }).catch((err) =>
+            console.error("Welcome bonus enqueue failed (in-game balance still granted):", err)
+          );
         }
       }
 
-      res.json({ success: true, welcomeBonus, welcomeBonusTxId });
+      res.json({ success: true, welcomeBonus });
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Failed to connect wallet" });
     }
@@ -944,22 +943,14 @@ export async function registerRoutes(
         await storage.grantWelcomeBonus(player.id);
         welcomeBonus = true;
 
-        // Fire-and-forget ASA transfer
-        const asaId = getFrontierAsaId();
-        if (asaId && !address.startsWith("AI_")) {
-          isAddressOptedIn(address)
-            .then((optedIn) => {
-              if (optedIn) {
-                batchedTransferFrontierAsa(address, 500)
-                  .then((txId) =>
-                    console.log(`Welcome bonus: 500 FRONTIER → ${address}, TX: ${txId}`)
-                  )
-                  .catch((err) =>
-                    console.error("Welcome bonus ASA transfer failed:", err)
-                  );
-              }
-            })
-            .catch((err) => console.error("Opt-in check failed:", err));
+        // SEV2 #7 fix: enqueue regardless of asaId / opt-in state; worker retries.
+        if (!address.startsWith("AI_")) {
+          enqueueFrontierTransfer({
+            recipientAddress:  address,
+            recipientPlayerId: player.id,
+            amount:            500,
+            reason:            "welcome_bonus",
+          }).catch((err) => console.error("Welcome bonus enqueue failed:", err));
         }
       }
 
@@ -1372,8 +1363,40 @@ export async function registerRoutes(
         }
       }
 
+      // ── ALGO payment verification (SEV1 #2 fix) ──────────────────────────────
+      // Paid path: any purchase beyond the first free-claim requires a verified
+      // on-chain ALGO payment.  Free-claim (first plot) bypasses this gate.
+      if (!isFirstPlot) {
+        if (!action.algoPaymentTxId) {
+          return res.status(400).json({ error: "algoPaymentTxId is required for paid territory purchases." });
+        }
+
+        // Fetch the parcel to determine the expected ALGO amount.
+        const selectedParcel = await storage.getParcel(action.parcelId);
+        if (!selectedParcel) return res.status(404).json({ error: "Parcel not found" });
+
+        const expectedMicroAlgos = Math.round((selectedParcel.purchasePriceAlgo ?? 0) * 1_000_000);
+
+        try {
+          await verifyAlgoPayment({
+            txId:           action.algoPaymentTxId,
+            expectedSender: player.address,
+            minMicroAlgo:   expectedMicroAlgos,
+          });
+          console.log(`[purchase] ALGO payment verified txId=${action.algoPaymentTxId} microAlgos=${expectedMicroAlgos} buyer=${player.address}`);
+        } catch (payErr) {
+          console.warn(`[purchase] ALGO payment verification failed txId=${action.algoPaymentTxId} err=${(payErr as Error).message}`);
+          return res.status(402).json({ error: "Algo payment not verified" });
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       const buyerAddress = player.address;
       const parcel = await storage.purchaseLand(action);
+      // Log the payment txId for audit trail (no dedicated column on parcels table).
+      if (action.algoPaymentTxId) {
+        console.log(`[purchase-audit] plotId=${parcel.plotId} buyer=${buyerAddress} algoPaymentTxId=${action.algoPaymentTxId}`);
+      }
       console.log(`[mint-audit] purchase ok plotId=${parcel.plotId} buyer=${buyerAddress}`);
       const buyerForEvent = await storage.getPlayer(action.playerId).catch(() => null);
       appendWorldEvent({
@@ -1510,16 +1533,15 @@ export async function registerRoutes(
       if (!player) return res.status(404).json({ error: "Player not found" });
 
       const walletAddress = player.address;
-      const asaId = getFrontierAsaId();
       const isRealWallet =
         walletAddress &&
         walletAddress !== "PLAYER_WALLET" &&
         !walletAddress.startsWith("AI_");
 
       // Step 1: Check opt-in BEFORE crediting the DB balance.
-      // Real wallets that haven't opted in cannot receive on-chain tokens,
-      // so we refuse the claim entirely instead of silently crediting in-game
-      // balance that can never be settled on-chain.
+      // We only gate on opt-in when the ASA ID is known; if it's null (race condition
+      // on startup / re-mint), we proceed and let the queue handle it (SEV2 #6 fix).
+      const asaId = getFrontierAsaId();
       if (asaId && isRealWallet) {
         const optedIn = await isAddressOptedIn(walletAddress);
         if (!optedIn) {
@@ -1527,22 +1549,23 @@ export async function registerRoutes(
         }
       }
 
-      // Step 2: Credit the DB balance only after confirming opt-in.
+      // Step 2: Credit the DB balance.
       const result = await storage.claimFrontier(action.playerId);
-      let txId: string | undefined;
 
-      // Step 3: Queue the on-chain transfer (fire-and-forget so response is immediate).
-      if (asaId && result.amount > 0 && isRealWallet) {
-        batchedTransferFrontierAsa(walletAddress, result.amount)
-          .then((batchTxId) =>
-            console.log(`Batched FRONTIER transfer: ${result.amount} to ${walletAddress}, TX: ${batchTxId}`)
-          )
-          .catch((err) =>
-            console.error("Batched FRONTIER transfer failed (in-game balance preserved):", err)
-          );
+      // Step 3: Enqueue on-chain transfer (SEV2 #6 fix: no asaId guard — worker resolves
+      // the id lazily at drain time so a null asaId at request time is not a silent drop).
+      if (result.amount > 0 && isRealWallet) {
+        enqueueFrontierTransfer({
+          recipientAddress:  walletAddress,
+          recipientPlayerId: action.playerId,
+          amount:            result.amount,
+          reason:            "claim_frontier",
+        }).catch((err) =>
+          console.error("claim-frontier enqueue failed (in-game balance preserved):", err)
+        );
       }
 
-      res.json({ success: true, claimed: result, txId, asaId });
+      res.json({ success: true, claimed: result, asaId });
       markDirty();
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid request data" });
